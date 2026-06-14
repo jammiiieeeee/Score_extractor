@@ -3,12 +3,14 @@ import shutil
 import os
 import time
 from pathlib import Path
+from typing import Optional
 from src.domain.interfaces import IFileService
 
 class FileService(IFileService):
-    def __init__(self, base_dir: str = "."):
+    def __init__(self, base_dir: str = "debug"):
         self.base_dir = Path(base_dir)
         self.sandbox_path: Optional[Path] = None
+        self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def create_sandbox(self) -> Path:
         sandbox_id = uuid.uuid4()
