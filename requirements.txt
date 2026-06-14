@@ -1,0 +1,8 @@
+opencv-python
+paddlepaddle
+paddleocr
+reportlab
+rich
+numpy
+scikit-image
+pathlib

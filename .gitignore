@@ -1,0 +1,26 @@
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Temp sandbox directories (UUID-based)
+tmp_*/
+
+# Output PDFs
+*.pdf
+
+# Debug sandbox (renamed to video name)
+点描の唄 上級ver. ピアノ楽譜/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Environment
+.env
+venv/
+.venv/
