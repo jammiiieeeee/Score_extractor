@@ -44,6 +44,18 @@ class FileService(IFileService):
                 print(f"\n[Error] Failed to move file: {e}")
                 raise
 
+    def rename_sandbox(self, new_stem: str) -> Path:
+        if not self.sandbox_path or not self.sandbox_path.exists():
+            raise RuntimeError("Sandbox not created or not found")
+        new_path = self.sandbox_path.with_name(new_stem)
+        if self.sandbox_path != new_path:
+            if new_path.exists():
+                import uuid as _uuid
+                new_path = self.sandbox_path.parent / f"{new_stem}_{_uuid.uuid4().hex[:4]}"
+            self.sandbox_path.rename(new_path)
+            self.sandbox_path = new_path
+        return self.sandbox_path
+
     def cleanup(self, force: bool = False) -> None:
         if self.sandbox_path and self.sandbox_path.exists():
             if force:

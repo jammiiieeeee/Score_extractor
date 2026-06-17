@@ -21,6 +21,7 @@ Load the following specification files via `@reference` depending on the module 
 | **Orchestration** | `@reference application_orchestration.md` | Data flow between services and DTO definitions. |
 | **Video Processing** | `@reference infrastructure_video.md` | SSIM detection, Dynamic Bar Erase, and frame extraction. |
 | **OCR & PDF** | `@reference infrastructure_ocr_pdf.md` | PaddleOCR initialization, regex filtering, and ReportLab layout. |
+| **GUI API** | `@reference gui_api.md` | 28-method Python API surface for GUI integration, callback registry, threading model. |
 | **System & Safety** | `@reference system_lifecycle.md` | UUID sandbox protocol, Windows Unicode safety, and error handling. |
 
 ## Core Lifecycle

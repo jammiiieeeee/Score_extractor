@@ -6,3 +6,4 @@ rich
 numpy
 scikit-image
 pathlib
+PyQt6
