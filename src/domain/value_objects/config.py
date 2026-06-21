@@ -12,7 +12,7 @@ class ScoreConfig:
     # A/B Capture
     a_capture_delay: float = 0.3                 # Seconds after SSIM trigger before A-frame capture
     b_capture_delay: float = 3.0                 # Seconds between A-frame and B-frame
-    b_overlay_width_ratio: float = 0.2           # Left portion of B overlaid onto A
+    b_overlay_width_ratio: float = 0.5           # Left portion of B overlaid onto A
 
     # Deduplication
     duplicate_top_ratio: float = 0.27            # Top portion for duplicate / OCR analysis

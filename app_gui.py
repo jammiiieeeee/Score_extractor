@@ -613,7 +613,7 @@ class ConfigTab(QWidget):
             ("Top analysis ratio:", self._spin_float(0.05, 1.0, 0.01, 0.34)),
             ("A-capture delay (s):", self._spin_float(0.0, 5.0, 0.1, 0.3)),
             ("B-capture delay (s):", self._spin_float(0.0, 10.0, 0.1, 3.0)),
-            ("B overlay width ratio:", self._spin_float(0.0, 1.0, 0.01, 0.2)),
+            ("B overlay width ratio:", self._spin_float(0.0, 1.0, 0.01, 0.5)),
             ("Duplicate top ratio:", self._spin_float(0.0, 1.0, 0.01, 0.27)),
             ("Pixel similarity threshold:", self._spin_float(0.0, 1.0, 0.01, 0.95)),
             ("Row similarity threshold:", self._spin_float(0.0, 1.0, 0.01, 0.98)),
