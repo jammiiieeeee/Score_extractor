@@ -6,8 +6,9 @@ class ExtractionSignals(QObject):
     page_detected = pyqtSignal(int, bytes)
     log           = pyqtSignal(str)
     error         = pyqtSignal(str)
-    completed     = pyqtSignal(int)
-    cancelled     = pyqtSignal()
+    completed       = pyqtSignal(int)
+    cancelled       = pyqtSignal()
+    download_done   = pyqtSignal(str)
 
     def wire(self, api):
         api.set_on_progress(lambda p, pc, d: self.progress.emit(p, pc, d))
@@ -16,3 +17,4 @@ class ExtractionSignals(QObject):
         api.set_on_error(lambda m: self.error.emit(m))
         api.set_on_completed(lambda c: self.completed.emit(c))
         api.set_on_cancelled(lambda: self.cancelled.emit())
+        api.set_on_download_completed(lambda p: self.download_done.emit(p))

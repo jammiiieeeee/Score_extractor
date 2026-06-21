@@ -60,6 +60,7 @@ class GuiApi:
 
         self._extraction_thread: Optional[threading.Thread] = None
         self._pdf_thread: Optional[threading.Thread] = None
+        self._download_thread: Optional[threading.Thread] = None
         self._cancel_flag = False
         self._debug_mode = False
         self._state = ExtractionState("idle", 0, 0.0, 0.0)
@@ -71,6 +72,7 @@ class GuiApi:
         self._on_error: Optional[Callable] = None
         self._on_completed: Optional[Callable] = None
         self._on_cancelled: Optional[Callable] = None
+        self._on_download_completed: Optional[Callable] = None
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -136,6 +138,13 @@ class GuiApi:
         if self._on_cancelled:
             try:
                 self._on_cancelled()
+            except Exception:
+                pass
+
+    def _emit_download_completed(self, path: str):
+        if self._on_download_completed:
+            try:
+                self._on_download_completed(path)
             except Exception:
                 pass
 
@@ -308,6 +317,9 @@ class GuiApi:
 
     def set_on_cancelled(self, fn: Optional[Callable]):
         self._on_cancelled = fn
+
+    def set_on_download_completed(self, fn: Optional[Callable]):
+        self._on_download_completed = fn
 
     # ═════════════════════════════════════════════════════════════════════
     #  Extraction Process (13-15)
@@ -591,6 +603,91 @@ class GuiApi:
             self._emit_page_detected(len(self._pages) - 1, png_bytes)
 
     # ═════════════════════════════════════════════════════════════════════
+    #  YouTube Download
+    # ═════════════════════════════════════════════════════════════════════
+
+    def download_youtube(self, url: str) -> None:
+        if self.is_busy():
+            raise RuntimeError("Extraction or PDF generation already in progress")
+
+        self._cancel_flag = False
+        self._state = ExtractionState("downloading", 0, 0.0, 0.0)
+        self._extraction_start_time = time.time()
+
+        self._download_thread = threading.Thread(
+            target=self._run_youtube_download,
+            args=(url,),
+            daemon=True,
+        )
+        self._download_thread.start()
+
+    def _run_youtube_download(self, url: str):
+        try:
+            import yt_dlp
+
+            dl_dir = self._file_service.base_dir / "yt_dl"
+            dl_dir.mkdir(parents=True, exist_ok=True)
+            output_template = str(dl_dir / "%(title)s.%(ext)s")
+
+            finished_logged = False
+
+            def progress_hook(d):
+                nonlocal finished_logged
+                if self._cancel_flag:
+                    raise Exception("Download cancelled by user")
+                if d['status'] == 'downloading':
+                    total = d.get('total_bytes') or d.get('total_bytes_estimate') or 1
+                    pct = d.get('downloaded_bytes', 0) / total * 100
+                    self._state.current_timestamp = pct
+                    self._emit_progress("downloading", pct, f"Downloading... {pct:.0f}%")
+                elif d['status'] == 'finished' and not finished_logged:
+                    finished_logged = True
+                    self._emit_log("  Download finished, processing...")
+
+            ydl_opts = {
+                'format': 'best[height<=1080]',
+                'outtmpl': output_template,
+                'progress_hooks': [progress_hook],
+                'quiet': True,
+                'no_warnings': True,
+                'noplaylist': True,
+                'playlistend': 1,
+            }
+
+            self._emit_log(f"Downloading: {url}")
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                video_title = info.get('title', 'video')
+                # Find actual downloaded file
+                candidates = list(dl_dir.glob(f"{video_title}.*"))
+                candidates.extend(dl_dir.glob("*.mp4"))
+                # yt-dlp sanitizes the title; find any new file in dl_dir
+                if not candidates:
+                    candidates = sorted(dl_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)
+                if not candidates:
+                    raise RuntimeError("Could not find downloaded video file")
+                video_path = str(candidates[0])
+
+            self._emit_log(f"Downloaded to: {video_path}")
+
+            if self._cancel_flag:
+                raise Exception("Download cancelled by user")
+
+            # Open the downloaded video for preview
+            self.open_video(video_path)
+            self._emit_download_completed(video_path)
+            self._emit_log(f"Video ready: {video_path}")
+
+        except Exception as e:
+            self._state.phase = "error"
+            self._emit_error(f"YouTube download failed: {e}")
+            self._emit_log(f"  [Error] {e}")
+
+        finally:
+            self._download_thread = None
+            self._state.phase = "idle"
+
+    # ═════════════════════════════════════════════════════════════════════
     #  Page Management (16-21)
     # ═════════════════════════════════════════════════════════════════════
 
@@ -829,6 +926,8 @@ class GuiApi:
         self._page_png_cache.clear()
 
     def is_busy(self) -> bool:
+        if self._download_thread is not None and self._download_thread.is_alive():
+            return True
         if self._extraction_thread is not None and self._extraction_thread.is_alive():
             return True
         if self._pdf_thread is not None and self._pdf_thread.is_alive():

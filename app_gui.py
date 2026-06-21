@@ -3,6 +3,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse, parse_qs
 
 import cv2
 import numpy as np
@@ -14,6 +15,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QProgressBar, QTextEdit, QGroupBox, QFormLayout,
     QDoubleSpinBox, QSpinBox, QCheckBox, QSlider, QScrollArea,
     QListWidget, QListView, QListWidgetItem, QDialog, QComboBox,
+    QRadioButton, QButtonGroup,
     QFrame, QSizePolicy, QSplitter, QGridLayout,
 )
 
@@ -84,6 +86,7 @@ QPushButton.secondary {{
     background: {CARD};
     color: {INK};
     border: 1px solid {BORDER};
+    padding: 8px 14px;
 }}
 QPushButton.secondary:hover {{
     background: {CREAM_DARK};
@@ -243,7 +246,7 @@ def _generate_check_pixmap() -> str:
     p.drawLine(7, 13, 14, 6)
     p.end()
     pm.save(path)
-    return path
+    return path.replace("\\", "/")
 
 
 # ── Crop Preview Widget ──────────────────────────────────────────────
@@ -304,10 +307,13 @@ class CropPreviewWidget(QWidget):
             painter.setPen(pen)
             painter.drawLine(ox, line_y, ox + pw, line_y)
 
-            # Handle dots on the line
-            painter.setBrush(QBrush(QColor(192, 57, 43)))
-            for hx in [ox + pw // 4, ox + pw // 2, 3 * (ox + pw) // 4]:
-                painter.drawEllipse(hx - 5, line_y - 5, 10, 10)
+            # Grip ridges at center (indicates draggable)
+            pen_grip = QPen(QColor(192, 57, 43), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen_grip)
+            cx = ox + pw // 2
+            half = 8
+            for dy in (-4, 0, 4):
+                painter.drawLine(cx - half, line_y + dy, cx + half, line_y + dy)
 
             # Label
             painter.setPen(QColor(192, 57, 43))
@@ -351,87 +357,186 @@ class CropPreviewWidget(QWidget):
         self._drag_active = False
 
 
-# ── Seek Preview Widget (shared for Start Time and End Duration) ─────
+# ── Dual-Handle Seek Bar (start time + end duration in one widget) ────
 
-class SeekPreviewWidget(QWidget):
-    seeked = pyqtSignal(float)
+class DualHandleSeekBar(QWidget):
+    seek_changed = pyqtSignal(float)  # emits active handle timestamp
 
-    def __init__(self, label_text: str, default_checked: bool, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self._pixmap: Optional[QPixmap] = None
         self._duration = 0.0
-        self._api: Optional[GuiApi] = None
+        self._start = 0.0       # fraction 0..1
+        self._end = 1.0         # fraction 0..1
+        self._start_enabled = True
+        self._end_enabled = False
+        self._dragging: Optional[str] = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(8, 2, 8, 2)
+        layout.setSpacing(2)
 
-        # Toggle
-        self.toggle = QCheckBox(label_text)
-        self.toggle.setChecked(default_checked)
-        layout.addWidget(self.toggle)
+        # Groove surface
+        self.groove = QWidget()
+        self.groove.setMinimumHeight(36)
+        self.groove.setMouseTracking(True)
+        layout.addWidget(self.groove)
 
-        # Slider row
-        slider_row = QHBoxLayout()
-        self.slider = QSlider(Qt.Orientation.Horizontal)
-        self.slider.setEnabled(default_checked)
-        self.slider.setMinimum(0)
-        self.slider.setMaximum(1000)
-        self.slider.setValue(0)
-        self.time_label = QLabel("--:--.-")
-        self.time_label.setObjectName("muted")
-        self.time_label.setFixedWidth(80)
-        slider_row.addWidget(self.slider, 1)
-        slider_row.addWidget(self.time_label)
-        layout.addLayout(slider_row)
+        # Controls row
+        ctrl = QHBoxLayout()
+        ctrl.setSpacing(6)
+        self.start_cb = QCheckBox("Start-time capture")
+        self.start_cb.setChecked(True)
+        self.start_label = QLabel("00:00.0")
+        self.start_label.setObjectName("muted")
+        self.start_label.setFixedWidth(70)
+        ctrl.addWidget(self.start_cb)
+        ctrl.addWidget(self.start_label)
 
-        # Frame display
-        self.frame_label = QLabel()
-        self.frame_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.frame_label.setMinimumSize(320, 200)
-        self.frame_label.setText("Open a video to preview")
-        self.frame_label.setStyleSheet(f"color: {MUTED}; background: {CREAM_DARK}; border-radius: 6px;")
-        layout.addWidget(self.frame_label, 1)
+        self.end_cb = QCheckBox("End duration")
+        self.end_cb.setChecked(False)
+        self.end_label = QLabel("00:00.0")
+        self.end_label.setObjectName("muted")
+        self.end_label.setFixedWidth(70)
+        self.dur_label = QLabel("/ 00:00.0")
+        self.dur_label.setObjectName("muted")
+        ctrl.addStretch()
+        ctrl.addWidget(self.end_cb)
+        ctrl.addWidget(self.end_label)
+        ctrl.addWidget(self.dur_label)
+        layout.addLayout(ctrl)
 
         # Connections
-        self.toggle.toggled.connect(self.slider.setEnabled)
-        self.toggle.toggled.connect(lambda checked: self.seeked.emit(-1.0 if not checked else 0.0))
-        self.slider.valueChanged.connect(self._on_slider)
+        self.start_cb.toggled.connect(self._on_start_toggled)
+        self.end_cb.toggled.connect(self._on_end_toggled)
+        self.groove.paintEvent = lambda e: self._paint_groove(e)
+        self.groove.mousePressEvent = self._groove_press
+        self.groove.mouseMoveEvent = self._groove_move
+        self.groove.mouseReleaseEvent = lambda e: setattr(self, '_dragging', None)
 
-    def set_api(self, api: GuiApi):
-        self._api = api
+    # ── Public API ──
 
-    def set_duration(self, seconds: float):
-        self._duration = seconds
+    def set_duration(self, secs: float):
+        self._duration = secs
+        self._update_labels()
+        self.groove.update()
 
-    def set_frame(self, pixmap: QPixmap, timestamp: float):
-        self._pixmap = pixmap
-        if not pixmap.isNull():
-            scaled = pixmap.scaled(480, 300,
-                                   Qt.AspectRatioMode.KeepAspectRatio,
-                                   Qt.TransformationMode.SmoothTransformation)
-            self.frame_label.setPixmap(scaled)
-        ts = self._format_time(timestamp)
-        self.time_label.setText(ts)
+    def set_start(self, ts: float):
+        if self._duration > 0:
+            self._start = max(0.0, min(ts / self._duration, self._end))
+            self.groove.update()
+            self._update_labels()
 
-    def get_value(self) -> float:
-        if not self.toggle.isChecked():
-            return -1.0 if "Start" in self.toggle.text() else 0.0
-        ratio = self.slider.value() / self.slider.maximum()
-        return ratio * self._duration
+    def set_end(self, ts: float):
+        if self._duration > 0:
+            self._end = max(self._start, min(ts / self._duration, 1.0))
+            self.groove.update()
+            self._update_labels()
 
-    def _on_slider(self, value: int):
+    def get_start(self) -> float:
+        return -1.0 if not self._start_enabled else self._start * self._duration
+
+    def get_end(self) -> float:
+        return 0.0 if not self._end_enabled else self._end * self._duration
+
+    # ── Internals ──
+
+    def _on_start_toggled(self, checked: bool):
+        self._start_enabled = checked
+        self.groove.update()
+
+    def _on_end_toggled(self, checked: bool):
+        self._end_enabled = checked
+        self.groove.update()
+
+    def _update_labels(self):
+        def fmt(s):
+            m = int(s // 60)
+            ss = s % 60
+            return f"{m}:{ss:05.2f}"
+        self.start_label.setText(fmt(self._start * self._duration))
+        self.end_label.setText(fmt(self._end * self._duration))
+        self.dur_label.setText(f"/ {fmt(self._duration)}")
+
+    def _paint_groove(self, event):
+        from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
+        painter = QPainter(self.groove)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w = self.groove.width()
+        h = self.groove.height()
+        mid = h // 2
+        margin = 16
+        track_w = w - margin * 2
+        x1 = int(margin + track_w * self._start)
+        x2 = int(margin + track_w * self._end)
+
+        # Groove background
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(BORDER))
+        painter.drawRoundedRect(margin, mid - 3, track_w, 6, 3, 3)
+
+        # Highlighted range when both enabled
+        if self._start_enabled and self._end_enabled and x2 > x1:
+            painter.setBrush(QColor(ACCENT))
+            painter.drawRoundedRect(x1, mid - 3, x2 - x1, 6, 3, 3)
+
+        # Start handle
+        if self._start_enabled:
+            painter.setBrush(QColor(ACCENT))
+            painter.setPen(QPen(QColor("white"), 2))
+            painter.drawEllipse(x1 - 9, mid - 9, 18, 18)
+
+        # End handle
+        if self._end_enabled:
+            painter.setBrush(QColor(ACCENT))
+            painter.setPen(QPen(QColor("white"), 2))
+            painter.drawEllipse(x2 - 9, mid - 9, 18, 18)
+
+        painter.end()
+
+    def _groove_press(self, event):
         if self._duration <= 0:
             return
-        ratio = value / self.slider.maximum()
-        ts = ratio * self._duration
-        self.time_label.setText(self._format_time(ts))
-        self.seeked.emit(ts)
+        from PyQt6.QtCore import QPointF
+        pos: QPointF = event.position()
+        w = self.groove.width()
+        margin = 16
+        track_w = w - margin * 2
+        mx = pos.x()
+        my = pos.y()
+        mid = self.groove.height() // 2
 
-    @staticmethod
-    def _format_time(seconds: float) -> str:
-        m = int(seconds // 60)
-        s = seconds % 60
-        return f"{m}:{s:05.2f}"
+        def dist_to(x):
+            return ((mx - x) ** 2 + (my - mid) ** 2) ** 0.5
+
+        x_start = margin + track_w * self._start
+        x_end = margin + track_w * self._end
+        d_start = dist_to(x_start) if self._start_enabled else 999
+        d_end = dist_to(x_end) if self._end_enabled else 999
+
+        if d_start < 20 and d_start <= d_end:
+            self._dragging = 'start'
+        elif d_end < 20:
+            self._dragging = 'end'
+        else:
+            self._dragging = None
+
+    def _groove_move(self, event):
+        if not self._dragging or self._duration <= 0:
+            return
+        pos = event.position()
+        w = self.groove.width()
+        margin = 16
+        track_w = max(w - margin * 2, 1)
+        frac = max(0.0, min(1.0, (pos.x() - margin) / track_w))
+
+        if self._dragging == 'start':
+            self._start = min(frac, self._end)
+        else:
+            self._end = max(frac, self._start)
+        self.groove.update()
+        self._update_labels()
+        ts = frac * self._duration
+        self.seek_changed.emit(ts)
 
 
 # ── Page Preview Dialog ──────────────────────────────────────────────
@@ -662,29 +767,78 @@ class ExtractTab(QWidget):
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
 
-        # ── Video file picker ──
-        picker_row = QHBoxLayout()
-        picker_label = QLabel("Video file:")
-        picker_label.setFixedWidth(70)
+        # ── Source toggle ──
+        toggle_row = QHBoxLayout()
+        toggle_row.setSpacing(16)
+        self.local_radio = QRadioButton("Local file")
+        self.yt_radio = QRadioButton("YouTube URL")
+        self.yt_radio.setChecked(True)
+        toggle_row.addWidget(self.local_radio)
+        toggle_row.addWidget(self.yt_radio)
+        toggle_row.addStretch()
+        layout.addLayout(toggle_row)
+
+        # ── Input grid (shared column alignment) ──
+        input_grid = QGridLayout()
+        input_grid.setColumnMinimumWidth(0, 115)
+        input_grid.setColumnStretch(1, 1)
+        input_grid.setColumnMinimumWidth(2, 100)
+
+        # Row 0 — Local file mode
+        self._local_label = QLabel("Video file:")
+        self._local_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.video_path_edit = QLineEdit()
         self.video_path_edit.setPlaceholderText("Select a video file (*.mp4, *.avi, *.mkv, *.mov)")
         self.browse_btn = QPushButton("Browse…")
         self.browse_btn.setObjectName("secondary")
-        self.browse_btn.setFixedWidth(90)
-        picker_row.addWidget(picker_label)
-        picker_row.addWidget(self.video_path_edit, 1)
-        picker_row.addWidget(self.browse_btn)
-        layout.addLayout(picker_row)
+        input_grid.addWidget(self._local_label, 0, 0)
+        input_grid.addWidget(self.video_path_edit, 0, 1)
+        input_grid.addWidget(self.browse_btn, 0, 2)
 
-        # ── Preview Sub-tabs ──
-        self.preview_tabs = QTabWidget()
+        # Row 0 — YouTube URL mode (same cells, hidden initially)
+        self._yt_label = QLabel("YouTube URL:")
+        self._yt_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.yt_url_edit = QLineEdit()
+        self.yt_url_edit.setPlaceholderText("Paste YouTube video URL")
+        self.download_btn = QPushButton("Download")
+        self.download_btn.setObjectName("secondary")
+        self.download_btn.setEnabled(False)
+        input_grid.addWidget(self._yt_label, 0, 0)
+        input_grid.addWidget(self.yt_url_edit, 0, 1)
+        input_grid.addWidget(self.download_btn, 0, 2)
+        # YT widgets visible by default (radio checked above); hide local ones
+        self._local_label.hide()
+        self.video_path_edit.hide()
+        self.browse_btn.hide()
 
-        # Crop tab — wraps CropPreviewWidget with a default-ratio control bar
-        crop_container = QWidget()
-        crop_layout = QVBoxLayout(crop_container)
-        crop_layout.setContentsMargins(0, 0, 0, 0)
+        # Row 1 — PDF title
+        title_label = QLabel("PDF title:")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.custom_title_edit = QLineEdit()
+        input_grid.addWidget(title_label, 1, 0)
+        input_grid.addWidget(self.custom_title_edit, 1, 1)
+
+        # Row 2 — Output path
+        out_label = QLabel("Save PDF to:")
+        out_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.output_path_edit = QLineEdit()
+        self.output_path_edit.setPlaceholderText("output.pdf")
+        self.output_browse_btn = QPushButton("Browse…")
+        self.output_browse_btn.setObjectName("secondary")
+        input_grid.addWidget(out_label, 2, 0)
+        input_grid.addWidget(self.output_path_edit, 2, 1)
+        input_grid.addWidget(self.output_browse_btn, 2, 2)
+
+        layout.addLayout(input_grid)
+
+        # ── Unified preview (crop + dual seekbar) ──
         self.crop_widget = CropPreviewWidget()
-        crop_layout.addWidget(self.crop_widget, 1)
+        layout.addWidget(self.crop_widget, 1)
+
+        self.seek_bar = DualHandleSeekBar()
+        layout.addWidget(self.seek_bar)
+
+        # Crop bar
         crop_bar = QHBoxLayout()
         self.crop_default_label = QLabel(f"Default: {int(self._api.get_config().get('default_crop_ratio', 0.35) * 100)}%")
         self.crop_default_label.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {MUTED};")
@@ -694,47 +848,9 @@ class ExtractTab(QWidget):
         crop_bar.addWidget(self.crop_default_label)
         crop_bar.addStretch()
         crop_bar.addWidget(self.crop_default_btn)
-        crop_layout.addLayout(crop_bar)
-
-        self.start_time_widget = SeekPreviewWidget("Enable start-time capture", True)
-        self.end_duration_widget = SeekPreviewWidget("Stop extraction after…", False)
-
-        self.preview_tabs.addTab(crop_container, "Crop")
-        self.preview_tabs.addTab(self.start_time_widget, "Start Time")
-        self.preview_tabs.addTab(self.end_duration_widget, "End Duration")
+        layout.addLayout(crop_bar)
 
         self.crop_default_btn.clicked.connect(self._set_crop_default)
-
-        layout.addWidget(self.preview_tabs, 1)
-
-        # ── Custom title row ──
-        title_row = QHBoxLayout()
-        self.use_custom_title_cb = QCheckBox("Use custom title")
-        self.custom_title_edit = QLineEdit()
-        self.custom_title_edit.setPlaceholderText("Enter score title")
-        self.custom_title_edit.setEnabled(False)
-        self.custom_title_hint = QLabel("If unchecked, video filename will be used")
-        self.custom_title_hint.setObjectName("muted")
-        title_row.addWidget(self.use_custom_title_cb)
-        title_row.addWidget(self.custom_title_edit, 1)
-        title_row.addWidget(self.custom_title_hint)
-        layout.addLayout(title_row)
-
-        self.use_custom_title_cb.toggled.connect(self.custom_title_edit.setEnabled)
-
-        # ── Output path row ──
-        out_row = QHBoxLayout()
-        out_label = QLabel("Save PDF to:")
-        out_label.setFixedWidth(80)
-        self.output_path_edit = QLineEdit()
-        self.output_path_edit.setPlaceholderText("output.pdf")
-        self.output_browse_btn = QPushButton("Browse…")
-        self.output_browse_btn.setObjectName("secondary")
-        self.output_browse_btn.setFixedWidth(80)
-        out_row.addWidget(out_label)
-        out_row.addWidget(self.output_path_edit, 1)
-        out_row.addWidget(self.output_browse_btn)
-        layout.addLayout(out_row)
 
         # ── Progress & Log ──
         self.progress_bar = QProgressBar()
@@ -766,10 +882,14 @@ class ExtractTab(QWidget):
         self.output_browse_btn.clicked.connect(self._browse_output)
         self.start_btn.clicked.connect(self._start_extraction)
         self.cancel_btn.clicked.connect(self._cancel_extraction)
+        self.local_radio.toggled.connect(self._on_source_toggled)
+        self.yt_radio.toggled.connect(self._on_source_toggled)
+        self._on_source_toggled()
+        self.download_btn.clicked.connect(self._on_yt_download)
+        self.yt_url_edit.textChanged.connect(self._on_yt_url_changed)
 
-        # Seek preview connections
-        self.start_time_widget.seeked.connect(self._on_seek_start)
-        self.end_duration_widget.seeked.connect(self._on_seek_end)
+        # Seek bar connection
+        self.seek_bar.seek_changed.connect(self._on_seek)
 
     def get_output_path(self) -> str:
         path = self.output_path_edit.text().strip()
@@ -795,6 +915,73 @@ class ExtractTab(QWidget):
         if path:
             self.output_path_edit.setText(path)
 
+    def _on_source_toggled(self):
+        local = self.local_radio.isChecked()
+        self._local_label.setVisible(local)
+        self.video_path_edit.setVisible(local)
+        self.browse_btn.setVisible(local)
+        self._yt_label.setVisible(not local)
+        self.yt_url_edit.setVisible(not local)
+        self.download_btn.setVisible(not local)
+        if local:
+            self._on_path_changed(self.video_path_edit.text())
+        else:
+            self._on_yt_url_changed()
+
+    def _on_yt_url_changed(self):
+        valid = bool(self.yt_url_edit.text().strip())
+        self.download_btn.setEnabled(valid and not self._extracting)
+
+    def _on_yt_download(self):
+        url = self.yt_url_edit.text().strip()
+        if not url:
+            return
+        if not url.startswith("http"):
+            QMessageBox.warning(self, "Invalid URL", "Please enter a valid YouTube URL starting with http")
+            return
+        # Warn if playlist URL
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        if 'list' in params:
+            reply = QMessageBox.question(
+                self, "Playlist Detected",
+                "Only the first video will be downloaded. Do you want to proceed?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        self._extracting = True
+        self.download_btn.setEnabled(False)
+        self.download_btn.setText("Downloading…")
+        self.yt_url_edit.setEnabled(False)
+        self.progress_bar.setValue(0)
+        self.log_edit.clear()
+        try:
+            self._api.download_youtube(url)
+        except RuntimeError as e:
+            QMessageBox.warning(self, "Error", str(e))
+            self._reset_download_ui()
+
+    def _on_yt_download_completed(self, path: str):
+        self._video_path = path
+        self.video_path_edit.setText(path)
+        self.custom_title_edit.setText(Path(path).stem)
+        self._log(f"Video downloaded: {path}")
+        self._load_preview()
+        self._extracting = False
+        self.download_btn.setEnabled(True)
+        self.download_btn.setText("Download")
+        self.yt_url_edit.setEnabled(True)
+        self.start_btn.setEnabled(True)
+
+    def _reset_download_ui(self):
+        self._extracting = False
+        self.download_btn.setEnabled(True)
+        self.download_btn.setText("Download")
+        self.yt_url_edit.setEnabled(True)
+
     def _on_path_changed(self, path: str):
         valid = bool(path) and os.path.exists(path)
         self.start_btn.setEnabled(valid and not self._extracting)
@@ -812,13 +999,18 @@ class ExtractTab(QWidget):
             info = self._api.open_video(path)
             self._video_path = path
             self._video_duration = info.duration
-            self.start_time_widget.set_duration(info.duration)
-            self.end_duration_widget.set_duration(info.duration)
+            self.seek_bar.set_duration(info.duration)
+            self.seek_bar.set_start(0.0)
+            self.seek_bar.set_end(info.duration)
 
             # Default output path
             if not self.output_path_edit.text().strip():
                 default_pdf = str(Path(path).with_suffix('.pdf'))
                 self.output_path_edit.setText(default_pdf)
+
+            # Auto-populate PDF title from video filename
+            if not self.custom_title_edit.text():
+                self.custom_title_edit.setText(Path(path).stem)
 
             # Show frame 0 in crop tab, sync crop ratio from config
             default_ratio = self._api.get_config().get("default_crop_ratio", 0.35)
@@ -829,33 +1021,24 @@ class ExtractTab(QWidget):
                 pixmap = QPixmap()
                 pixmap.loadFromData(png_bytes)
                 self.crop_widget.set_frame(pixmap)
-                self.start_time_widget.set_frame(pixmap, 0.0)
-                self.end_duration_widget.set_frame(pixmap, 0.0)
 
-            self.preview_tabs.setCurrentIndex(0)
             self._log("Video loaded: " + path)
             self._log(f"Duration: {info.duration:.1f}s, FPS: {info.fps:.2f}, "
                       f"Resolution: {info.width}x{info.height}")
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Could not open video:\n{e}")
 
-    def _on_seek_start(self, ts: float):
-        self._seek_to(ts, self.start_time_widget)
-
-    def _on_seek_end(self, ts: float):
-        self._seek_to(ts, self.end_duration_widget)
-
-    def _seek_to(self, ts: float, source: SeekPreviewWidget):
+    def _on_seek(self, ts: float):
         if ts < 0 or self._api.get_video_info() is None:
             return
         png_bytes = self._api.read_frame_at(ts)
         if png_bytes:
             pixmap = QPixmap()
             pixmap.loadFromData(png_bytes)
-            source.set_frame(pixmap, ts)
+            self.crop_widget.set_frame(pixmap)
 
     def _start_extraction(self):
-        video_path = self.video_path_edit.text().strip()
+        video_path = self._video_path
         if not video_path or not os.path.exists(video_path):
             QMessageBox.warning(self, "Error", "Please select a valid video file.")
             return
@@ -865,22 +1048,14 @@ class ExtractTab(QWidget):
             QMessageBox.warning(self, "Error", "Please set an output PDF path.")
             return
 
-        # Ensure video is loaded
-        if self._api.get_video_info() is None:
-            try:
-                self._api.open_video(video_path)
-            except Exception as e:
-                QMessageBox.warning(self, "Error", f"Could not open video:\n{e}")
-                return
-
         # Apply config from ConfigTab (parent's sibling)
         main_win = self.window()
         if hasattr(main_win, 'config_tab'):
             main_win.config_tab.apply_to_api()
 
-        # Get parameters from seek widgets
-        start_time = self.start_time_widget.get_value()
-        duration = self.end_duration_widget.get_value()
+        # Get parameters from seek controls
+        start_time = self.seek_bar.get_start()
+        duration = self.seek_bar.get_end()
         no_ocr = (self._api.get_config().get("ocr_confidence_threshold", 40) == 0)
 
         self._extracting = True
@@ -888,6 +1063,8 @@ class ExtractTab(QWidget):
         self.start_btn.setText("Extracting…")
         self.cancel_btn.setEnabled(True)
         self.browse_btn.setEnabled(False)
+        self.yt_url_edit.setEnabled(False)
+        self.download_btn.setEnabled(False)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
 
@@ -921,7 +1098,7 @@ class ExtractTab(QWidget):
         # Auto-generate PDF
         output_path = self.get_output_path()
         self._log(f"Generating PDF: {output_path}")
-        title = self.custom_title_edit.text().strip() if self.use_custom_title_cb.isChecked() else None
+        title = self.custom_title_edit.text().strip() or None
         try:
             self._api.generate_pdf(output_path, title=title)
         except RuntimeError as e:
@@ -964,9 +1141,12 @@ class ExtractTab(QWidget):
     def _reset_ui(self):
         self._extracting = False
         self.start_btn.setText("Start Extraction")
-        self.start_btn.setEnabled(bool(self.video_path_edit.text().strip()))
+        self.start_btn.setEnabled(bool(self._video_path and os.path.exists(self._video_path)))
         self.cancel_btn.setEnabled(False)
         self.browse_btn.setEnabled(True)
+        self.download_btn.setEnabled(True)
+        self.download_btn.setText("Download")
+        self.yt_url_edit.setEnabled(True)
 
     def _log(self, msg: str):
         self.log_edit.append(msg)
@@ -1298,6 +1478,7 @@ class MainWindow(QMainWindow):
         self.signals.error.connect(self._on_error)
         self.signals.completed.connect(self._on_completed)
         self.signals.cancelled.connect(self._on_cancelled)
+        self.signals.download_done.connect(self._on_yt_downloaded)
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
@@ -1335,6 +1516,9 @@ class MainWindow(QMainWindow):
 
     def _on_cancelled(self):
         self.extract_tab.on_cancelled()
+
+    def _on_yt_downloaded(self, path: str):
+        self.extract_tab._on_yt_download_completed(path)
 
     def _on_tab_changed(self, index: int):
         if index == 1:  # Gallery tab
