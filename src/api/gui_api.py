@@ -415,7 +415,7 @@ class GuiApi:
                         b_idx = start_idx
 
                     merged_img, bar_x = self._video_service.merge_frames(
-                        a_img, b_img, self._config.b_overlay_width_ratio
+                        a_img, b_img, self._config.b_overlay_width_ratio, self._config.default_crop_ratio
                     )
                     self._emit_log(f"  Start-time capture, bar edge at x={bar_x}")
                     self._add_page(merged_img, a_ts, start_idx, sandbox_path)
@@ -507,7 +507,7 @@ class GuiApi:
                         if self._check_cancel():
                             return
                         merged_img, bar_x = self._video_service.merge_frames(
-                            a_frame.image, b_frame.image, self._config.b_overlay_width_ratio
+                            a_frame.image, b_frame.image, self._config.b_overlay_width_ratio, self._config.default_crop_ratio
                         )
                         self._emit_log(f"  Bar edge at x={bar_x} for page {len(self._pages) + 1}")
 

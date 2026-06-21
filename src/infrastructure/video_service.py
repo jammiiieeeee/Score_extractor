@@ -44,7 +44,7 @@ class VideoService(IVideoService):
         timestamp = frame_idx / self.fps
         return frame, timestamp
 
-    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.2) -> Tuple[np.ndarray, int]:
+    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35) -> Tuple[np.ndarray, int]:
         h, w = frame_a.shape[:2]
 
         # Downscale to 640px for bar detection
@@ -55,6 +55,11 @@ class VideoService(IVideoService):
 
         diff = cv2.absdiff(a_small, b_small)
         gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+
+        # Restrict scan to top portion (overlap region)
+        crop_h = int(small_h * crop_ratio) if 0 < crop_ratio < 1 else small_h
+        gray_diff = gray_diff[:crop_h, :]
+
         vertical_sum = np.sum(gray_diff, axis=0)
 
         search_range = int(small_w * overlay_width_ratio)

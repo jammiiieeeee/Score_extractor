@@ -218,7 +218,7 @@ class ExtractScoreUseCase:
             self._log("  Start-time capture, merge skipped")
         else:
             merged_img, bar_x = self.video_service.merge_frames(
-                frame_a.image, frame_b.image, self.config.b_overlay_width_ratio
+                frame_a.image, frame_b.image, self.config.b_overlay_width_ratio, self.config.default_crop_ratio
             )
             self._log(f"  Bar edge at x={bar_x} for page {page_num}")
 
