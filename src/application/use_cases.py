@@ -212,18 +212,20 @@ class ExtractScoreUseCase:
 
     def _process_new_page(self, frame_a: Frame, frame_b: Frame, unique_pages: List[Frame], skip_merge: bool = False):
         page_num = len(unique_pages) + 1
+        sandbox = self.file_service.get_sandbox_path() if self.debug else None
 
         if skip_merge:
             merged_img, bar_x = frame_a.image, 0
             self._log("  Start-time capture, merge skipped")
         else:
+            debug_path = str(sandbox / f"bar_profile_page_{page_num:03d}.txt") if self.debug else None
             merged_img, bar_x = self.video_service.merge_frames(
-                frame_a.image, frame_b.image, self.config.b_overlay_width_ratio, self.config.default_crop_ratio
+                frame_a.image, frame_b.image, self.config.b_overlay_width_ratio,
+                self.config.default_crop_ratio, self.config.bar_min_diff_threshold, debug_path
             )
             self._log(f"  Bar edge at x={bar_x} for page {page_num}")
 
         if self.debug:
-            sandbox = self.file_service.get_sandbox_path()
             a_path = str(sandbox / f"page_{page_num:03d}_A.png")
             b_path = str(sandbox / f"page_{page_num:03d}_B.png")
             cv2.imwrite(a_path, frame_a.image)

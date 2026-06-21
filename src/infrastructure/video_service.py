@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Optional
 from src.domain.interfaces import IVideoService
 
 class VideoService(IVideoService):
@@ -44,7 +44,7 @@ class VideoService(IVideoService):
         timestamp = frame_idx / self.fps
         return frame, timestamp
 
-    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35) -> Tuple[np.ndarray, int]:
+    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, debug_save_path: Optional[str] = None) -> Tuple[np.ndarray, int]:
         h, w = frame_a.shape[:2]
 
         # Downscale to 640px for bar detection
@@ -66,12 +66,20 @@ class VideoService(IVideoService):
         relevant_sum = vertical_sum[:search_range]
 
         if len(relevant_sum) > 0:
-            bar_x_small = np.argmax(relevant_sum)
-            bar_x = int(bar_x_small * (w / small_w))
-            merge_x = min(bar_x + 10, w)
+            max_diff = float(np.max(relevant_sum))
+            if max_diff < min_diff_threshold:
+                bar_x = 0
+                merge_x = 0
+            else:
+                bar_x_small = int(np.argmax(relevant_sum))
+                bar_x = int(bar_x_small * (w / small_w))
+                merge_x = min(bar_x + 10, w)
         else:
             bar_x = 0
             merge_x = 0
+
+        if debug_save_path:
+            np.savetxt(debug_save_path, relevant_sum, fmt='%d')
 
         result = frame_a.copy()
         result[:, 0:merge_x] = frame_b[:, 0:merge_x]

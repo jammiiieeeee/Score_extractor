@@ -29,5 +29,8 @@ class ScoreConfig:
     crop_top_offset: float = 0.0                 # Starting Y offset for crop
     default_strips_per_page: int = 7             # Strips per PDF page
 
+    # Bar Detection
+    bar_min_diff_threshold: float = 500.0        # Minimum summed column diff to accept bar position
+
     # Blank / End Detection
     blank_content_std_threshold: float = 3.0     # Pixel std below this = blank screen

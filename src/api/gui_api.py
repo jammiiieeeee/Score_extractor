@@ -166,7 +166,7 @@ class GuiApi:
         valid_float_any = {
             "frame_check_interval", "min_screenshot_interval",
             "a_capture_delay", "b_capture_delay",
-            "blank_content_std_threshold",
+            "blank_content_std_threshold", "bar_min_diff_threshold",
         }
         valid_int_1_20 = {"default_strips_per_page"}
         valid_int_0_100 = {"ocr_confidence_threshold"}
@@ -414,8 +414,10 @@ class GuiApi:
                         b_img, b_ts = a_img.copy(), a_ts
                         b_idx = start_idx
 
+                    debug_path = str(sandbox_path / "bar_profile_page_000.txt") if self._debug_mode else None
                     merged_img, bar_x = self._video_service.merge_frames(
-                        a_img, b_img, self._config.b_overlay_width_ratio, self._config.default_crop_ratio
+                        a_img, b_img, self._config.b_overlay_width_ratio,
+                        self._config.default_crop_ratio, self._config.bar_min_diff_threshold, debug_path
                     )
                     self._emit_log(f"  Start-time capture, bar edge at x={bar_x}")
                     self._add_page(merged_img, a_ts, start_idx, sandbox_path)
@@ -506,8 +508,10 @@ class GuiApi:
 
                         if self._check_cancel():
                             return
+                        debug_path = str(sandbox_path / f"bar_profile_page_{len(self._pages) + 1:03d}.txt") if self._debug_mode else None
                         merged_img, bar_x = self._video_service.merge_frames(
-                            a_frame.image, b_frame.image, self._config.b_overlay_width_ratio, self._config.default_crop_ratio
+                            a_frame.image, b_frame.image, self._config.b_overlay_width_ratio,
+                            self._config.default_crop_ratio, self._config.bar_min_diff_threshold, debug_path
                         )
                         self._emit_log(f"  Bar edge at x={bar_x} for page {len(self._pages) + 1}")
 

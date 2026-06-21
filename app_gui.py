@@ -621,6 +621,7 @@ class ConfigTab(QWidget):
             ("OCR horizontal ratio:", self._spin_float(0.0, 1.0, 0.01, 0.30)),
             ("Crop top offset:", self._spin_float(0.0, 1.0, 0.01, 0.0)),
             ("Blank content std threshold:", self._spin_float(0.0, 50.0, 0.5, 3.0)),
+            ("Bar min diff threshold:", self._spin_float(0.0, 50000.0, 100.0, 500.0)),
         ]
 
         for r, (label_text, spinbox) in enumerate(adv_fields):
@@ -644,6 +645,7 @@ class ConfigTab(QWidget):
         self.adv_ocr_horiz = adv_fields[9][1]
         self.adv_crop_offset = adv_fields[10][1]
         self.adv_blank_std = adv_fields[11][1]
+        self.adv_bar_diff = adv_fields[12][1]
 
         # Debug mode checkbox
         r = len(adv_fields)
@@ -687,6 +689,7 @@ class ConfigTab(QWidget):
             self.adv_frame_check, self.adv_top_ratio, self.adv_a_delay, self.adv_b_delay,
             self.adv_overlay, self.adv_dup_top, self.adv_pixel_sim, self.adv_row_sim,
             self.adv_row_cov, self.adv_ocr_horiz, self.adv_crop_offset, self.adv_blank_std,
+            self.adv_bar_diff,
         ]
 
     def apply_to_api(self):
@@ -710,6 +713,7 @@ class ConfigTab(QWidget):
                 "ocr_horizontal_ratio": self.adv_ocr_horiz.value(),
                 "crop_top_offset": self.adv_crop_offset.value(),
                 "blank_content_std_threshold": self.adv_blank_std.value(),
+                "bar_min_diff_threshold": self.adv_bar_diff.value(),
             }
             self._api.update_config(updates)
             self._api.set_debug_mode(self.debug_cb.isChecked())
@@ -739,6 +743,7 @@ class ConfigTab(QWidget):
             self.adv_ocr_horiz.setValue(cfg.get("ocr_horizontal_ratio", 0.30))
             self.adv_crop_offset.setValue(cfg.get("crop_top_offset", 0.0))
             self.adv_blank_std.setValue(cfg.get("blank_content_std_threshold", 3.0))
+            self.adv_bar_diff.setValue(cfg.get("bar_min_diff_threshold", 500.0))
             self.debug_cb.setChecked(self._api.is_debug_mode())
         finally:
             self._updating = False
