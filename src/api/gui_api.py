@@ -610,7 +610,7 @@ class GuiApi:
     #  YouTube Download
     # ═════════════════════════════════════════════════════════════════════
 
-    def download_youtube(self, url: str) -> None:
+    def download_youtube(self, url: str, fmt: str = "best[height<=1080]") -> None:
         if self.is_busy():
             raise RuntimeError("Extraction or PDF generation already in progress")
 
@@ -620,12 +620,12 @@ class GuiApi:
 
         self._download_thread = threading.Thread(
             target=self._run_youtube_download,
-            args=(url,),
+            args=(url, fmt),
             daemon=True,
         )
         self._download_thread.start()
 
-    def _run_youtube_download(self, url: str):
+    def _run_youtube_download(self, url: str, fmt: str = "best[height<=1080]"):
         try:
             import yt_dlp
 
@@ -649,7 +649,7 @@ class GuiApi:
                     self._emit_log("  Download finished, processing...")
 
             ydl_opts = {
-                'format': 'best[height<=1080]',
+                'format': fmt,
                 'outtmpl': output_template,
                 'progress_hooks': [progress_hook],
                 'quiet': True,

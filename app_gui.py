@@ -787,7 +787,7 @@ class ExtractTab(QWidget):
         input_grid = QGridLayout()
         input_grid.setColumnMinimumWidth(0, 115)
         input_grid.setColumnStretch(1, 1)
-        input_grid.setColumnMinimumWidth(2, 100)
+        input_grid.setColumnMinimumWidth(2, 210)
 
         # Row 0 — Local file mode
         self._local_label = QLabel("Video file:")
@@ -805,12 +805,28 @@ class ExtractTab(QWidget):
         self._yt_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.yt_url_edit = QLineEdit()
         self.yt_url_edit.setPlaceholderText("Paste YouTube video URL")
+
+        self.quality_combo = QComboBox()
+        self.quality_combo.addItem("Best (≤1080p)", "best[height<=1080]")
+        self.quality_combo.addItem("720p", "best[height<=720]")
+        self.quality_combo.addItem("480p", "best[height<=480]")
+        self.quality_combo.addItem("360p", "best[height<=360]")
+        self.quality_combo.addItem("Best available", "best")
+        self.quality_combo.setCurrentIndex(0)
+        self.quality_combo.setFixedWidth(100)
+
         self.download_btn = QPushButton("Download")
         self.download_btn.setObjectName("secondary")
         self.download_btn.setEnabled(False)
+
+        yt_action = QHBoxLayout()
+        yt_action.setSpacing(4)
+        yt_action.addWidget(self.quality_combo)
+        yt_action.addWidget(self.download_btn)
+
         input_grid.addWidget(self._yt_label, 0, 0)
         input_grid.addWidget(self.yt_url_edit, 0, 1)
-        input_grid.addWidget(self.download_btn, 0, 2)
+        input_grid.addLayout(yt_action, 0, 2)
         # YT widgets visible by default (radio checked above); hide local ones
         self._local_label.hide()
         self.video_path_edit.hide()
@@ -927,6 +943,7 @@ class ExtractTab(QWidget):
         self.browse_btn.setVisible(local)
         self._yt_label.setVisible(not local)
         self.yt_url_edit.setVisible(not local)
+        self.quality_combo.setVisible(not local)
         self.download_btn.setVisible(not local)
         if local:
             self._on_path_changed(self.video_path_edit.text())
@@ -964,7 +981,8 @@ class ExtractTab(QWidget):
         self.progress_bar.setValue(0)
         self.log_edit.clear()
         try:
-            self._api.download_youtube(url)
+            fmt = self.quality_combo.currentData()
+            self._api.download_youtube(url, fmt)
         except RuntimeError as e:
             QMessageBox.warning(self, "Error", str(e))
             self._reset_download_ui()
