@@ -26,7 +26,7 @@ class IVideoService(ABC):
         pass
 
     @abstractmethod
-    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, debug_save_path: Optional[str] = None) -> Tuple[np.ndarray, int]:
+    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, bar_padding_px: int = 10, debug_save_path: Optional[str] = None) -> Tuple[np.ndarray, int]:
         """Applies Dynamic Bar Erase and merges Frame B onto Frame A. Returns (merged_image, bar_x)."""
         pass
 

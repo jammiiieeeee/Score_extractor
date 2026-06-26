@@ -622,6 +622,7 @@ class ConfigTab(QWidget):
             ("Crop top offset:", self._spin_float(0.0, 1.0, 0.01, 0.0)),
             ("Blank content std threshold:", self._spin_float(0.0, 50.0, 0.5, 3.0)),
             ("Bar min diff threshold:", self._spin_float(0.0, 50000.0, 100.0, 500.0)),
+            ("Bar padding (px):", self._spin_int(0, 100, 10)),
         ]
 
         for r, (label_text, spinbox) in enumerate(adv_fields):
@@ -646,6 +647,7 @@ class ConfigTab(QWidget):
         self.adv_crop_offset = adv_fields[10][1]
         self.adv_blank_std = adv_fields[11][1]
         self.adv_bar_diff = adv_fields[12][1]
+        self.adv_bar_pad = adv_fields[13][1]
 
         # Debug mode checkbox
         r = len(adv_fields)
@@ -690,6 +692,7 @@ class ConfigTab(QWidget):
             self.adv_overlay, self.adv_dup_top, self.adv_pixel_sim, self.adv_row_sim,
             self.adv_row_cov, self.adv_ocr_horiz, self.adv_crop_offset, self.adv_blank_std,
             self.adv_bar_diff,
+            self.adv_bar_pad,
         ]
 
     def apply_to_api(self):
@@ -714,6 +717,7 @@ class ConfigTab(QWidget):
                 "crop_top_offset": self.adv_crop_offset.value(),
                 "blank_content_std_threshold": self.adv_blank_std.value(),
                 "bar_min_diff_threshold": self.adv_bar_diff.value(),
+                "bar_padding_px": self.adv_bar_pad.value(),
             }
             self._api.update_config(updates)
             self._api.set_debug_mode(self.debug_cb.isChecked())
@@ -744,6 +748,7 @@ class ConfigTab(QWidget):
             self.adv_crop_offset.setValue(cfg.get("crop_top_offset", 0.0))
             self.adv_blank_std.setValue(cfg.get("blank_content_std_threshold", 3.0))
             self.adv_bar_diff.setValue(cfg.get("bar_min_diff_threshold", 500.0))
+            self.adv_bar_pad.setValue(cfg.get("bar_padding_px", 10))
             self.debug_cb.setChecked(self._api.is_debug_mode())
         finally:
             self._updating = False

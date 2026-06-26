@@ -221,7 +221,8 @@ class ExtractScoreUseCase:
             debug_path = str(sandbox / f"bar_profile_page_{page_num:03d}.txt") if self.debug else None
             merged_img, bar_x = self.video_service.merge_frames(
                 frame_a.image, frame_b.image, self.config.b_overlay_width_ratio,
-                self.config.default_crop_ratio, self.config.bar_min_diff_threshold, debug_path
+                self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
+                self.config.bar_padding_px, debug_path
             )
             self._log(f"  Bar edge at x={bar_x} for page {page_num}")
 

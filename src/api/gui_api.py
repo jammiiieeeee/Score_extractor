@@ -169,7 +169,7 @@ class GuiApi:
             "blank_content_std_threshold", "bar_min_diff_threshold",
         }
         valid_int_1_20 = {"default_strips_per_page"}
-        valid_int_0_100 = {"ocr_confidence_threshold"}
+        valid_int_0_100 = {"ocr_confidence_threshold", "bar_padding_px"}
 
         valid_keys = valid_float_0_1 | valid_float_any | valid_int_1_20 | valid_int_0_100
 
@@ -417,7 +417,8 @@ class GuiApi:
                     debug_path = str(sandbox_path / "bar_profile_page_000.txt") if self._debug_mode else None
                     merged_img, bar_x = self._video_service.merge_frames(
                         a_img, b_img, self._config.b_overlay_width_ratio,
-                        self._config.default_crop_ratio, self._config.bar_min_diff_threshold, debug_path
+                        self._config.default_crop_ratio, self._config.bar_min_diff_threshold,
+                        self._config.bar_padding_px, debug_path
                     )
                     self._emit_log(f"  Start-time capture, bar edge at x={bar_x}")
                     self._add_page(merged_img, a_ts, start_idx, sandbox_path)
@@ -511,7 +512,8 @@ class GuiApi:
                         debug_path = str(sandbox_path / f"bar_profile_page_{len(self._pages) + 1:03d}.txt") if self._debug_mode else None
                         merged_img, bar_x = self._video_service.merge_frames(
                             a_frame.image, b_frame.image, self._config.b_overlay_width_ratio,
-                            self._config.default_crop_ratio, self._config.bar_min_diff_threshold, debug_path
+                            self._config.default_crop_ratio, self._config.bar_min_diff_threshold,
+                            self._config.bar_padding_px, debug_path
                         )
                         self._emit_log(f"  Bar edge at x={bar_x} for page {len(self._pages) + 1}")
 
