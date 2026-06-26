@@ -71,12 +71,14 @@ class VideoService(IVideoService):
                 bar_x = 0
                 merge_x = 0
             else:
-                # Skip the leftmost edge where A's bar creates a false peak
-                edge_margin = max(3, int(len(relevant_sum) * 0.02))
-                search_region = relevant_sum[edge_margin:]
-                if len(search_region) > 0:
-                    bar_x_small = edge_margin + int(np.argmax(search_region))
-                else:
+                # Scan right-to-left, first column > 50% of max is the bar
+                threshold = max_diff * 0.5
+                bar_x_small = -1
+                for col in range(len(relevant_sum) - 1, -1, -1):
+                    if relevant_sum[col] > threshold:
+                        bar_x_small = col
+                        break
+                if bar_x_small < 0:
                     bar_x_small = int(np.argmax(relevant_sum))
                 bar_x = int(bar_x_small * (w / small_w))
                 merge_x = min(bar_x + 10, w)
