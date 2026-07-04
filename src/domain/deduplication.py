@@ -47,7 +47,7 @@ class Deduplicator:
         
         if sim_score > 0.995:
             return True
-        if sim_score < 0.950:
+        if sim_score < self.config.pixel_similarity_threshold:
             return False
             
         # Step 2: Row-wise Similarity
@@ -55,16 +55,14 @@ class Deduplicator:
         return is_row_dup
 
     def _apply_bar_mask(self, img: np.ndarray, other_img: np.ndarray) -> np.ndarray:
-        # Identify the bar by comparing with the other image
         diff = cv2.absdiff(img, other_img)
         gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
         vertical_sum = np.sum(gray_diff, axis=0)
         
-        search_range = int(img.shape[1] * 0.4)
+        search_range = int(img.shape[1] * 0.5)
         if len(vertical_sum) > search_range:
             bar_x = np.argmax(vertical_sum[:search_range])
             
-            # Black out the bar region in a copy
             masked = img.copy()
             x_start = max(0, bar_x - 15)
             x_end = min(img.shape[1], bar_x + 15)
@@ -85,18 +83,15 @@ class Deduplicator:
         height = img1.shape[0]
         max_row = int(height * self.config.duplicate_top_ratio)
         
-        g1 = cv2.cvtColor(img1[:max_row, :], cv2.COLOR_BGR2GRAY)
-        g2 = cv2.cvtColor(img2[:max_row, :], cv2.COLOR_BGR2GRAY)
+        g1 = cv2.cvtColor(img1[:max_row, :], cv2.COLOR_BGR2GRAY).astype(np.float64)
+        g2 = cv2.cvtColor(img2[:max_row, :], cv2.COLOR_BGR2GRAY).astype(np.float64)
         
         similar_rows = 0
-        total_rows = max_row
         
-        for i in range(total_rows):
+        for i in range(max_row):
             row1 = g1[i, :]
             row2 = g2[i, :]
             
-            # Use correlation for row-wise check
-            # Adding a small constant to avoid division by zero in flat areas
             std1 = np.std(row1)
             std2 = np.std(row2)
             
@@ -104,9 +99,9 @@ class Deduplicator:
                 similar_rows += 1
                 continue
                 
-            res = cv2.matchTemplate(row1.reshape(1, -1), row2.reshape(1, -1), cv2.TM_CCOEFF_NORMED)
-            if res[0][0] > self.config.row_similarity_threshold:
+            corr = np.corrcoef(row1, row2)[0, 1]
+            if not np.isnan(corr) and corr > self.config.row_similarity_threshold:
                 similar_rows += 1
                 
-        coverage = similar_rows / total_rows
+        coverage = similar_rows / max_row
         return coverage > self.config.row_coverage_threshold
