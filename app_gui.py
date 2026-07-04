@@ -812,7 +812,7 @@ class ExtractTab(QWidget):
         self.yt_url_edit.setPlaceholderText("Paste YouTube video URL")
 
         self.quality_combo = QComboBox()
-        self.quality_combo.addItem("Best (≤1080p)", "best[height<=1080]")
+        self.quality_combo.addItem("Best (≤1080p)", "bestvideo[height<=1080]+bestaudio/best[height<=1080]")
         self.quality_combo.addItem("720p", "best[height<=720]")
         self.quality_combo.addItem("480p", "best[height<=480]")
         self.quality_combo.addItem("360p", "best[height<=360]")

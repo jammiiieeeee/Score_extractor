@@ -1,5 +1,6 @@
 import cv2
 import os
+import time
 import numpy as np
 from pathlib import Path
 from typing import Callable, List, Optional, TextIO
@@ -39,11 +40,12 @@ class ExtractScoreUseCase:
         is_cancelled: Callable[[], bool] = lambda: False,
     ) -> List[Frame]:
         self.video_service.open_video(video_path)
+        self._orig_w, self._orig_h = self.video_service.get_original_size()
 
         effective_ocr: IOcrService
         if no_ocr:
-            from src.infrastructure.ocr_service import OcrService
-            effective_ocr = OcrService()
+            from src.domain.interfaces import _NoopOcrService
+            effective_ocr = _NoopOcrService()
         else:
             if not self.ocr_service.initialize():
                 on_log("[Warning] OCR initialization failed, continuing without OCR.")
@@ -125,17 +127,24 @@ class ExtractScoreUseCase:
 
         log(f"Starting extraction from ~{current_idx / fps:.1f}s...")
 
+        t_loop = time.time()
+        n_frames = 0
         while True:
             if is_cancelled():
                 log("Extraction cancelled.")
                 break
 
-            current_idx += seek_step
-            frame_img, timestamp = self.video_service.read_frame_at(current_idx)
+            t0 = time.time()
+            # Fast-forward through intermediate frames (grab only, no decode)
+            if seek_step > 1:
+                self.video_service.skip_frames(seek_step - 1)
+            frame_img, timestamp, current_idx = self.video_service.read_next_frame()
             if frame_img is None:
                 break
 
+            t_read = time.time() - t0
             current_frame = Frame(frame_img.copy(), timestamp, current_idx)
+            n_frames += 1
 
             total_frames = self.video_service.get_total_frames()
             if total_frames > 0:
@@ -143,7 +152,9 @@ class ExtractScoreUseCase:
             else:
                 percent = 0.0
             if on_progress:
-                on_progress(percent, f"Checking frame at {timestamp:.1f}s")
+                elapsed = time.time() - t_loop
+                avg = elapsed / n_frames
+                on_progress(percent, f"Frame {current_idx}/{total_frames} at {timestamp:.1f}s  ({t_read*1000:.0f}ms/frame  {elapsed:.0f}s elapsed)")
 
             # Blank-content detection
             if len(unique_pages) > 0:
@@ -224,7 +235,7 @@ class ExtractScoreUseCase:
                     while tail_idx < total_frames:
                         if is_cancelled():
                             break
-                        tail_img, tail_ts = self.video_service.read_frame_at(tail_idx)
+                        tail_img, tail_ts = self.video_service.read_full_frame_at(tail_idx)
                         if tail_img is None:
                             break
                         if effective_ocr.detect_keywords(tail_img, ["thank"]):
@@ -355,19 +366,40 @@ class ExtractScoreUseCase:
         )
         log(f"  Bar edge at x={bar_x} for page {page_num}")
 
-        # Write debug A/B frames
+        # Upscale merged to original resolution (used for saving, storing, and dedup comparison)
+        full_img = cv2.resize(merged_img, (self._orig_w, self._orig_h),
+                              interpolation=cv2.INTER_CUBIC)
+
+        # Write debug A/B frames (full-res for clarity)
         if debug:
-            cv2.imwrite(str(output_dir / "debug" / f"page_{page_num:03d}_A.png"), frame_a.image)
-            cv2.imwrite(str(output_dir / "debug" / f"page_{page_num:03d}_B.png"), frame_b.image)
+            dbg_a, _ = self.video_service.read_full_frame_at(frame_a.index)
+            dbg_b, _ = self.video_service.read_full_frame_at(frame_b.index)
+            if dbg_a is not None:
+                cv2.imwrite(str(output_dir / "debug" / f"page_{page_num:03d}_A.png"), dbg_a)
+            if dbg_b is not None:
+                cv2.imwrite(str(output_dir / "debug" / f"page_{page_num:03d}_B.png"), dbg_b)
 
         # Deduplication check
         is_dup = False
         merged_number = None
         if ocr_service.is_enabled():
-            merged_number = ocr_service.get_leftmost_number(
-                merged_img, self.config.duplicate_top_ratio,
-                self.config.ocr_horizontal_ratio, self.config.ocr_confidence_threshold
-            )
+            full_a, _ = self.video_service.read_full_frame_at(frame_a.index)
+            full_b, _ = self.video_service.read_full_frame_at(frame_b.index)
+            if full_a is not None and full_b is not None:
+                ocr_merged, _ = self.video_service.merge_frames(
+                    full_a, full_b, self.config.b_overlay_width_ratio,
+                    self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
+                    self.config.bar_padding_px, None
+                )
+                merged_number = ocr_service.get_leftmost_number(
+                    ocr_merged, self.config.duplicate_top_ratio,
+                    self.config.ocr_horizontal_ratio, self.config.ocr_confidence_threshold
+                )
+            else:
+                merged_number = ocr_service.get_leftmost_number(
+                    merged_img, self.config.duplicate_top_ratio,
+                    self.config.ocr_horizontal_ratio, self.config.ocr_confidence_threshold
+                )
 
         # Guard rail: if the bar profile between the original A and B frames
         # lacks two clean peaks, treat as duplicate (likely false trigger)
@@ -384,17 +416,17 @@ class ExtractScoreUseCase:
             log(f"  Page {page_num}: Left spike outside margin, treated as duplicate")
 
         for existing in unique_pages:
-            if deduplicator.is_duplicate(existing.image, merged_img, b_number=merged_number):
+            if deduplicator.is_duplicate(existing.image, full_img, b_number=merged_number):
                 is_dup = True
                 break
 
         if not is_dup:
-            frame = Frame(merged_img.copy(), frame_a.timestamp, frame_a.index)
+            frame = Frame(full_img.copy(), frame_a.timestamp, frame_a.index)
             unique_pages.append(frame)
-            self.file_service.save_page_image(output_dir, page_num, merged_img)
+            self.file_service.save_page_image(output_dir, page_num, full_img)
             log(f"  New page detected at {frame_a.timestamp:.2f}s (Index: {frame_a.index})")
             if on_page_detected:
-                on_page_detected(len(unique_pages) - 1, merged_img)
+                on_page_detected(len(unique_pages) - 1, full_img)
         else:
             log(f"  Duplicate page skipped at {frame_a.timestamp:.2f}s")
 

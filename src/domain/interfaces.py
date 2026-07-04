@@ -14,11 +14,32 @@ class IVideoService(ABC):
         pass
 
     @abstractmethod
+    def get_original_size(self):
+        """Returns (width, height) of the original video frames."""
+        pass
+
+    @abstractmethod
     def read_frames(self):
         pass
 
     @abstractmethod
     def read_frame_at(self, frame_idx: int):
+        """Returns (frame_360p, timestamp). Frame is resized to ~360p."""
+        pass
+
+    @abstractmethod
+    def read_next_frame(self):
+        """Reads the next frame sequentially (no seek). Returns (frame_360p, timestamp, frame_idx) or (None, None, None)."""
+        pass
+
+    @abstractmethod
+    def skip_frames(self, count: int):
+        """Read and discard count frames without decoding (faster)."""
+        pass
+
+    @abstractmethod
+    def read_full_frame_at(self, frame_idx: int):
+        """Returns (frame_full_res, timestamp) without resizing."""
         pass
 
     @abstractmethod
@@ -76,6 +97,18 @@ class IOcrService(ABC):
     @abstractmethod
     def get_texts(self, image: np.ndarray) -> List[str]:
         pass
+
+class _NoopOcrService(IOcrService):
+    def initialize(self) -> bool:
+        return False
+    def get_leftmost_number(self, image: np.ndarray, vertical_range: float, horizontal_ratio: float = 1.0, confidence_threshold: int = 0) -> Optional[int]:
+        return None
+    def is_enabled(self) -> bool:
+        return False
+    def detect_keywords(self, image: np.ndarray, keywords: List[str]) -> bool:
+        return False
+    def get_texts(self, image: np.ndarray) -> List[str]:
+        return []
 
 class IPdfService(ABC):
     @abstractmethod

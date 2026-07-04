@@ -411,7 +411,7 @@ class GuiApi:
     #  YouTube Download
     # ═════════════════════════════════════════════════════════════════════
 
-    def download_youtube(self, url: str, fmt: str = "best[height<=1080]") -> None:
+    def download_youtube(self, url: str, fmt: str = "bestvideo[height<=1080]+bestaudio/best[height<=1080]") -> None:
         if self.is_busy():
             raise RuntimeError("Extraction or PDF generation already in progress")
 
@@ -426,7 +426,7 @@ class GuiApi:
         )
         self._download_thread.start()
 
-    def _run_youtube_download(self, url: str, fmt: str = "best[height<=1080]"):
+    def _run_youtube_download(self, url: str, fmt: str = "bestvideo[height<=1080]+bestaudio/best[height<=1080]"):
         try:
             import yt_dlp
 
@@ -449,6 +449,7 @@ class GuiApi:
                     finished_logged = True
                     self._emit_log("  Download finished, processing...")
 
+            ffmpeg_path = r"C:\Users\hosze\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe"
             ydl_opts = {
                 'format': fmt,
                 'outtmpl': output_template,
@@ -457,6 +458,7 @@ class GuiApi:
                 'no_warnings': True,
                 'noplaylist': True,
                 'playlistend': 1,
+                'ffmpeg_location': ffmpeg_path,
             }
 
             self._emit_log(f"Downloading: {url}")

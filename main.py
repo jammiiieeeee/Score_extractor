@@ -8,7 +8,6 @@ from pathlib import Path
 
 from src.domain.value_objects.config import ScoreConfig
 from src.infrastructure.video_service import VideoService
-from src.infrastructure.ocr_service import OcrService
 from src.infrastructure.pdf_service import PdfService
 from src.infrastructure.file_service import FileService
 from src.application.use_cases import ExtractScoreUseCase, GeneratePdfUseCase
@@ -88,7 +87,10 @@ def main():
             sys.exit(1)
 
         video_service = VideoService()
-        ocr_service = OcrService()
+        ocr_service = None
+        if not args.no_ocr:
+            from src.infrastructure.ocr_service import OcrService
+            ocr_service = OcrService()
         pdf_service = PdfService()
         file_service = FileService()
 
@@ -114,6 +116,7 @@ def main():
                 start_time=args.start_time,
                 debug=args.debug,
                 duration=args.duration,
+                on_progress=lambda pct, msg: print(f"\r  [{pct:5.1f}%] {msg}", end="", flush=True) if pct > 0 else None,
             )
             print(f"\nExtraction complete: {len(pages)} pages found")
 
@@ -131,6 +134,8 @@ def main():
                 print(f"Debug files kept in: {output_dir / 'debug'}")
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"\n[Error] {e}")
             sys.exit(1)
         finally:
