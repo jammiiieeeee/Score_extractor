@@ -44,7 +44,7 @@ class VideoService(IVideoService):
         timestamp = frame_idx / self.fps
         return frame, timestamp
 
-    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, bar_padding_px: int = 10, debug_save_path: Optional[str] = None) -> Tuple[np.ndarray, int]:
+    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, bar_padding_px: int = -10, debug_save_path: Optional[str] = None) -> Tuple[np.ndarray, int]:
         h, w = frame_a.shape[:2]
 
         # Downscale to 640px for bar detection

@@ -748,7 +748,7 @@ class ConfigTab(QWidget):
             self.adv_crop_offset.setValue(cfg.get("crop_top_offset", 0.0))
             self.adv_blank_std.setValue(cfg.get("blank_content_std_threshold", 3.0))
             self.adv_bar_diff.setValue(cfg.get("bar_min_diff_threshold", 500.0))
-            self.adv_bar_pad.setValue(cfg.get("bar_padding_px", 10))
+            self.adv_bar_pad.setValue(cfg.get("bar_padding_px", -10))
             self.debug_cb.setChecked(self._api.is_debug_mode())
         finally:
             self._updating = False
