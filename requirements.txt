@@ -8,3 +8,4 @@ scikit-image
 pathlib
 PyQt6
 yt-dlp
+matplotlib

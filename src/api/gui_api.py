@@ -6,18 +6,16 @@ import sys
 import cv2
 import numpy as np
 from dataclasses import dataclass, asdict
-from datetime import datetime
 from pathlib import Path
 from typing import Optional, Callable, List
-from skimage.metrics import structural_similarity as ssim
 
 from src.domain.value_objects.config import ScoreConfig
 from src.domain.models import Frame
-from src.domain.deduplication import Deduplicator
 from src.infrastructure.video_service import VideoService
 from src.infrastructure.ocr_service import OcrService
 from src.infrastructure.pdf_service import PdfService
 from src.infrastructure.file_service import FileService
+from src.application.use_cases import ExtractScoreUseCase
 
 
 @dataclass
@@ -39,11 +37,10 @@ class ExtractionState:
 
 
 @dataclass
-class SandboxInfo:
+class ScoreInfo:
     path: str
     page_count: int
-    created: datetime
-    video_name: str
+    score_name: str
 
 
 class GuiApi:
@@ -259,19 +256,15 @@ class GuiApi:
         if self._ocr_service is None:
             self._ocr_service = OcrService()
 
-        log_captured = []
-
-        def capture_print(text):
-            text = text.strip()
-            if text:
-                log_captured.append(text)
-                self._emit_log(text)
-
         old_stdout = sys.stdout
+
+        gui_self = self
 
         class CapturePrint:
             def write(self, text):
-                capture_print(text)
+                text = text.strip()
+                if text:
+                    gui_self._emit_log(text)
             def flush(self):
                 pass
 
@@ -326,8 +319,8 @@ class GuiApi:
     # ═════════════════════════════════════════════════════════════════════
 
     def start_extraction(self, video_path: Optional[str] = None, no_ocr: bool = False,
-                         start_time: float = -1.0, duration: float = 0.0,
-                         debug: bool = False) -> None:
+                         start_time: float = 2.0, duration: float = 0.0,
+                         output_folder: str = "", score_name: str = "") -> None:
         if self.is_busy():
             raise RuntimeError("Extraction or PDF generation already in progress")
 
@@ -337,6 +330,9 @@ class GuiApi:
         if self._video_service is None or self._video_info is None:
             raise RuntimeError("No video opened. Call open_video() or provide video_path.")
 
+        if not output_folder or not score_name:
+            raise RuntimeError("output_folder and score_name are required")
+
         self._cancel_flag = False
         self._pages.clear()
         self._page_png_cache.clear()
@@ -345,7 +341,7 @@ class GuiApi:
 
         self._extraction_thread = threading.Thread(
             target=self._run_extraction,
-            args=(no_ocr, start_time, duration, self._debug_mode),
+            args=(no_ocr, start_time, duration, self._debug_mode, output_folder, score_name),
             daemon=True,
         )
         self._extraction_thread.start()
@@ -362,20 +358,10 @@ class GuiApi:
             self._state.elapsed_seconds = elapsed
         return self._state
 
-    def _check_cancel(self) -> bool:
-        if self._cancel_flag:
-            self._state.phase = "idle"
-            self._emit_cancelled()
-            return True
-        return False
-
-    def _run_extraction(self, no_ocr: bool, start_time: float, duration: float, debug: bool):
+    def _run_extraction(self, no_ocr: bool, start_time: float, duration: float,
+                        debug: bool, output_folder: str, score_name: str):
         try:
-            fps = self._video_info.fps
-            cooldown_frames = int(self._config.min_screenshot_interval * fps)
-            stability_frames = int(self._config.b_capture_delay * fps)
-            seek_step = max(1, int(self._config.frame_check_interval * fps))
-            scan_step = max(1, int(0.1 * fps))
+            score_dir = self._file_service.prepare_output_dir(output_folder, score_name)
 
             effective_ocr: OcrService
             if no_ocr:
@@ -385,199 +371,25 @@ class GuiApi:
                     self.init_ocr()
                 effective_ocr = self._ocr_service if (self._ocr_service and self._ocr_service.is_enabled()) else OcrService()
 
-            deduplicator = Deduplicator(self._config, effective_ocr)
-            ocr_available = effective_ocr.is_enabled()
+            use_case = ExtractScoreUseCase(self._video_service, effective_ocr,
+                                           self._file_service, self._config)
 
-            def get_roi(img):
-                h, w = img.shape[:2]
-                y_end = int(h * self._config.top_analysis_ratio)
-                roi = img[0:y_end, :]
-                small = cv2.resize(roi, (320, int(320 * (y_end / h))))
-                return cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+            pages = use_case.execute(
+                self._video_info.path,
+                output_dir=score_dir,
+                no_ocr=no_ocr,
+                start_time=start_time,
+                debug=debug,
+                duration=duration,
+                on_log=self._emit_log,
+                on_progress=lambda pct, d: self._emit_progress("extracting", pct, d),
+                is_cancelled=lambda: self._cancel_flag,
+            )
 
-            self._emit_log(f"Processing video: {self._video_info.path}")
-
-            sandbox_path = self._file_service.create_sandbox()
-
-            last_trigger_idx = -cooldown_frames
-            last_stable_frame = None
-            current_idx = 0
-
-            if start_time >= 0:
-                start_idx = int(start_time * fps)
-                a_img, a_ts = self._video_service.read_frame_at(start_idx)
-                if a_img is not None:
-                    self._emit_log(f"Start-time capture at {a_ts:.1f}s...")
-                    b_idx = start_idx + stability_frames
-                    b_img, b_ts = self._video_service.read_frame_at(b_idx)
-                    if b_img is None:
-                        b_img, b_ts = a_img.copy(), a_ts
-                        b_idx = start_idx
-
-                    debug_path = str(sandbox_path / "bar_profile_page_000.txt") if self._debug_mode else None
-                    merged_img, bar_x = self._video_service.merge_frames(
-                        a_img, b_img, self._config.b_overlay_width_ratio,
-                        self._config.default_crop_ratio, self._config.bar_min_diff_threshold,
-                        self._config.bar_padding_px, debug_path
-                    )
-                    self._emit_log(f"  Start-time capture, bar edge at x={bar_x}")
-                    self._add_page(merged_img, a_ts, start_idx, sandbox_path)
-                    last_trigger_idx = start_idx
-                    last_stable_frame = Frame(b_img.copy(), b_ts, b_idx)
-                    current_idx = b_idx
-                else:
-                    self._emit_log("Warning: Could not seek to start time, starting from beginning.")
-                    dummy_img, dummy_ts = self._video_service.read_frame_at(0)
-                    if dummy_img is None:
-                        raise RuntimeError("Could not read video.")
-                    current_idx = 0
-                    last_stable_frame = Frame(dummy_img.copy(), dummy_ts, 0)
-            else:
-                dummy_img, dummy_ts = self._video_service.read_frame_at(0)
-                if dummy_img is None:
-                    raise RuntimeError("Could not read video.")
-                current_idx = 0
-                last_stable_frame = Frame(dummy_img.copy(), dummy_ts, 0)
-
-            self._emit_log(f"Starting extraction from ~{current_idx / fps:.1f}s...")
-
-            while True:
-                if self._check_cancel():
-                    return
-
-                current_idx += seek_step
-                frame_img, timestamp = self._video_service.read_frame_at(current_idx)
-                if frame_img is None:
-                    break
-
-                current_frame = Frame(frame_img.copy(), timestamp, current_idx)
-
-                if self._video_info.frame_count > 0:
-                    percent = min(95.0, (current_idx / self._video_info.frame_count) * 100.0)
-                else:
-                    percent = 0.0
-                self._state.current_timestamp = timestamp
-                self._emit_progress("extracting", percent, f"Checking frame at {timestamp:.1f}s")
-
-                if len(self._pages) > 0:
-                    roi_std = np.std(get_roi(current_frame.image))
-                    if roi_std < self._config.blank_content_std_threshold:
-                        self._emit_log("  End of score detected (blank content).")
-                        break
-
-                if duration > 0 and timestamp >= duration:
-                    self._emit_log(f"  Duration limit reached ({duration:.1f}s).")
-                    break
-
-                if (current_idx - last_trigger_idx) > cooldown_frames and last_stable_frame is not None:
-                    score = ssim(get_roi(last_stable_frame.image), get_roi(current_frame.image))
-
-                    if score < self._config.change_detection_threshold:
-                        self._emit_log(f"  Change detected at ~{timestamp:.1f}s, scanning...")
-
-                        scan_start = last_stable_frame.index + scan_step
-                        a_frame = None
-
-                        for scan_idx in range(scan_start, current_idx + 1, scan_step):
-                            if self._check_cancel():
-                                return
-                            scan_img, scan_ts = self._video_service.read_frame_at(scan_idx)
-                            if scan_img is None:
-                                break
-                            scan_score = ssim(get_roi(last_stable_frame.image), get_roi(scan_img))
-                            if scan_score < self._config.change_detection_threshold:
-                                a_frame = Frame(scan_img.copy(), scan_ts, scan_idx)
-                                break
-
-                        if a_frame is None:
-                            a_frame = current_frame
-
-                        delay_frames = int(self._config.a_capture_delay * fps)
-                        if delay_frames > 0:
-                            cap_idx = a_frame.index + delay_frames
-                            cap_img, cap_ts = self._video_service.read_frame_at(cap_idx)
-                            if cap_img is not None:
-                                a_frame = Frame(cap_img.copy(), cap_ts, cap_idx)
-
-                        b_idx = a_frame.index + stability_frames
-                        b_img, b_ts = self._video_service.read_frame_at(b_idx)
-                        if b_img is None:
-                            b_img = a_frame.image.copy()
-                            b_ts = a_frame.timestamp
-
-                        b_frame = Frame(b_img.copy(), b_ts, b_idx)
-
-                        if self._check_cancel():
-                            return
-                        debug_path = str(sandbox_path / f"bar_profile_page_{len(self._pages) + 1:03d}.txt") if self._debug_mode else None
-                        merged_img, bar_x = self._video_service.merge_frames(
-                            a_frame.image, b_frame.image, self._config.b_overlay_width_ratio,
-                            self._config.default_crop_ratio, self._config.bar_min_diff_threshold,
-                            self._config.bar_padding_px, debug_path
-                        )
-                        self._emit_log(f"  Bar edge at x={bar_x} for page {len(self._pages) + 1}")
-
-                        merged_number = None
-                        if ocr_available:
-                            merged_number = effective_ocr.get_leftmost_number(
-                                merged_img, self._config.duplicate_top_ratio,
-                                self._config.ocr_horizontal_ratio, self._config.ocr_confidence_threshold
-                            )
-
-                        is_dup = False
-                        for existing in self._pages:
-                            if deduplicator.is_duplicate(existing.image, merged_img, b_number=merged_number):
-                                is_dup = True
-                                break
-
-                        if not is_dup:
-                            self._add_page(merged_img, a_frame.timestamp, a_frame.index, sandbox_path)
-                        else:
-                            self._emit_log(f"  Duplicate page skipped at {a_frame.timestamp:.2f}s")
-
-                        last_trigger_idx = a_frame.index
-
-                last_stable_frame = current_frame
-
-            # Tail scan for end-credits
-            if not self._cancel_flag:
-                try:
-                    total_frames = self._video_info.frame_count
-                    last_20s_frame = total_frames - int(20 * fps)
-                    tail_start = max(last_20s_frame, current_idx)
-                    tail_step = int(2.0 * fps)
-
-                    if tail_start < total_frames and ocr_available:
-                        self._emit_log("  Scanning final 20 seconds for end-credits...")
-                        tail_idx = tail_start
-                        while tail_idx < total_frames:
-                            if self._check_cancel():
-                                return
-                            tail_img, tail_ts = self._video_service.read_frame_at(tail_idx)
-                            if tail_img is None:
-                                break
-                            if effective_ocr.detect_keywords(tail_img, ["thank"]):
-                                trim_time = tail_ts - 2.0
-                                self._emit_log(f"  'Thank you' detected at {tail_ts:.1f}s, trimming.")
-                                trimmed = [(p, c) for p, c in zip(self._pages, self._page_png_cache)
-                                           if p.timestamp <= trim_time]
-                                self._pages = [t[0] for t in trimmed]
-                                self._page_png_cache = [t[1] for t in trimmed]
-                                break
-                            tail_idx += tail_step
-                        else:
-                            self._emit_log("  No 'Thank you' detected in final 20 seconds.")
-                except Exception:
-                    pass
+            self._pages = pages
+            self._page_png_cache = [self._encode_png(p.image) for p in pages]
 
             if not self._cancel_flag:
-                # Rename sandbox to video filename
-                try:
-                    video_stem = Path(self._video_info.path).stem
-                    self._file_service.rename_sandbox(video_stem)
-                except Exception as e:
-                    self._emit_log(f"  Could not rename sandbox: {e}")
-
                 self._state.phase = "done"
                 self._state.pages_detected = len(self._pages)
                 self._emit_progress("extracting", 100.0, "Extraction complete")
@@ -591,22 +403,6 @@ class GuiApi:
 
         finally:
             self._extraction_thread = None
-
-    def _add_page(self, merged_img: np.ndarray, timestamp: float, index: int, sandbox_path: Path):
-        page_num = len(self._pages) + 1
-        png_bytes = self._encode_png(merged_img)
-
-        frame = Frame(merged_img.copy(), timestamp, index)
-        self._pages.append(frame)
-        self._page_png_cache.append(png_bytes)
-
-        m_path = sandbox_path / f"page_{page_num:03d}_merged.png"
-        cv2.imwrite(str(m_path), merged_img)
-
-        self._state.pages_detected = len(self._pages)
-        self._emit_log(f"  New page detected at {timestamp:.2f}s (Index: {index})")
-        if png_bytes is not None:
-            self._emit_page_detected(len(self._pages) - 1, png_bytes)
 
     # ═════════════════════════════════════════════════════════════════════
     #  YouTube Download
@@ -664,10 +460,8 @@ class GuiApi:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 video_title = info.get('title', 'video')
-                # Find actual downloaded file
                 candidates = list(dl_dir.glob(f"{video_title}.*"))
                 candidates.extend(dl_dir.glob("*.mp4"))
-                # yt-dlp sanitizes the title; find any new file in dl_dir
                 if not candidates:
                     candidates = sorted(dl_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)
                 if not candidates:
@@ -679,7 +473,6 @@ class GuiApi:
             if self._cancel_flag:
                 raise Exception("Download cancelled by user")
 
-            # Open the downloaded video for preview
             self.open_video(video_path)
             self._emit_download_completed(video_path)
             self._emit_log(f"Video ready: {video_path}")
@@ -760,28 +553,15 @@ class GuiApi:
 
     def _run_generate_pdf(self, output_path: str, title: Optional[str] = None):
         try:
-            try:
-                sandbox_path = self._file_service.get_sandbox_path()
-            except RuntimeError:
-                sandbox_path = self._file_service.create_sandbox()
-
-            draft_pdf_name = "draft_output.pdf"
-            final_title = title if title else Path(output_path).stem
             images = [f.image for f in self._pages]
+            final_title = title if title else Path(output_path).stem
+            output = Path(output_path)
+            output.parent.mkdir(parents=True, exist_ok=True)
 
             self._emit_log(f"Generating PDF with {len(images)} pages...")
             self._emit_progress("generating_pdf", 0.0, "Starting PDF generation...")
 
-            old_cwd = os.getcwd()
-            os.chdir(sandbox_path)
-            try:
-                self._pdf_service.create_pdf(images, Path(draft_pdf_name), self._config, title_hint=final_title)
-            finally:
-                os.chdir(old_cwd)
-
-            self._emit_progress("generating_pdf", 90.0, "Finalizing PDF...")
-            self._emit_log(f"Finalizing PDF: {output_path}")
-            self._file_service.move_to_final(draft_pdf_name, Path(output_path))
+            self._pdf_service.create_pdf(images, output, self._config, title_hint=final_title)
 
             self._emit_progress("generating_pdf", 100.0, "PDF generated successfully")
             self._emit_completed(len(self._pages))
@@ -795,30 +575,14 @@ class GuiApi:
             self._state.phase = "idle"
             self._pdf_thread = None
 
-    def regenerate_from_dir(self, sandbox_dir: str, output_path: Optional[str] = None) -> None:
+    def regenerate_from_dir(self, score_dir: str, output_path: Optional[str] = None) -> None:
         if self.is_busy():
             raise RuntimeError("Extraction or PDF generation already in progress")
 
-        sb_path = Path(sandbox_dir)
-        if not sb_path.is_dir():
-            raise FileNotFoundError(f"Directory not found: {sandbox_dir}")
-
-        files = sorted(
-            sb_path.glob("page_*_merged.png"),
-            key=lambda f: int(f.stem.split("_")[1])
-        )
-        if not files:
-            raise RuntimeError(f"No page images found in {sandbox_dir}")
-
-        images = []
-        for f in files:
-            file_bytes = np.fromfile(str(f), dtype=np.uint8)
-            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-            if img is not None:
-                images.append(img)
-
+        sb_path = Path(score_dir)
+        images = self._file_service.load_page_images(sb_path)
         if not images:
-            raise RuntimeError("Could not decode any page images")
+            raise RuntimeError(f"No page images found in {score_dir}/photos/")
 
         self._pages.clear()
         self._page_png_cache.clear()
@@ -828,84 +592,41 @@ class GuiApi:
             self._page_png_cache.append(self._encode_png(img))
 
         if output_path is None:
-            output_path = sb_path.stem + ".pdf"
+            output_path = str(sb_path / f"{sb_path.name}.pdf")
 
-        self._emit_log(f"Loaded {len(images)} pages from {sandbox_dir}")
-        self._file_service.sandbox_path = sb_path
+        self._emit_log(f"Loaded {len(images)} pages from {score_dir}")
         self.generate_pdf(output_path)
 
     # ═════════════════════════════════════════════════════════════════════
-    #  Sandbox Management (24-26)
+    #  Score Management
     # ═════════════════════════════════════════════════════════════════════
 
-    def list_sandboxes(self) -> list[SandboxInfo]:
-        results = []
-        base_dir = self._file_service.base_dir
-        if not base_dir.exists():
-            return results
+    def list_saved_scores(self, output_folder: str) -> list[ScoreInfo]:
+        results = self._file_service.list_saved_scores(output_folder)
+        return [ScoreInfo(**r) for r in results]
 
-        for d in base_dir.iterdir():
-            if d.is_dir() and d.name.startswith("tmp_"):
-                page_files = sorted(d.glob("page_*_merged.png"))
-                page_count = len(page_files)
-                created = datetime.fromtimestamp(d.stat().st_ctime)
-
-                video_name = d.name
-                log_file = d / "extraction.log"
-                if log_file.exists():
-                    try:
-                        with open(log_file, 'r', encoding='utf-8') as f:
-                            first_line = f.readline().strip()
-                        if first_line.startswith("Processing video:"):
-                            video_name = Path(first_line.split("Processing video:")[1].strip()).stem
-                    except Exception:
-                        pass
-
-                results.append(SandboxInfo(
-                    path=str(d),
-                    page_count=page_count,
-                    created=created,
-                    video_name=video_name,
-                ))
-
-        results.sort(key=lambda x: x.created, reverse=True)
-        return results
-
-    def load_sandbox(self, path: str) -> int:
-        sb_path = Path(path)
-        if not sb_path.is_dir():
-            raise FileNotFoundError(f"Directory not found: {path}")
-
-        files = sorted(
-            sb_path.glob("page_*_merged.png"),
-            key=lambda f: int(f.stem.split("_")[1])
-        )
-
+    def load_saved_score(self, path: str) -> int:
+        score_dir = Path(path)
+        images = self._file_service.load_page_images(score_dir)
         self._pages.clear()
         self._page_png_cache.clear()
-
-        for f in files:
-            file_bytes = np.fromfile(str(f), dtype=np.uint8)
-            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-            if img is not None:
-                frame = Frame(img, 0.0, len(self._pages))
-                self._pages.append(frame)
-                self._page_png_cache.append(self._encode_png(img))
-
-        self._file_service.sandbox_path = sb_path
+        for i, img in enumerate(images):
+            frame = Frame(img, 0.0, i)
+            self._pages.append(frame)
+            self._page_png_cache.append(self._encode_png(img))
         self._emit_log(f"Loaded {len(self._pages)} pages from {path}")
         return len(self._pages)
 
-    def delete_sandbox(self, path: str) -> None:
+    def delete_saved_score(self, path: str) -> None:
         import shutil
-        sb_path = Path(path)
-        if not sb_path.exists():
+        score_path = Path(path)
+        if not score_path.exists():
             return
-        shutil.rmtree(sb_path)
-        self._emit_log(f"Deleted sandbox: {path}")
+        shutil.rmtree(score_path)
+        self._emit_log(f"Deleted score: {path}")
 
     # ═════════════════════════════════════════════════════════════════════
-    #  Lifecycle (27-28)
+    #  Lifecycle
     # ═════════════════════════════════════════════════════════════════════
 
     def set_debug_mode(self, enabled: bool) -> None:
@@ -914,20 +635,15 @@ class GuiApi:
     def is_debug_mode(self) -> bool:
         return self._debug_mode
 
-    def open_sandbox_folder(self) -> None:
+    def open_debug_folder(self, score_dir: str) -> None:
         if not self._debug_mode:
             return
-        try:
-            path = self._file_service.get_sandbox_path()
-            os.startfile(str(path.resolve()))
-        except Exception as e:
-            msg = f"Could not open sandbox folder: {e}"
-            if self._on_log:
-                self._on_log(f"  {msg}")
+        debug_path = Path(score_dir) / "debug"
+        if debug_path.exists():
+            os.startfile(str(debug_path.resolve()))
 
     def cleanup(self) -> None:
         self.close_video()
-        self._file_service.cleanup()
         self._pages.clear()
         self._page_png_cache.clear()
 

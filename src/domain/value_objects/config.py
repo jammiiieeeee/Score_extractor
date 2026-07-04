@@ -25,7 +25,7 @@ class ScoreConfig:
     ocr_horizontal_ratio: float = 0.30           # Left portion of frame for OCR search
 
     # PDF Output
-    default_crop_ratio: float = 0.35             # Height of each PDF strip
+    default_crop_ratio: float = 0.33             # Height of each PDF strip
     crop_top_offset: float = 0.0                 # Starting Y offset for crop
     default_strips_per_page: int = 7             # Strips per PDF page
 

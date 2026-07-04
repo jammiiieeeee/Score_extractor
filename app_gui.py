@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from gui_bridge import ExtractionSignals
-from src.api.gui_api import GuiApi, SandboxInfo
+from src.api.gui_api import GuiApi, ScoreInfo
 
 
 # ── Palette (ink-on-cream-paper) ──────────────────────────────────────
@@ -844,16 +844,24 @@ class ExtractTab(QWidget):
         input_grid.addWidget(title_label, 1, 0)
         input_grid.addWidget(self.custom_title_edit, 1, 1)
 
-        # Row 2 — Output path
-        out_label = QLabel("Save PDF to:")
+        # Row 2 — Output folder
+        out_label = QLabel("Output folder:")
         out_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.output_path_edit = QLineEdit()
-        self.output_path_edit.setPlaceholderText("output.pdf")
+        self.output_folder_edit = QLineEdit()
+        self.output_folder_edit.setPlaceholderText("Select output folder…")
         self.output_browse_btn = QPushButton("Browse…")
         self.output_browse_btn.setObjectName("secondary")
         input_grid.addWidget(out_label, 2, 0)
-        input_grid.addWidget(self.output_path_edit, 2, 1)
+        input_grid.addWidget(self.output_folder_edit, 2, 1)
         input_grid.addWidget(self.output_browse_btn, 2, 2)
+
+        # Row 3 — Score name
+        name_label = QLabel("Score name:")
+        name_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.score_name_edit = QLineEdit()
+        self.score_name_edit.setPlaceholderText("Auto-filled from video")
+        input_grid.addWidget(name_label, 3, 0)
+        input_grid.addWidget(self.score_name_edit, 3, 1)
 
         layout.addLayout(input_grid)
 
@@ -917,15 +925,24 @@ class ExtractTab(QWidget):
         # Seek bar connection
         self.seek_bar.seek_changed.connect(self._on_seek)
 
-    def get_output_path(self) -> str:
-        path = self.output_path_edit.text().strip()
-        if not path and self._video_path:
-            path = str(Path(self._video_path).with_suffix('.pdf'))
-            self.output_path_edit.setText(path)
-        return path
+    def get_output_folder(self) -> str:
+        return self.output_folder_edit.text().strip()
 
-    def set_output_path(self, path: str):
-        self.output_path_edit.setText(path)
+    def get_score_name(self) -> str:
+        name = self.score_name_edit.text().strip()
+        if not name and self._video_path:
+            name = Path(self._video_path).stem
+        return name
+
+    def get_output_path(self) -> str:
+        folder = self.get_output_folder()
+        name = self.get_score_name()
+        if folder and name:
+            return str(Path(folder) / name / f"{name}.pdf")
+        return ""
+
+    def set_output_folder(self, path: str):
+        self.output_folder_edit.setText(path)
 
     def _browse_video(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -935,11 +952,10 @@ class ExtractTab(QWidget):
             self.video_path_edit.setText(path)
 
     def _browse_output(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save PDF As", "",
-            "PDF files (*.pdf);;All files (*.*)")
+        path = QFileDialog.getExistingDirectory(
+            self, "Select Output Folder", "")
         if path:
-            self.output_path_edit.setText(path)
+            self.output_folder_edit.setText(path)
 
     def _on_source_toggled(self):
         local = self.local_radio.isChecked()
@@ -1028,15 +1044,12 @@ class ExtractTab(QWidget):
             self._video_path = path
             self._video_duration = info.duration
             self.seek_bar.set_duration(info.duration)
-            self.seek_bar.set_start(0.0)
+            self.seek_bar.set_start(2.0)
             self.seek_bar.set_end(info.duration)
 
-            # Default output path
-            if not self.output_path_edit.text().strip():
-                default_pdf = str(Path(path).with_suffix('.pdf'))
-                self.output_path_edit.setText(default_pdf)
-
-            # Auto-populate PDF title from video filename
+            # Auto-populate score name and PDF title
+            if not self.score_name_edit.text():
+                self.score_name_edit.setText(Path(path).stem)
             if not self.custom_title_edit.text():
                 self.custom_title_edit.setText(Path(path).stem)
 
@@ -1071,17 +1084,21 @@ class ExtractTab(QWidget):
             QMessageBox.warning(self, "Error", "Please select a valid video file.")
             return
 
-        output_path = self.get_output_path()
-        if not output_path:
-            QMessageBox.warning(self, "Error", "Please set an output PDF path.")
+        output_folder = self.get_output_folder()
+        score_name = self.get_score_name()
+        if not output_folder:
+            QMessageBox.warning(self, "Error", "Please select an output folder.")
+            return
+        if not score_name:
+            QMessageBox.warning(self, "Error", "Please enter a score name.")
             return
 
-        # Apply config from ConfigTab (parent's sibling)
+        output_path = self.get_output_path()
+
         main_win = self.window()
         if hasattr(main_win, 'config_tab'):
             main_win.config_tab.apply_to_api()
 
-        # Get parameters from seek controls
         start_time = self.seek_bar.get_start()
         duration = self.seek_bar.get_end()
         no_ocr = (self._api.get_config().get("ocr_confidence_threshold", 40) == 0)
@@ -1101,6 +1118,8 @@ class ExtractTab(QWidget):
             no_ocr=no_ocr,
             start_time=start_time,
             duration=duration,
+            output_folder=output_folder,
+            score_name=score_name,
         )
 
     def _cancel_extraction(self):
@@ -1334,26 +1353,26 @@ class ExportTab(QWidget):
         self.regenerate_btn.setEnabled(False)
         layout.addWidget(self.regenerate_btn)
 
-        # Sandbox section
+        # Saved scores section
         layout.addWidget(QLabel(""))
-        sandbox_label = QLabel("Previous Sessions")
-        sandbox_label.setStyleSheet(f"font-size: 16px; font-weight: 600; color: {INK};")
-        layout.addWidget(sandbox_label)
+        saved_label = QLabel("Previous Scores")
+        saved_label.setStyleSheet(f"font-size: 16px; font-weight: 600; color: {INK};")
+        layout.addWidget(saved_label)
 
-        self.sandbox_combo = QComboBox()
-        self.sandbox_combo.setMinimumHeight(32)
-        layout.addWidget(self.sandbox_combo)
+        self.score_combo = QComboBox()
+        self.score_combo.setMinimumHeight(32)
+        layout.addWidget(self.score_combo)
 
         sb_btn_row = QHBoxLayout()
-        self.load_sb_btn = QPushButton("Load Pages")
-        self.load_sb_btn.setObjectName("secondary")
-        self.delete_sb_btn = QPushButton("Delete Sandbox")
-        self.delete_sb_btn.setObjectName("danger")
-        self.refresh_sb_btn = QPushButton("Refresh")
-        self.refresh_sb_btn.setObjectName("secondary")
-        sb_btn_row.addWidget(self.load_sb_btn)
-        sb_btn_row.addWidget(self.delete_sb_btn)
-        sb_btn_row.addWidget(self.refresh_sb_btn)
+        self.load_score_btn = QPushButton("Load Pages")
+        self.load_score_btn.setObjectName("secondary")
+        self.delete_score_btn = QPushButton("Delete Score")
+        self.delete_score_btn.setObjectName("danger")
+        self.refresh_score_btn = QPushButton("Refresh")
+        self.refresh_score_btn.setObjectName("secondary")
+        sb_btn_row.addWidget(self.load_score_btn)
+        sb_btn_row.addWidget(self.delete_score_btn)
+        sb_btn_row.addWidget(self.refresh_score_btn)
         sb_btn_row.addStretch()
         layout.addLayout(sb_btn_row)
 
@@ -1366,20 +1385,20 @@ class ExportTab(QWidget):
 
         # Connections
         self.regenerate_btn.clicked.connect(self._regenerate)
-        self.load_sb_btn.clicked.connect(self._load_sandbox)
-        self.delete_sb_btn.clicked.connect(self._delete_sandbox)
-        self.refresh_sb_btn.clicked.connect(self.refresh_sandboxes)
+        self.load_score_btn.clicked.connect(self._load_saved_score)
+        self.delete_score_btn.clicked.connect(self._delete_saved_score)
+        self.refresh_score_btn.clicked.connect(self.refresh_saved_scores)
 
-    def refresh_sandboxes(self):
-        self.sandbox_combo.clear()
+    def refresh_saved_scores(self):
+        self.score_combo.clear()
         try:
-            sandboxes = self._api.list_sandboxes()
-            for sb in sandboxes:
-                label = f"{sb.video_name} ({sb.page_count} pages, {sb.created.strftime('%Y-%m-%d')})"
-                self.sandbox_combo.addItem(label, sb.path)
-            self._set_status(f"Found {len(sandboxes)} previous sessions.")
+            scores = self._api.list_saved_scores("")
+            for s in scores:
+                label = f"{s.score_name} ({s.page_count} pages)"
+                self.score_combo.addItem(label, s.path)
+            self._set_status(f"Found {len(scores)} previous scores.")
         except Exception as e:
-            self._set_status(f"Error listing sandboxes: {e}")
+            self._set_status(f"Error listing scores: {e}")
 
     def set_output_path(self, path: str):
         self.output_edit.setText(path)
@@ -1395,7 +1414,7 @@ class ExportTab(QWidget):
         output = self.get_output_path()
         if self._api.get_page_count() == 0:
             QMessageBox.warning(self, "No Pages",
-                                "No pages loaded. Load a sandbox or run extraction first.")
+                                "No pages loaded. Load a score or run extraction first.")
             return
         self.regenerate_btn.setEnabled(False)
         self.regenerate_btn.setText("Generating…")
@@ -1407,40 +1426,39 @@ class ExportTab(QWidget):
             self.regenerate_btn.setEnabled(True)
             self.regenerate_btn.setText("Regenerate PDF")
 
-    def _load_sandbox(self):
-        path = self.sandbox_combo.currentData()
+    def _load_saved_score(self):
+        path = self.score_combo.currentData()
         if not path:
-            QMessageBox.information(self, "Select Session",
-                                    "Select a previous session from the list.")
+            QMessageBox.information(self, "Select Score",
+                                    "Select a previous score from the list.")
             return
         try:
-            count = self._api.load_sandbox(path)
-            self._set_status(f"Loaded {count} pages from session.")
+            count = self._api.load_saved_score(path)
+            self._set_status(f"Loaded {count} pages from score.")
             self.regenerate_btn.setEnabled(True)
 
-            # Switch parent's gallery tab to show loaded pages
             main_win = self.window()
             if hasattr(main_win, 'gallery_tab'):
                 main_win.gallery_tab.refresh()
                 main_win.tabs.setCurrentWidget(main_win.gallery_tab)
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Could not load sandbox:\n{e}")
+            QMessageBox.warning(self, "Error", f"Could not load score:\n{e}")
 
-    def _delete_sandbox(self):
-        path = self.sandbox_combo.currentData()
+    def _delete_saved_score(self):
+        path = self.score_combo.currentData()
         if not path:
-            QMessageBox.information(self, "Select Session",
-                                    "Select a previous session from the list.")
+            QMessageBox.information(self, "Select Score",
+                                    "Select a previous score from the list.")
             return
-        reply = QMessageBox.question(self, "Delete Sandbox",
-                                     f"Delete this session permanently?\n\n{path}",
+        reply = QMessageBox.question(self, "Delete Score",
+                                     f"Delete this score permanently?\n\n{path}",
                                      QMessageBox.StandardButton.Yes |
                                      QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                self._api.delete_sandbox(path)
-                self.refresh_sandboxes()
-                self._set_status("Sandbox deleted.")
+                self._api.delete_saved_score(path)
+                self.refresh_saved_scores()
+                self._set_status("Score deleted.")
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Could not delete:\n{e}")
 
@@ -1510,8 +1528,8 @@ class MainWindow(QMainWindow):
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
-        # Refresh sandboxes and config when the respective tabs become visible
-        QTimer.singleShot(200, self.export_tab.refresh_sandboxes)
+        # Refresh scores and config when the respective tabs become visible
+        QTimer.singleShot(200, self.export_tab.refresh_saved_scores)
 
     def _on_progress(self, phase: str, percent: float, detail: str):
         self.extract_tab.on_progress(phase, percent, detail)
@@ -1531,12 +1549,12 @@ class MainWindow(QMainWindow):
             self._generating_pdf = False
             self.extract_tab.on_pdf_completed(page_count)
             self.gallery_tab.refresh()
-            self.export_tab.refresh_sandboxes()
+            self.export_tab.refresh_saved_scores()
         else:
             self.extract_tab.on_completed(page_count)
             self.gallery_tab.refresh()
-            self.api.open_sandbox_folder()
-            # Auto-generate PDF after extraction
+            score_dir = str(Path(self.extract_tab.get_output_folder()) / self.extract_tab.get_score_name())
+            self.api.open_debug_folder(score_dir)
             if page_count > 0:
                 self._generating_pdf = True
             else:
@@ -1553,7 +1571,7 @@ class MainWindow(QMainWindow):
             self.gallery_tab.refresh()
         elif index == 2:  # Export tab
             self.export_tab.set_output_path(self.extract_tab.get_output_path())
-            self.export_tab.refresh_sandboxes()
+            self.export_tab.refresh_saved_scores()
         elif index == 3:  # Config tab
             self.config_tab.refresh_from_api()
 

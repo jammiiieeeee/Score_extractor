@@ -21,7 +21,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.api.gui_api import GuiApi, VideoInfo, ExtractionState, SandboxInfo
+from src.api.gui_api import GuiApi, VideoInfo, ExtractionState, ScoreInfo
 
 
 # ── Test helpers ────────────────────────────────────────────────────────
@@ -247,28 +247,39 @@ def test_all():
         test_video = _find_test_video()
         if test_video is None:
             raise SkipTest("No test video found")
-        api.start_extraction(test_video, no_ocr=True, duration=5.0)
-        # Wait for completion
-        timeout = 60.0
-        start = time.time()
-        while api.is_busy() and time.time() - start < timeout:
-            time.sleep(0.5)
-        state = api.get_extraction_state()
-        assert state.phase in ("done", "error"), f"Extraction ended in {state.phase}"
-        if state.phase == "done":
-            assert completed_count[0] == api.get_page_count()
-            assert state.pages_detected == api.get_page_count()
+        out_dir = tempfile.mkdtemp()
+        import shutil
+        try:
+            api.start_extraction(test_video, no_ocr=True, duration=5.0,
+                                output_folder=out_dir, score_name="test_score")
+            timeout = 60.0
+            start = time.time()
+            while api.is_busy() and time.time() - start < timeout:
+                time.sleep(0.5)
+            state = api.get_extraction_state()
+            assert state.phase in ("done", "error"), f"Extraction ended in {state.phase}"
+            if state.phase == "done":
+                assert completed_count[0] == api.get_page_count()
+                assert state.pages_detected == api.get_page_count()
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
 
     # ── 14. cancel_extraction() ────────────────────────────────────────
     def test_cancel_extraction():
         test_video = _find_test_video()
         if test_video is None:
             raise SkipTest("No test video found")
-        api.start_extraction(test_video, no_ocr=True, duration=999.0)
-        time.sleep(1.0)
-        api.cancel_extraction()
-        time.sleep(2.0)
-        assert not api.is_busy(), "Extraction should have been cancelled"
+        out_dir = tempfile.mkdtemp()
+        import shutil
+        try:
+            api.start_extraction(test_video, no_ocr=True, duration=999.0,
+                                output_folder=out_dir, score_name="test_cancel")
+            time.sleep(1.0)
+            api.cancel_extraction()
+            time.sleep(2.0)
+            assert not api.is_busy(), "Extraction should have been cancelled"
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
 
     # ── 15. get_extraction_state() ─────────────────────────────────────
     def test_get_extraction_state():
@@ -396,10 +407,12 @@ def test_all():
     def test_regenerate_from_dir():
         import tempfile
         tmpdir = tempfile.mkdtemp()
-        # Create dummy page images
+        # Create dummy page images in photos/ subfolder
+        photos_dir = os.path.join(tmpdir, "photos")
+        os.makedirs(photos_dir, exist_ok=True)
         for i in range(2):
             img = make_test_image_ndarray(page_num=i)
-            cv2.imwrite(os.path.join(tmpdir, f"page_{i:03d}_merged.png"), img)
+            cv2.imwrite(os.path.join(photos_dir, f"page_{i:03d}_merged.png"), img)
 
         output = os.path.join(tempfile.gettempdir(), "_test_gui_regenerated.pdf")
         api.regenerate_from_dir(tmpdir, output)
@@ -414,50 +427,41 @@ def test_all():
             assert os.path.getsize(output) > 1000
             os.remove(output)
 
-        # Cleanup temp dir
         import shutil
         shutil.rmtree(tmpdir, ignore_errors=True)
 
-    # ── 24. list_sandboxes() ───────────────────────────────────────────
-    def test_list_sandboxes():
-        sandboxes = api.list_sandboxes()
-        assert isinstance(sandboxes, list)
-        for sb in sandboxes:
-            assert isinstance(sb, SandboxInfo)
-            assert isinstance(sb.path, str)
-            assert isinstance(sb.page_count, int)
+    # ── 24. list_saved_scores() ────────────────────────────────────────
+    def test_list_saved_scores():
+        scores = api.list_saved_scores("")
+        assert isinstance(scores, list)
+        for s in scores:
+            assert isinstance(s, ScoreInfo)
+            assert isinstance(s.path, str)
+            assert isinstance(s.page_count, int)
+            assert isinstance(s.score_name, str)
 
-    # ── 25. load_sandbox() ─────────────────────────────────────────────
-    def test_load_sandbox():
-        sandboxes = api.list_sandboxes()
-        found_valid = False
-        for sb in sandboxes:
-            if sb.page_count > 0:
-                count = api.load_sandbox(sb.path)
-                assert count == sb.page_count
-                assert api.get_page_count() == count
-                found_valid = True
-                break
-        if not found_valid:
-            # Create a sandbox dir manually and test
-            import tempfile
-            tmpdir = tempfile.mkdtemp(suffix="tmp_", dir="debug")
-            for i in range(2):
-                img = make_test_image_ndarray(page_num=i)
-                cv2.imwrite(os.path.join(tmpdir, f"page_{i:03d}_merged.png"), img)
-            count = api.load_sandbox(tmpdir)
-            assert count == 2
-            import shutil
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-    # ── 26. delete_sandbox() ───────────────────────────────────────────
-    def test_delete_sandbox():
+    # ── 25. load_saved_score() ─────────────────────────────────────────
+    def test_load_saved_score():
         import tempfile
-        tmpdir = tempfile.mkdtemp(suffix="tmp_", dir="debug")
-        with open(os.path.join(tmpdir, "dummy.txt"), 'w') as f:
-            f.write("test")
+        tmpdir = tempfile.mkdtemp()
+        photos_dir = os.path.join(tmpdir, "photos")
+        os.makedirs(photos_dir, exist_ok=True)
+        for i in range(2):
+            img = make_test_image_ndarray(page_num=i)
+            cv2.imwrite(os.path.join(photos_dir, f"page_{i:03d}_merged.png"), img)
+        count = api.load_saved_score(tmpdir)
+        assert count == 2
+        import shutil
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    # ── 26. delete_saved_score() ───────────────────────────────────────
+    def test_delete_saved_score():
+        import tempfile
+        tmpdir = tempfile.mkdtemp()
+        photos_dir = os.path.join(tmpdir, "photos")
+        os.makedirs(photos_dir, exist_ok=True)
         assert os.path.exists(tmpdir)
-        api.delete_sandbox(tmpdir)
+        api.delete_saved_score(tmpdir)
         assert not os.path.exists(tmpdir)
 
     # ── 27. cleanup() ──────────────────────────────────────────────────
@@ -515,9 +519,9 @@ def test_all():
         ("clear_pages", test_clear_pages),
         ("generate_pdf", test_generate_pdf),
         ("regenerate_from_dir", test_regenerate_from_dir),
-        ("list_sandboxes", test_list_sandboxes),
-        ("load_sandbox", test_load_sandbox),
-        ("delete_sandbox", test_delete_sandbox),
+        ("list_saved_scores", test_list_saved_scores),
+        ("load_saved_score", test_load_saved_score),
+        ("delete_saved_score", test_delete_saved_score),
         ("cleanup", test_cleanup),
         ("is_busy", test_is_busy),
     ]

@@ -4,6 +4,10 @@
 
 This document defines the PyQt6 graphical interface for non-technical users. It consumes the `GuiApi` (`src/api/gui_api.py`, spec at `@reference gui_api.md`) which handles all background threading, video processing, OCR, and PDF generation.
 
+## Architectural Rule
+
+**The GUI layer (`app_gui.py`, `gui_bridge.py`) is a thin wrapper around the CLI layer (`src/application/use_cases.py`).** It must never duplicate or directly implement business logic, extraction loops, or processing pipelines. All behavior lives in `use_cases.py` or domain/infrastructure classes. If the CLI is missing functionality, implement it in `use_cases.py` and expose it through `GuiApi`. The GUI only handles layout, Qt signal wiring, and callback plumbing.
+
 ## Project Layout
 
 ```

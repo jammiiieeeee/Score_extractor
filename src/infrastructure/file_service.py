@@ -1,66 +1,51 @@
-import uuid
-import shutil
-import os
-import time
+import cv2
+import numpy as np
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from src.domain.interfaces import IFileService
 
 class FileService(IFileService):
     def __init__(self, base_dir: str = "debug"):
         self.base_dir = Path(base_dir)
-        self.sandbox_path: Optional[Path] = None
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
-    def create_sandbox(self) -> Path:
-        sandbox_id = uuid.uuid4()
-        self.sandbox_path = self.base_dir / f"tmp_{sandbox_id}"
-        self.sandbox_path.mkdir(parents=True, exist_ok=True)
-        return self.sandbox_path
+    def prepare_output_dir(self, output_folder: str, score_name: str) -> Path:
+        score_dir = Path(output_folder) / score_name
+        (score_dir / "photos").mkdir(parents=True, exist_ok=True)
+        (score_dir / "video").mkdir(parents=True, exist_ok=True)
+        (score_dir / "debug").mkdir(parents=True, exist_ok=True)
+        return score_dir
 
-    def get_sandbox_path(self) -> Path:
-        if not self.sandbox_path:
-            raise RuntimeError("Sandbox not created.")
-        return self.sandbox_path
+    def save_page_image(self, score_dir: Path, page_num: int, image: np.ndarray) -> Path:
+        path = score_dir / "photos" / f"page_{page_num:03d}_merged.png"
+        cv2.imwrite(str(path), image)
+        return path
 
-    def move_to_final(self, source_name: str, destination_path: Path) -> None:
-        if not self.sandbox_path:
-            raise RuntimeError("Sandbox not created.")
-        
-        source_path = self.sandbox_path / source_name
-        
-        # Ensure destination directory exists
-        destination_path.parent.mkdir(parents=True, exist_ok=True)
+    def load_page_images(self, score_dir: Path) -> List[np.ndarray]:
+        files = sorted(
+            (score_dir / "photos").glob("page_*_merged.png"),
+            key=lambda f: int(f.stem.split("_")[1])
+        )
+        images = []
+        for f in files:
+            file_bytes = np.fromfile(str(f), dtype=np.uint8)
+            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+            if img is not None:
+                images.append(img)
+        return images
 
-        while True:
-            try:
-                # shutil.move handles cross-device moves and unicode paths on Windows
-                shutil.move(str(source_path), str(destination_path))
-                break
-            except PermissionError:
-                print(f"\n[Error] Target file is locked: {destination_path}")
-                input("Please close the PDF and press ENTER to retry...")
-            except Exception as e:
-                print(f"\n[Error] Failed to move file: {e}")
-                raise
-
-    def rename_sandbox(self, new_stem: str) -> Path:
-        if not self.sandbox_path or not self.sandbox_path.exists():
-            raise RuntimeError("Sandbox not created or not found")
-        new_path = self.sandbox_path.with_name(new_stem)
-        if self.sandbox_path != new_path:
-            if new_path.exists():
-                import uuid as _uuid
-                new_path = self.sandbox_path.parent / f"{new_stem}_{_uuid.uuid4().hex[:4]}"
-            self.sandbox_path.rename(new_path)
-            self.sandbox_path = new_path
-        return self.sandbox_path
-
-    def cleanup(self, force: bool = False) -> None:
-        if self.sandbox_path and self.sandbox_path.exists():
-            if force:
-                shutil.rmtree(self.sandbox_path)
-            else:
-                # In a real app, we might check debug flag here
-                shutil.rmtree(self.sandbox_path)
-        self.sandbox_path = None
+    def list_saved_scores(self, output_folder: str) -> List[dict]:
+        results = []
+        base = Path(output_folder)
+        if not base.exists():
+            return results
+        for d in base.iterdir():
+            if d.is_dir() and (d / "photos").is_dir():
+                page_files = sorted(d.glob("photos/page_*_merged.png"))
+                results.append({
+                    "path": str(d),
+                    "page_count": len(page_files),
+                    "score_name": d.name,
+                })
+        results.sort(key=lambda x: x["score_name"])
+        return results
