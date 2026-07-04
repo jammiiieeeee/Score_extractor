@@ -247,6 +247,91 @@ class ExtractScoreUseCase:
 
         return unique_pages
 
+    def _save_bar_profile_plot(
+        self, frame_a: np.ndarray, frame_b: np.ndarray,
+        crop_ratio: float, bar_x: int, bar_padding_px: int,
+        margin_col: int, output_path: Path, page_num: int,
+        deduplicator
+    ):
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        h, w = frame_a.shape[:2]
+        scale = 640 / w
+        target_h = int(h * scale)
+        a_small = cv2.resize(frame_a, (640, target_h))
+        b_small = cv2.resize(frame_b, (640, target_h))
+
+        crop_h = int(target_h * crop_ratio)
+        a_top = cv2.cvtColor(a_small[:crop_h, :], cv2.COLOR_BGR2GRAY).astype(float)
+        b_top = cv2.cvtColor(b_small[:crop_h, :], cv2.COLOR_BGR2GRAY).astype(float)
+
+        diff = np.abs(a_top - b_top)
+        col_sums = np.sum(diff, axis=0)
+
+        fig, ax = plt.subplots(figsize=(10, 4))
+        x = np.arange(len(col_sums))
+        ax.fill_between(x, 0, col_sums, alpha=0.4, color='steelblue')
+        ax.plot(x, col_sums, color='steelblue', linewidth=1)
+
+        max_val = max(np.max(col_sums), 1)
+
+        ax.axvline(x=margin_col, color='red', linewidth=2, alpha=0.7)
+        ax.annotate(f'Left {self.config.bar_left_margin:.0%} cutoff (col {margin_col})',
+                    xy=(margin_col, max_val * 0.9), fontsize=8, color='red',
+                    fontweight='bold', rotation=90, va='bottom')
+
+        peaks = deduplicator._get_bar_profile_peaks(frame_a, frame_b, crop_ratio)
+
+        n_peaks = len(peaks)
+        two_spike_ok = 2 <= n_peaks <= 4
+        left_margin_ok = deduplicator.has_left_spike_in_margin(frame_a, frame_b, crop_ratio) if two_spike_ok else False
+
+        if n_peaks >= 1:
+            sorted_peaks = sorted(peaks[:2], key=lambda p: p[0])
+            colors = ['orange', 'purple']
+            labels = ['Bar in A (old)', 'Bar in B (new)']
+            for pi, (col, val) in enumerate(peaks[:2]):
+                ax.axvline(x=col, color=colors[pi], linestyle='--', alpha=0.7)
+                ax.annotate(f'{labels[pi]} (col {col})', xy=(col, val),
+                            xytext=(5, 5), textcoords='offset points', fontsize=8,
+                            color=colors[pi])
+
+            if n_peaks >= 2:
+                left_col = sorted_peaks[0][0]
+                ax.annotate('LEFT SPIKE OK' if left_margin_ok else 'LEFT SPIKE REJECTED',
+                            xy=(left_col, 0), fontsize=8,
+                            color='green' if left_margin_ok else 'red',
+                            fontweight='bold')
+
+        if two_spike_ok:
+            ax.annotate(f'{n_peaks} PEAKS OK', xy=(600, max_val * 0.15), fontsize=9,
+                        color='green', fontweight='bold')
+        else:
+            ax.annotate(f'{n_peaks} PEAKS — REJECTED (need 2-4)', xy=(400, max_val * 0.15), fontsize=9,
+                        color='red', fontweight='bold')
+
+        bar_x_640 = int(round(bar_x * (640 / w)))
+        merge_x_640 = int(round(bar_x_640 + bar_padding_px * (640 / w)))
+        if bar_x_640 > 0:
+            ax.axvline(x=bar_x_640, color='green', linestyle=':', alpha=0.5)
+            ax.annotate(f'bar_x={bar_x_640}', xy=(bar_x_640, max_val * 0.4),
+                        fontsize=7, color='green')
+            if 0 < merge_x_640 < 640:
+                ax.axvline(x=merge_x_640, color='darkgreen', linestyle='-', alpha=0.8)
+                ax.annotate(f'merge_x={merge_x_640}', xy=(merge_x_640, max_val * 0.3),
+                            fontsize=7, color='darkgreen')
+
+        ax.set_xlabel('Column (640px scale)')
+        ax.set_ylabel('Summed absdiff')
+        ax.set_title(f'Page {page_num} — Bar Profile')
+        ax.set_xlim(0, len(col_sums))
+
+        plt.tight_layout()
+        plt.savefig(str(output_path), dpi=150)
+        plt.close(fig)
+
     def _store_page(
         self,
         frame_a: Frame,
@@ -292,6 +377,12 @@ class ExtractScoreUseCase:
             is_dup = True
             log(f"  Page {page_num}: No clean bar profile, treated as duplicate")
 
+        if not is_dup and not deduplicator.has_left_spike_in_margin(
+            frame_a.image, frame_b.image, self.config.default_crop_ratio
+        ):
+            is_dup = True
+            log(f"  Page {page_num}: Left spike outside margin, treated as duplicate")
+
         for existing in unique_pages:
             if deduplicator.is_duplicate(existing.image, merged_img, b_number=merged_number):
                 is_dup = True
@@ -306,6 +397,15 @@ class ExtractScoreUseCase:
                 on_page_detected(len(unique_pages) - 1, merged_img)
         else:
             log(f"  Duplicate page skipped at {frame_a.timestamp:.2f}s")
+
+        if debug:
+            plot_path = output_dir / "debug" / f"bar_profile_page_{page_num:03d}.png"
+            self._save_bar_profile_plot(
+                frame_a.image, frame_b.image, self.config.default_crop_ratio,
+                bar_x, self.config.bar_padding_px,
+                int(640 * self.config.bar_left_margin), plot_path, page_num,
+                deduplicator
+            )
 
 
 class GeneratePdfUseCase:

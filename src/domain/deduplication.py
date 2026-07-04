@@ -10,7 +10,7 @@ class Deduplicator:
         self.ocr_service = ocr_service
         self._number_cache: dict[int, Optional[int]] = {}
 
-    def has_clean_bar_profile(self, frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float) -> bool:
+    def _get_bar_profile_peaks(self, frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float) -> list:
         h, w = frame_a.shape[:2]
         target_w = 640
         scale = target_w / w
@@ -28,7 +28,7 @@ class Deduplicator:
 
         max_val = np.max(col_sums)
         if max_val < 100:
-            return False
+            return []
 
         threshold = max_val * 0.3
         min_dist = 3
@@ -45,7 +45,19 @@ class Deduplicator:
                     peaks.append((i, col_sums[i]))
 
         peaks.sort(key=lambda p: p[1], reverse=True)
-        return len(peaks) >= 2
+        return peaks
+
+    def has_clean_bar_profile(self, frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float) -> bool:
+        n = len(self._get_bar_profile_peaks(frame_a, frame_b, crop_ratio))
+        return 2 <= n <= 4
+
+    def has_left_spike_in_margin(self, frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float) -> bool:
+        peaks = self._get_bar_profile_peaks(frame_a, frame_b, crop_ratio)
+        if len(peaks) < 2:
+            return False
+        left_col = sorted(peaks[:2], key=lambda p: p[0])[0][0]
+        margin_col = int(640 * self.config.bar_left_margin)
+        return left_col < margin_col
 
     def _get_cached_number(self, image: np.ndarray) -> Optional[int]:
         key = id(image)
