@@ -166,9 +166,10 @@ class GuiApi:
             "blank_content_std_threshold", "bar_min_diff_threshold",
         }
         valid_int_1_20 = {"default_strips_per_page"}
-        valid_int_0_100 = {"ocr_confidence_threshold", "bar_padding_px"}
+        valid_int_0_100 = {"ocr_confidence_threshold"}
+        valid_int_any = {"bar_padding_px"}
 
-        valid_keys = valid_float_0_1 | valid_float_any | valid_int_1_20 | valid_int_0_100
+        valid_keys = valid_float_0_1 | valid_float_any | valid_int_1_20 | valid_int_0_100 | valid_int_any
 
         for key, value in updates.items():
             if key not in valid_keys:
@@ -191,6 +192,8 @@ class GuiApi:
                 if not (0 <= val <= 100):
                     raise ValueError(f"{key} must be between 0 and 100")
                 setattr(self._config, key, val)
+            elif key in valid_int_any:
+                setattr(self._config, key, int(value))
 
         return asdict(self._config)
 

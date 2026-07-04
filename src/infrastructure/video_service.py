@@ -81,7 +81,7 @@ class VideoService(IVideoService):
                 if bar_x_small < 0:
                     bar_x_small = int(np.argmax(relevant_sum))
                 bar_x = int(bar_x_small * (w / small_w))
-                merge_x = min(bar_x + bar_padding_px, w)
+                merge_x = max(0, min(bar_x + bar_padding_px, w))
         else:
             bar_x = 0
             merge_x = 0

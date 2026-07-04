@@ -622,7 +622,7 @@ class ConfigTab(QWidget):
             ("Crop top offset:", self._spin_float(0.0, 1.0, 0.01, 0.0)),
             ("Blank content std threshold:", self._spin_float(0.0, 50.0, 0.5, 3.0)),
             ("Bar min diff threshold:", self._spin_float(0.0, 50000.0, 100.0, 500.0)),
-            ("Bar padding (px):", self._spin_int(0, 100, 10)),
+            ("Bar overlay offset (px):", self._spin_int(-200, 200, 10)),
         ]
 
         for r, (label_text, spinbox) in enumerate(adv_fields):
