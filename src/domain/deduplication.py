@@ -10,6 +10,43 @@ class Deduplicator:
         self.ocr_service = ocr_service
         self._number_cache: dict[int, Optional[int]] = {}
 
+    def has_clean_bar_profile(self, frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float) -> bool:
+        h, w = frame_a.shape[:2]
+        target_w = 640
+        scale = target_w / w
+        target_h = int(h * scale)
+
+        a_small = cv2.resize(frame_a, (target_w, target_h))
+        b_small = cv2.resize(frame_b, (target_w, target_h))
+
+        crop_h = int(target_h * crop_ratio)
+        a_top = cv2.cvtColor(a_small[:crop_h, :], cv2.COLOR_BGR2GRAY).astype(float)
+        b_top = cv2.cvtColor(b_small[:crop_h, :], cv2.COLOR_BGR2GRAY).astype(float)
+
+        diff = np.abs(a_top - b_top)
+        col_sums = np.sum(diff, axis=0)
+
+        max_val = np.max(col_sums)
+        if max_val < 100:
+            return False
+
+        threshold = max_val * 0.3
+        min_dist = 3
+
+        peaks = []
+        for i in range(2, len(col_sums) - 2):
+            if col_sums[i] > col_sums[i-1] and col_sums[i] >= col_sums[i+1] and col_sums[i] > threshold:
+                is_clean = True
+                for prev_col, _ in peaks:
+                    if abs(i - prev_col) < min_dist:
+                        is_clean = False
+                        break
+                if is_clean:
+                    peaks.append((i, col_sums[i]))
+
+        peaks.sort(key=lambda p: p[1], reverse=True)
+        return len(peaks) >= 2
+
     def _get_cached_number(self, image: np.ndarray) -> Optional[int]:
         key = id(image)
         if key not in self._number_cache:

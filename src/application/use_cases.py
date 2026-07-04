@@ -284,6 +284,14 @@ class ExtractScoreUseCase:
                 self.config.ocr_horizontal_ratio, self.config.ocr_confidence_threshold
             )
 
+        # Guard rail: if the bar profile between the original A and B frames
+        # lacks two clean peaks, treat as duplicate (likely false trigger)
+        if not is_dup and not deduplicator.has_clean_bar_profile(
+            frame_a.image, frame_b.image, self.config.default_crop_ratio
+        ):
+            is_dup = True
+            log(f"  Page {page_num}: No clean bar profile, treated as duplicate")
+
         for existing in unique_pages:
             if deduplicator.is_duplicate(existing.image, merged_img, b_number=merged_number):
                 is_dup = True
