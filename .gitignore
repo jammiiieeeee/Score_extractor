@@ -23,6 +23,19 @@ build/
 *.spec
 version.txt
 
+# Extraction output
+output/
+
+# Video cache
+yt_cache/
+
+# Temp artifacts
+temp_strip_*.png
+cfg_test.json
+
+# Log files
+*.log
+
 # Environment
 .env
 venv/
