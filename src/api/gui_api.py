@@ -54,6 +54,10 @@ class GuiApi:
         self._video_info: Optional[VideoInfo] = None
         self._pages: List[Frame] = []
         self._page_png_cache: List[Optional[bytes]] = []
+        self._original_pages: List[Frame] = []
+        self._original_png_cache: List[Optional[bytes]] = []
+        self._loaded_score_path: Optional[str] = None
+        self._loaded_score_metadata: dict = {}
 
         self._extraction_thread: Optional[threading.Thread] = None
         self._pdf_thread: Optional[threading.Thread] = None
@@ -535,6 +539,10 @@ class GuiApi:
     def clear_pages(self) -> None:
         self._pages.clear()
         self._page_png_cache.clear()
+        self._original_pages.clear()
+        self._original_png_cache.clear()
+        self._loaded_score_path = None
+        self._loaded_score_metadata = {}
 
     # ═════════════════════════════════════════════════════════════════════
     #  PDF Generation (22-23)
@@ -572,6 +580,14 @@ class GuiApi:
             self._emit_progress("generating_pdf", 100.0, "PDF generated successfully")
             self._emit_completed(len(self._pages))
             self._emit_log(f"PDF generated: {output_path}")
+
+            score_dir = output.parent
+            self.save_metadata(str(score_dir), {
+                "score_name": final_title,
+                "crop_ratio": self._config.default_crop_ratio,
+                "page_count": len(self._pages),
+                "extraction_date": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            })
 
         except Exception as e:
             self._emit_error(f"PDF generation failed: {e}")
@@ -616,10 +632,18 @@ class GuiApi:
         images = self._file_service.load_page_images(score_dir)
         self._pages.clear()
         self._page_png_cache.clear()
+        self._original_pages.clear()
+        self._original_png_cache.clear()
         for i, img in enumerate(images):
             frame = Frame(img, 0.0, i)
             self._pages.append(frame)
             self._page_png_cache.append(self._encode_png(img))
+            self._original_pages.append(Frame(img.copy(), 0.0, i))
+            self._original_png_cache.append(self._encode_png(img))
+        self._loaded_score_path = path
+        self._loaded_score_metadata = self._read_metadata(score_dir)
+        meta_crop = self._loaded_score_metadata.get("crop_ratio", 0.35)
+        self._config.default_crop_ratio = meta_crop
         self._emit_log(f"Loaded {len(self._pages)} pages from {path}")
         return len(self._pages)
 
@@ -630,6 +654,62 @@ class GuiApi:
             return
         shutil.rmtree(score_path)
         self._emit_log(f"Deleted score: {path}")
+
+    # ═════════════════════════════════════════════════════════════════════
+    #  Re-extraction helpers
+    # ═════════════════════════════════════════════════════════════════════
+
+    def reapply_crop(self, ratio: float) -> None:
+        if not self._original_pages:
+            return
+        self._pages.clear()
+        self._page_png_cache.clear()
+        for i, frame in enumerate(self._original_pages):
+            h = frame.image.shape[0]
+            crop_px = int(h * ratio)
+            cropped = frame.image[crop_px:, :].copy()
+            self._pages.append(Frame(cropped, frame.timestamp, frame.index))
+            self._page_png_cache.append(self._encode_png(cropped))
+
+    def has_loaded_score(self) -> bool:
+        return len(self._original_pages) > 0 and self._loaded_score_path is not None
+
+    def get_loaded_score_path(self) -> Optional[str]:
+        return self._loaded_score_path
+
+    def get_loaded_score_metadata(self) -> dict:
+        return dict(self._loaded_score_metadata)
+
+    def is_loading_from_scratch(self) -> bool:
+        return not self.has_loaded_score()
+
+    def get_first_page_image(self) -> Optional[np.ndarray]:
+        if self._pages:
+            return self._pages[0].image
+        return None
+
+    def _read_metadata(self, score_dir) -> dict:
+        score_dir = Path(score_dir)
+        meta_path = score_dir / "metadata.json"
+        if meta_path.exists():
+            try:
+                with open(str(meta_path), 'r') as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    @staticmethod
+    def save_metadata(score_dir: str, data: dict) -> None:
+        meta_path = Path(score_dir) / "metadata.json"
+        try:
+            with open(str(meta_path), 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass
+
+    def has_video(self) -> bool:
+        return self._video_service is not None and self._video_info is not None
 
     # ═════════════════════════════════════════════════════════════════════
     #  Lifecycle

@@ -29,185 +29,166 @@ repo root/
 
 | Tab | Purpose |
 |-----|---------|
+| **Extract** | Unified entry point — fresh extraction or re-extraction from existing score |
 | **Config** | Tune extraction parameters |
-| **Extract** | Video selection, previews, progress, and one-click output |
-| **Gallery** | Review, reorder, delete pages before/after generation |
-| **Export** | Sandbox management and PDF regeneration |
 
 ---
 
 ## Tab Details
 
-### 1. Config Tab
+### 1. Extract Tab
 
-**Default view** (5 fields most users need):
-
-| Field | Widget | Config key | Default |
-|-------|--------|------------|---------|
-| Crop ratio | QDoubleSpinBox (0.0–1.0, step 0.01) | `default_crop_ratio` | 0.35 |
-| Strips per page | QSpinBox (1–20) | `default_strips_per_page` | 7 |
-| Page change sensitivity | QDoubleSpinBox (0.0–1.0, step 0.01) | `change_detection_threshold` | 0.96 |
-| Min seconds between captures | QDoubleSpinBox (0.0–60.0, step 0.5) | `min_screenshot_interval` | 3.0 |
-| OCR confidence | QSpinBox (0–100) | `ocr_confidence_threshold` | 40 |
-
-**Advanced expander** (collapsed by default, QGroupBox with checkable title):
-
-- **Change Detection** — `frame_check_interval`, `top_analysis_ratio`
-- **A/B Capture** — `a_capture_delay`, `b_capture_delay`, `b_overlay_width_ratio`
-- **Deduplication** — `duplicate_top_ratio`, `pixel_similarity_threshold`, `row_similarity_threshold`, `row_coverage_threshold`
-- **OCR** — `ocr_horizontal_ratio`
-- **PDF Output** — `crop_top_offset`
-- **Blank Detection** — `blank_content_std_threshold`
-
-All updates call `api.update_config(...)` with validation (errors shown in a QMessageBox).
-
----
-
-### 2. Extract Tab
-
-Layout top-to-bottom:
+Single unified interface driven by the **Project** field at the top. The entire UI state (new vs existing project) determines what the action button does.
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│ [ Video file: ____________________ ] [Browse…] [Preview] │
-├──────────────────────────────────────────────────────────┤
-│ ┌─Crop──┬─Start Time──┬─End Duration──┐                  │
-│ │       │              │               │                  │
-│ └───────┴──────────────┴───────────────┘                  │
-├──────────────────────────────────────────────────────────┤
-│ [════════════ Progress ════════════] 48%                  │
-│ log: Processing video...                                  │
-│      Change detected at 12.3s...                          │
-│      Page 5 detected...                                   │
-├──────────────────────────────────────────────────────────┤
-│ [ Save PDF to: __________________ ] [Browse…]             │
-│ Pages: 12   [ Start Extraction ]                          │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  Extract                                                                     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  Project: [Mozart Piano Sonata________________________________] [Browse…]    │
+│  ● New project — pick a video to start                                       │
+│  ✓ Loaded "Mozart Piano Sonata" — 12 pages (originally 35% crop)            │
+│                                                                               │
+│  ───────────────────────────────────────────────────────────────────────────  │
+│  Source: (●) Local file  (○) YouTube URL                                     │
+│  Video:  [_______________________________________________] [Browse…]          │
+│                                                                               │
+│  ┌──────────────────────────────────────────────────────────────────────┐    │
+│  │                         Preview                                    │    │
+│  │    (shows video frame OR first loaded page — crop line always live) │    │
+│  └──────────────────────────────────────────────────────────────────────┘    │
+│  [═══════════════════════════════════════════] Seek bar (disabled if loaded) │
+│                                                                               │
+│  Crop ratio:  [0.35       ]   (was 35%)                 [Set as Default]      │
+│  Output PDF:  [Mozart_Piano_Sonata_________________________________.pdf]     │
+│                                                                               │
+│  ───────────────────────────────────────────────────────────────────────────  │
+│  [████████████████████████░░░░░░░░░░░░░░░░░░░░] 65%                          │
+│  Processing video...                                                           │
+│                                                                               │
+│  [    Start Extraction / Regenerate PDF / Open PDF    ]  [Cancel]             │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### Video File Picker
+#### Project Field
 
-- QLineEdit + QPushButton("Browse…") using `QFileDialog.getOpenFileName` (filter: `*.mp4 *.avi *.mkv *.mov`)
-- QPushButton("Preview") — opens the first sub-tab (Crop) and shows frame 0
-- Gray out "Start Extraction" until a valid video is loaded
+- **QLineEdit** with **QCompleter** — fed by `GuiApi.list_saved_scores(parent_dir)`
+- Type a new name + Enter → creates new project at `{parent_dir}/{name}`
+- Select a completion → loads that score, enters re-extraction mode
+- **Browse…** button: opens `QFileDialog.getExistingDirectory`:
+  - If folder contains `photos/` → loads as existing score
+  - Otherwise sets parent directory for new projects
+- Parent directory persisted in `QSettings("ScoreExtractor", "App")`
 
-#### Preview Sub-Tabs (QTabWidget)
+#### Status Label
 
-All three share a common pattern:
-- Show the video frame at a selected timestamp
-- Provide a way to set a value that maps to a CLI parameter
+Updates dynamically based on state:
 
-**Crop tab** (`default_crop_ratio`):
-- Shows the first video frame (or a representative frame)
-- A highlighted horizontal band starting at the top edge of the frame
-- The bottom edge of the band is a draggable horizontal line
-- Dragging the line changes `default_crop_ratio` (shown as "Crop: 35%")
-- No start-time toggle — this is always active
-- `crop_top_offset` stays at 0.0
+| State | Status text |
+|-------|-------------|
+| No project | "New project — enter a score name or select an existing one" |
+| Project set, no video | "Pick a video to start" |
+| Video loaded | "Ready — video loaded" |
+| Existing score loaded | "Loaded N pages from ScoreName (originally X% crop)" |
+| Extracting | "Extracting pages from video…" |
+| Generating PDF | "Generating PDF from loaded pages…" |
+| Done | "✓ PDF saved — path" |
 
-**Start Time tab** (`start_time`):
-- QCheckBox "Enable start-time capture" — **checked by default**
-- When unchecked, `start_time = -1.0` (start from beginning)
-- When checked, a QSlider (0 → video duration) seeks through the video
-- Frame updates live as the slider is dragged
-- Timestamp shown: "Start: 0:32.5"
-- Value passed to `GuiApi.start_extraction(start_time=<value>)`
+#### Video Controls (always visible)
 
-**End Duration tab** (`duration`):
-- QCheckBox "Stop extraction after…" — **unchecked by default**
-- When unchecked, `duration = 0.0` (let blank-page detection end naturally)
-- When checked, a QSlider (0 → video duration) seeks through the video
-- Frame updates live as the slider is dragged
-- Timestamp shown: "End: 1:45.0"
-- Value passed to `GuiApi.start_extraction(duration=<value>)`
+- Source toggle: Local file / YouTube URL
+- Local: QLineEdit + Browse (filter: `*.mp4 *.avi *.mkv *.mov`)
+- YouTube: QLineEdit + quality QComboBox + Download button
+- **Disabled** when an existing score is loaded
 
-All three sliders call `GuiApi.read_frame_at(timestamp)` to get PNG bytes, decoded into QPixmap for display. The frame display is a QLabel inside a QScrollArea.
+#### Preview Widget
+
+- `CropPreviewWidget` — shows video frame (new) or first loaded page (existing)
+- Draggable crop line updates the crop ratio spinbox
+- Always interactive regardless of mode
+
+#### Seek Bar
+
+- `DualHandleSeekBar` — start time + end duration
+- Enabled for new projects, disabled when existing score loaded
+
+#### Crop Ratio Row
+
+- QDoubleSpinBox (0.0–1.0, step 0.01)
+- Shows "(was X%)" label when existing score loaded
+- "Set as Default" button saves to config
+- In existing mode, changing the spinbox re-crops loaded pages on the fly via `GuiApi.reapply_crop(ratio)`
+
+#### Output PDF
+
+- QLineEdit for PDF filename (defaults to project name)
+- Extension auto-appended if missing
 
 #### Progress & Log
 
-- QProgressBar (0–100%) updated via `on_progress` callback
-- QTextEdit (read-only) for log output via `on_log` callback
-- "Pages: N" label updated via `on_page_detected` callback
+- QProgressBar (0–100%)
+- QTextEdit (read-only, max 140px)
+- Action button shows percentage during operations: "Extracting… 45%"
 
-#### Bottom Action Bar
+#### Action Button (state-driven)
 
-- QLineEdit for output path (defaults to input filename with `.pdf`)
-- QPushButton("Browse…") for QFileDialog to choose save location
-- QPushButton("Start Extraction") — triggers the full pipeline:
-  1. Calls `GuiApi.start_extraction(...)` with all user-set parameters
-  2. On `on_completed`, **automatically calls** `GuiApi.generate_pdf(output_path)`
-  3. On success, shows QMessageBox: "PDF saved to path"
-  4. On error, shows QMessageBox with the error
-- The button text changes to "Extracting…" while busy; disabled when `api.is_busy()`
-- QPushButton("Cancel") — calls `api.cancel_extraction()`
+| State | Button text | Behavior |
+|-------|-------------|----------|
+| New project + video ready | **Start Extraction** | Full video→pages→PDF pipeline |
+| Existing score loaded | **Regenerate PDF** | Re-crop loaded pages + generate PDF |
+| Busy | **Extracting… (45%)** | Disabled, shows progress |
+| PDF complete | **✓ Open PDF** | Calls `os.startfile(output_path)` |
 
----
+#### Cancel Button
 
-### 3. Gallery Tab
-
-```
-┌──────────────────────────────────────────────────────────┐
-│ Pages: 12                                                │
-│                                                          │
-│ ┌─────────┐ ┌─────────┐ ┌─────────┐                     │
-│ │  pg 1   │ │  pg 2   │ │  pg 3   │                     │
-│ │(thumb)  │ │(thumb)  │ │(thumb)  │                     │
-│ └─────────┘ └─────────┘ └─────────┘  ...                │
-│ (QListWidget in IconMode, vertical scroll)               │
-│                                                          │
-│ [▲ Move Up] [▼ Move Down] [Delete] [Clear All]           │
-└──────────────────────────────────────────────────────────┘
-```
-
-- Thumbnails populated via `GuiApi.get_page_thumbnail(index)` → QPixmap
-- Selected item is highlighted; Move Up/Down calls `GuiApi.reorder_pages()`
-- Delete calls `GuiApi.remove_page(index)`; Clear All calls `GuiApi.clear_pages()`
-- After each operation, the thumbnail list refreshes
-- **Double-click** a thumbnail → opens a QDialog with full-resolution image from `GuiApi.get_page_full(index)` (QScrollArea if image is large)
-- Tab is disabled when no pages exist (`get_page_count() == 0`)
+- Enabled only during extraction (not during PDF generation)
+- Calls `GuiApi.cancel_extraction()`
 
 ---
 
-### 4. Export Tab
+### 2. Config Tab
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ Output PDF                                               │
-│ [_________________________] [Browse…]                    │
-│                                                          │
-│ [Regenerate PDF]                                         │
-│                                                          │
-│ ── Previous Sessions ────────────────────────────────    │
-│                                                          │
-│ [▼ tmp_a1b2c3 (12 pages, 2026-06-14, 点描の唄)]  [Load]  │
-│ [▼ tmp_d4e5f6 ( 8 pages, 2026-06-13, スパークル)] [Del]  │
-│                                                          │
-│ Status: last action result...                            │
-└──────────────────────────────────────────────────────────┘
-```
+**Unchanged from previous design.** Full settings panel with:
 
-- **Output path**: QLineEdit + Browse (QFileDialog). Pre-filled from Extract tab's path
-- **Regenerate PDF**: Calls `GuiApi.generate_pdf(output_path)` on loaded pages. Shows progress via callbacks
-- **Sandbox list**: Populated from `GuiApi.list_sandboxes()`. Each row shows `SandboxInfo` fields
-- **[Load]**: Calls `GuiApi.load_sandbox(path)`, then switches to Gallery tab for review
-- **[Del]**: Calls `GuiApi.delete_sandbox(path)`, refreshes the list
-- **Status**: QLabel updated by `on_log` / `on_completed` / `on_error` callbacks
+**Basic Settings** (inline, no group box):
+- Crop ratio (0.0–1.0, step 0.01, default 0.35)
+- Page change sensitivity (0.0–1.0, step 0.01, default 0.96)
+- Min seconds between captures (0.0–60.0, step 0.5, default 3.0)
+- OCR confidence (0–100, default 40)
+
+**Advanced Settings** (QGroupBox "Advanced Settings"):
+- Frame check interval, Top analysis ratio, A/B capture delays, B overlay width
+- Deduplication: Duplicate top ratio, Pixel/row similarity, Row coverage
+- OCR horizontal ratio, Crop top offset, Blank content std threshold
+- Bar min diff threshold, Bar overlay offset
+
+**Debug mode checkbox:** "Debug mode (open temp folder on completion)"
+
+All changes auto-apply via `GuiApi.update_config()`.
+
+---
+
+## Re-extraction Data Flow
+
+1. **User selects existing project** via completer or Browse → `GuiApi.load_saved_score(path)`
+2. API loads page images from `{path}/photos/page_*_merged.png` into `_pages` and `_original_pages`
+3. API reads `{path}/metadata.json` → restores original crop ratio
+4. **User adjusts crop ratio** → `GuiApi.reapply_crop(ratio)` crops from `_original_pages` each time
+5. **User clicks "Regenerate PDF"** → `GuiApi.generate_pdf(output_path)` with cached pages
+6. Metadata saved to `{output_parent}/metadata.json` after PDF generation
 
 ---
 
 ## Thread Bridge (`gui_bridge.py`)
 
-The `GuiApi` runs extraction and PDF generation on daemon threads. It emits plain Python callbacks which run on the background thread — unsafe for direct GUI updates.
-
 ```python
 from PyQt6.QtCore import QObject, pyqtSignal
 
 class ExtractionSignals(QObject):
-    progress      = pyqtSignal(str, float, str)  # phase, percent, detail
-    page_detected = pyqtSignal(int, bytes)       # index, png_bytes
+    progress      = pyqtSignal(str, float, str)
+    page_detected = pyqtSignal(int, bytes)
     log           = pyqtSignal(str)
     error         = pyqtSignal(str)
-    completed     = pyqtSignal(int)              # page_count
+    completed     = pyqtSignal(int)
     cancelled     = pyqtSignal()
 
     def wire(self, api: "GuiApi"):
@@ -218,18 +199,6 @@ class ExtractionSignals(QObject):
         api.set_on_completed(lambda c: self.completed.emit(c))
         api.set_on_cancelled(lambda: self.cancelled.emit())
 ```
-
-`app_gui.py` creates one `ExtractionSignals` instance, calls `.wire(api)`, and connects each signal to the appropriate slot:
-
-```python
-self.signals = ExtractionSignals()
-self.signals.wire(self.api)
-self.signals.progress.connect(self._on_progress)
-self.signals.page_detected.connect(self._on_page_detected)
-# ...
-```
-
-This is the only thread-safe bridge needed. PyQt6's signal-slot mechanism automatically delivers emitted signals on the GUI thread.
 
 ---
 
@@ -248,29 +217,30 @@ pyinstaller --onefile --windowed --name ScoreExtractor --upx-dir="C:\upx" app_gu
 - `--windowed` suppresses the console window
 - UPX compression reduces size by 30–50% with no quality impact
 - Expected output size: ~150MB
-- The `.exe` is portable — copy it anywhere, no Python or dependencies needed
-- For distribution, consider adding `--exclude-module` for unused PyQt6 modules (`QtBluetooth`, `QtNetwork`, `QtQml`, `QtSql`, etc.) to reduce size further in a future version
+- The `.exe` is portable — copy it anywhere
 
-### File list for PyInstaller hook (auto-detected, no manual spec needed):
+### Auto-detected files for PyInstaller hook:
 - `app_gui.py`, `gui_bridge.py`
 - `src/api/gui_api.py`
 - `src/application/use_cases.py`
-- `src/domain/` (models, deduplication, interfaces, value_objects)
+- `src/domain/` (models, interfaces, value_objects)
 - `src/infrastructure/` (video_service, ocr_service, pdf_service, file_service)
 - `paddleocr`, `paddlepaddle`, `cv2`, `reportlab`, `skimage`, `numpy`, `rich`
 
 ---
 
-## CLI ↔ GUI Method Mapping
+## API Method Mapping
 
-| CLI flag | GUI location | GuiApi method |
+| Function | GUI element | GuiApi method |
 |----------|-------------|---------------|
-| `input` | Extract tab → Browse | `open_video(path)` |
-| `-o/--output` | Extract tab → Save PDF to… | `generate_pdf(output)` |
-| `-c/--config` | Config tab → all fields | `update_config({...})` |
-| `-d/--debug` | (not exposed — always on in GUI) | `start_extraction(debug=True)` |
-| `--no-ocr` | Config tab → OCR confidence = 0 disables | `start_extraction(no_ocr=True)` |
-| `--start-time` | Extract → Start Time sub-tab | `start_extraction(start_time=...)` |
-| `--duration` | Extract → End Duration sub-tab | `start_extraction(duration=...)` |
-| `--crop-ratio` | Config tab → Crop ratio field | `update_config({"default_crop_ratio": ...})` |
-| `--from-dir` | Export tab → Previous Sessions → Load | `load_sandbox(path)` → `generate_pdf(path)` |
+| Project selection | Project field + QCompleter | `list_saved_scores(parent_dir)` |
+| Load existing score | Completion or Browse | `load_saved_score(path)` |
+| New project | Type new name | `start_extraction(output_folder, score_name)` |
+| Video selection | Browse button | `open_video(path)` |
+| YouTube download | Download button | `download_youtube(url, fmt)` |
+| Start extraction | Action button (new mode) | `start_extraction(...)` |
+| Regenerate PDF | Action button (existing mode) | `generate_pdf(output_path)` |
+| Re-crop pages | Crop ratio spinbox | `reapply_crop(ratio)` |
+| Cancel | Cancel button | `cancel_extraction()` |
+| Config | Config tab all fields | `update_config({...})` |
+| Open PDF | Action button (done state) | `os.startfile(path)` |

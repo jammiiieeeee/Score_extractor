@@ -25,8 +25,8 @@ Load the following specification files via `@reference` depending on the module 
 | **System & Safety** | `@reference system_lifecycle.md` | UUID sandbox protocol, Windows Unicode safety, and error handling. |
 
 ## Core Lifecycle
-1. **Initialize**: Load config, setup UUID sandbox, perform OCR health check.
+1. **Initialize**: Load config, open video, perform OCR health check.
 2. **Extract**: Stream video, detect changes (SSIM), capture A/B frames.
 3. **Deduplicate**: 3-step verification (Global -> Row -> OCR Veto).
-4. **Compile**: Layout merged strips and generate PDF in sandbox.
-5. **Finalize**: Release handles and move/rename sandbox to final Unicode destination.
+4. **Compile**: Layout merged strips and generate PDF in output directory.
+5. **Finalize**: Release handles and open the output folder.

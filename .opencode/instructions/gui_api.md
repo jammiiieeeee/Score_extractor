@@ -49,7 +49,7 @@ api = GuiApi("config.json")
 |---|--------|---------|-------------|
 | 6 | `open_video(path: str) -> VideoInfo` | `VideoInfo` dataclass | Open video file; validate it is readable; extract metadata. Raises `ValueError` on failure. |
 | 7 | `get_video_info() -> VideoInfo\|None` | Cached metadata or `None` | Returns info from last `open_video()` call |
-| 8 | `read_frame_at(timestamp: float) -> bytes\|None` | PNG bytes of the frame | Seek to a timestamp, decode frame, encode as PNG bytes (for GUI thumbnail display). `None` on seek failure. |
+| 8 | `read_frame_at(timestamp: float) -> np.ndarray\|None` | BGR `np.ndarray` at 640px width | Seek to a timestamp, decode frame, resize to 640px. `None` on seek failure. |
 | 9 | `close_video() -> None` | — | Release `cv2.VideoCapture` handle |
 
 **`VideoInfo` dataclass**:

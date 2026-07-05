@@ -7,14 +7,15 @@ from urllib.parse import urlparse, parse_qs
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, pyqtSignal, QStringListModel
 from PyQt6.QtGui import QAction, QFont, QIcon, QImage, QPixmap
+from PyQt6.QtWidgets import QCompleter
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QFileDialog,
     QMessageBox, QProgressBar, QTextEdit, QGroupBox, QFormLayout,
     QDoubleSpinBox, QSpinBox, QCheckBox, QSlider, QScrollArea,
-    QListWidget, QListView, QListWidgetItem, QDialog, QComboBox,
+    QListWidget, QListWidgetItem, QDialog, QComboBox,
     QRadioButton, QButtonGroup,
     QFrame, QSizePolicy, QSplitter, QGridLayout,
 )
@@ -768,29 +769,68 @@ class ExtractTab(QWidget):
         self._api = api
         self._video_path: Optional[str] = None
         self._video_duration = 0.0
-        self._extracting = False
+        self._busy = False
+        self._completed_pdf_path: Optional[str] = None
+        self._loaded_original_ratio: Optional[float] = None
+        self._project_dir: str = ""
+        self._has_existing_score = False
+
+        self._settings = QSettings("ScoreExtractor", "App")
+        self._parent_dir = self._settings.value("parent_dir", str(Path(__file__).resolve().parent / "output"))
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
+
+        # ── Project field ──
+        project_label = QLabel("Project:")
+        project_label.setStyleSheet("font-weight: 600; font-size: 14px;")
+
+        self.project_edit = QLineEdit()
+        self.project_edit.setPlaceholderText("Score name — type to search existing, or enter a new name")
+        self._completer_model = QStringListModel()
+        self._completer = QCompleter(self._completer_model, self)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.project_edit.setCompleter(self._completer)
+
+        self.project_browse_btn = QPushButton("Browse…")
+        self.project_browse_btn.setObjectName("secondary")
+
+        project_row = QHBoxLayout()
+        project_row.addWidget(project_label)
+        project_row.addWidget(self.project_edit, 1)
+        project_row.addWidget(self.project_browse_btn)
+        layout.addLayout(project_row)
+
+        # ── Status line ──
+        self.status_label = QLabel("New project — pick a video to start")
+        self.status_label.setObjectName("muted")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color: {BORDER};")
+        layout.addWidget(sep)
 
         # ── Source toggle ──
         toggle_row = QHBoxLayout()
         toggle_row.setSpacing(16)
-        self.local_radio = QRadioButton("Local file")
         self.yt_radio = QRadioButton("YouTube URL")
+        self.local_radio = QRadioButton("Local file")
         self.yt_radio.setChecked(True)
         toggle_row.addWidget(self.local_radio)
         toggle_row.addWidget(self.yt_radio)
         toggle_row.addStretch()
         layout.addLayout(toggle_row)
 
-        # ── Input grid (shared column alignment) ──
+        # ── Input grid ──
         input_grid = QGridLayout()
         input_grid.setColumnMinimumWidth(0, 115)
         input_grid.setColumnStretch(1, 1)
         input_grid.setColumnMinimumWidth(2, 210)
 
-        # Row 0 — Local file mode
+        # Local mode
         self._local_label = QLabel("Video file:")
         self._local_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.video_path_edit = QLineEdit()
@@ -801,7 +841,7 @@ class ExtractTab(QWidget):
         input_grid.addWidget(self.video_path_edit, 0, 1)
         input_grid.addWidget(self.browse_btn, 0, 2)
 
-        # Row 0 — YouTube URL mode (same cells, hidden initially)
+        # YouTube mode
         self._yt_label = QLabel("YouTube URL:")
         self._yt_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.yt_url_edit = QLineEdit()
@@ -828,40 +868,14 @@ class ExtractTab(QWidget):
         input_grid.addWidget(self._yt_label, 0, 0)
         input_grid.addWidget(self.yt_url_edit, 0, 1)
         input_grid.addLayout(yt_action, 0, 2)
-        # YT widgets visible by default (radio checked above); hide local ones
-        self._local_label.hide()
-        self.video_path_edit.hide()
-        self.browse_btn.hide()
-
-        # Row 1 — Output folder
-        out_label = QLabel("Output folder:")
-        out_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.output_folder_edit = QLineEdit()
-        self.output_folder_edit.setPlaceholderText("Select output folder…")
-        self._settings = QSettings("ScoreExtractor", "App")
-        saved = self._settings.value("output_folder", "")
-        if saved:
-            self.output_folder_edit.setText(saved)
-        else:
-            default_dir = str(Path(__file__).resolve().parent / "output")
-            self.output_folder_edit.setText(default_dir)
-        self.output_browse_btn = QPushButton("Browse…")
-        self.output_browse_btn.setObjectName("secondary")
-        input_grid.addWidget(out_label, 1, 0)
-        input_grid.addWidget(self.output_folder_edit, 1, 1)
-        input_grid.addWidget(self.output_browse_btn, 1, 2)
-
-        # Row 2 — Score name
-        name_label = QLabel("Score name:")
-        name_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.score_name_edit = QLineEdit()
-        self.score_name_edit.setPlaceholderText("Auto-filled from video")
-        input_grid.addWidget(name_label, 2, 0)
-        input_grid.addWidget(self.score_name_edit, 2, 1)
+        self._yt_label.hide()
+        self.yt_url_edit.hide()
+        self.quality_combo.hide()
+        self.download_btn.hide()
 
         layout.addLayout(input_grid)
 
-        # ── Unified preview (crop + dual seekbar) ──
+        # ── Crop preview ──
         self.crop_widget = CropPreviewWidget()
         layout.addWidget(self.crop_widget, 2)
 
@@ -869,19 +883,38 @@ class ExtractTab(QWidget):
         self.seek_bar.setMaximumHeight(60)
         layout.addWidget(self.seek_bar)
 
-        # Crop bar
-        crop_bar = QHBoxLayout()
-        self.crop_default_label = QLabel(f"Default: {int(self._api.get_config().get('default_crop_ratio', 0.35) * 100)}%")
-        self.crop_default_label.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {MUTED};")
-        self.crop_default_btn = QPushButton("Set as Default")
-        self.crop_default_btn.setObjectName("secondary")
-        self.crop_default_btn.setFixedWidth(120)
-        crop_bar.addWidget(self.crop_default_label)
-        crop_bar.addStretch()
-        crop_bar.addWidget(self.crop_default_btn)
-        layout.addLayout(crop_bar)
+        # ── Crop ratio row ──
+        crop_row = QHBoxLayout()
+        crop_label = QLabel("Crop ratio:")
+        crop_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.crop_spin = QDoubleSpinBox()
+        self.crop_spin.setRange(0.0, 1.0)
+        self.crop_spin.setSingleStep(0.01)
+        self.crop_spin.setDecimals(2)
+        self.crop_spin.setValue(self._api.get_config().get("default_crop_ratio", 0.35))
+        self.crop_spin.setFixedWidth(100)
+        self.crop_original_label = QLabel("")
+        self.crop_original_label.setObjectName("muted")
+        self.set_default_btn = QPushButton("Set as Default")
+        self.set_default_btn.setObjectName("secondary")
+        self.set_default_btn.setFixedWidth(120)
 
-        self.crop_default_btn.clicked.connect(self._set_crop_default)
+        crop_row.addWidget(crop_label)
+        crop_row.addWidget(self.crop_spin)
+        crop_row.addWidget(self.crop_original_label)
+        crop_row.addStretch()
+        crop_row.addWidget(self.set_default_btn)
+        layout.addLayout(crop_row)
+
+        # ── Output PDF name ──
+        pdf_row = QHBoxLayout()
+        pdf_label = QLabel("Output PDF:")
+        pdf_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.pdf_name_edit = QLineEdit()
+        self.pdf_name_edit.setPlaceholderText("Auto-filled from project name")
+        pdf_row.addWidget(pdf_label)
+        pdf_row.addWidget(self.pdf_name_edit, 1)
+        layout.addLayout(pdf_row)
 
         # ── Progress & Log ──
         self.progress_bar = QProgressBar()
@@ -896,65 +929,165 @@ class ExtractTab(QWidget):
         # ── Action bar ──
         action_row = QHBoxLayout()
         action_row.addStretch()
-        self.start_btn = QPushButton("Start Extraction")
-        self.start_btn.setEnabled(False)
-        self.start_btn.setFixedWidth(160)
+        self.action_btn = QPushButton("Start Extraction")
+        self.action_btn.setEnabled(False)
+        self.action_btn.setFixedWidth(200)
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setObjectName("danger")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.setFixedWidth(90)
-        action_row.addWidget(self.start_btn)
+        action_row.addWidget(self.action_btn)
         action_row.addWidget(self.cancel_btn)
         layout.addLayout(action_row)
 
         # ── Connections ──
+        self.project_edit.returnPressed.connect(self._on_project_entered)
+        self._completer.activated.connect(self._on_project_selected)
+        self.project_browse_btn.clicked.connect(self._browse_project)
         self.browse_btn.clicked.connect(self._browse_video)
         self.video_path_edit.textChanged.connect(self._on_path_changed)
-        self.output_browse_btn.clicked.connect(self._browse_output)
-        self.output_folder_edit.editingFinished.connect(lambda: self._settings.setValue("output_folder", self.output_folder_edit.text()))
-        self.start_btn.clicked.connect(self._start_extraction)
-        self.cancel_btn.clicked.connect(self._cancel_extraction)
+        self.action_btn.clicked.connect(self._on_action)
+        self.cancel_btn.clicked.connect(self._cancel)
         self.local_radio.toggled.connect(self._on_source_toggled)
         self.yt_radio.toggled.connect(self._on_source_toggled)
         self._on_source_toggled()
         self.download_btn.clicked.connect(self._on_yt_download)
         self.yt_url_edit.textChanged.connect(self._on_yt_url_changed)
-
-        # Seek bar connection
         self.seek_bar.seek_changed.connect(self._on_seek)
+        self.crop_spin.valueChanged.connect(self._on_crop_spin_changed)
+        self.set_default_btn.clicked.connect(self._set_crop_default)
+        self.crop_widget.crop_ratio_changed.connect(self.crop_spin.setValue)
 
-    def get_output_folder(self) -> str:
-        return self.output_folder_edit.text().strip()
+        self._refresh_completer()
+        self._update_state()
 
-    def get_score_name(self) -> str:
-        name = self.score_name_edit.text().strip()
-        if not name and self._video_path:
-            name = Path(self._video_path).stem
-        return name
+    # ── Public accessors ──
+
+    def get_project_dir(self) -> str:
+        project = self.project_edit.text().strip()
+        if not project:
+            return ""
+        return str(Path(self._parent_dir) / project)
 
     def get_output_path(self) -> str:
-        folder = self.get_output_folder()
-        name = self.get_score_name()
-        if folder and name:
-            return str(Path(folder) / name / f"{name}.pdf")
-        return ""
+        project_dir = self.get_project_dir()
+        if not project_dir:
+            return ""
+        pdf_name = self.pdf_name_edit.text().strip()
+        if not pdf_name:
+            pdf_name = Path(project_dir).name
+        if not pdf_name.endswith(".pdf"):
+            pdf_name += ".pdf"
+        return str(Path(project_dir) / pdf_name)
 
-    def set_output_folder(self, path: str):
-        self.output_folder_edit.setText(path)
+    def get_project_name(self) -> str:
+        return self.project_edit.text().strip()
 
-    def _browse_video(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select Video", "",
-            "Video files (*.mp4 *.avi *.mkv *.mov);;All files (*.*)")
-        if path:
-            self.video_path_edit.setText(path)
+    # ── Project field ──
 
-    def _browse_output(self):
+    def _refresh_completer(self):
+        try:
+            scores = self._api.list_saved_scores(self._parent_dir)
+            names = sorted(set(s.score_name for s in scores))
+            self._completer_model.setStringList(names)
+        except Exception:
+            self._completer_model.setStringList([])
+
+    def _on_project_entered(self):
+        name = self.project_edit.text().strip()
+        if not name:
+            return
+        # Check if it matches an existing score
+        try:
+            scores = self._api.list_saved_scores(self._parent_dir)
+            for s in scores:
+                if s.score_name == name:
+                    self._load_existing_score(s.path)
+                    return
+        except Exception:
+            pass
+        # New project
+        self._switch_to_new_project()
+
+    def _on_project_selected(self, text: str):
+        try:
+            scores = self._api.list_saved_scores(self._parent_dir)
+            for s in scores:
+                if s.score_name == text:
+                    self._load_existing_score(s.path)
+                    return
+        except Exception:
+            pass
+
+    def _browse_project(self):
         path = QFileDialog.getExistingDirectory(
-            self, "Select Output Folder", self.output_folder_edit.text())
-        if path:
-            self.output_folder_edit.setText(path)
-            self._settings.setValue("output_folder", path)
+            self, "Select Project Directory", self._parent_dir)
+        if not path:
+            return
+        p = Path(path)
+        # Check if this is an existing score dir
+        if (p / "photos").is_dir():
+            self._load_existing_score(str(p))
+            return
+        # Otherwise treat as parent dir for new projects
+        self._parent_dir = str(p.parent)
+        self._settings.setValue("parent_dir", self._parent_dir)
+        self.project_edit.setText(p.name)
+        self._refresh_completer()
+        self._switch_to_new_project()
+
+    def _set_video_controls_enabled(self, enabled: bool):
+        self._local_label.setEnabled(enabled)
+        self.video_path_edit.setEnabled(enabled)
+        self.browse_btn.setEnabled(enabled)
+        self._yt_label.setEnabled(enabled)
+        self.yt_url_edit.setEnabled(enabled)
+        self.quality_combo.setEnabled(enabled)
+        self.download_btn.setEnabled(enabled)
+        self.local_radio.setEnabled(enabled)
+        self.yt_radio.setEnabled(enabled)
+        self.seek_bar.setEnabled(enabled)
+
+    def _load_existing_score(self, score_path: str):
+        self._log(f"Loading score: {score_path}")
+        try:
+            count = self._api.load_saved_score(score_path)
+            meta = self._api.get_loaded_score_metadata()
+            self._loaded_original_ratio = meta.get("crop_ratio", 0.35)
+            self._has_existing_score = True
+            self._project_dir = score_path
+            p = Path(score_path)
+            self.project_edit.setText(p.name)
+            self.pdf_name_edit.setText(p.name)
+            self.crop_spin.setValue(self._loaded_original_ratio)
+            self.crop_original_label.setText(f"(was {int(self._loaded_original_ratio * 100)}%)")
+            self._set_video_controls_enabled(False)
+            # Show first page in preview
+            first = self._api.get_first_page_image()
+            if first is not None:
+                self.crop_widget.set_frame(self._img_to_pixmap(first))
+            self.status_label.setText(f"Loaded {count} pages from \"{p.name}\"")
+            self._log(f"Loaded {count} pages (original crop: {int(self._loaded_original_ratio * 100)}%)")
+            self._refresh_completer()
+            self._update_state()
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Could not load score:\n{e}")
+
+    def _switch_to_new_project(self):
+        self._api.clear_pages()
+        self._has_existing_score = False
+        self._loaded_original_ratio = None
+        self._completed_pdf_path = None
+        self._project_dir = ""
+        self.crop_original_label.setText("")
+        self.crop_spin.setValue(self._api.get_config().get("default_crop_ratio", 0.35))
+        if not self.pdf_name_edit.text():
+            self.pdf_name_edit.setText(self.project_edit.text())
+        self._set_video_controls_enabled(True)
+        self.status_label.setText("New project — pick a video to start")
+        self._update_state()
+
+    # ── Source toggle ──
 
     def _on_source_toggled(self):
         local = self.local_radio.isChecked()
@@ -970,9 +1103,11 @@ class ExtractTab(QWidget):
         else:
             self._on_yt_url_changed()
 
+    # ── Video / YouTube ──
+
     def _on_yt_url_changed(self):
         valid = bool(self.yt_url_edit.text().strip())
-        self.download_btn.setEnabled(valid and not self._extracting)
+        self.download_btn.setEnabled(valid and not self._busy)
 
     def _on_yt_download(self):
         url = self.yt_url_edit.text().strip()
@@ -981,7 +1116,6 @@ class ExtractTab(QWidget):
         if not url.startswith("http"):
             QMessageBox.warning(self, "Invalid URL", "Please enter a valid YouTube URL starting with http")
             return
-        # Warn if playlist URL
         parsed = urlparse(url)
         params = parse_qs(parsed.query)
         if 'list' in params:
@@ -994,7 +1128,7 @@ class ExtractTab(QWidget):
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-        self._extracting = True
+        self._busy = True
         self.download_btn.setEnabled(False)
         self.download_btn.setText("Downloading…")
         self.yt_url_edit.setEnabled(False)
@@ -1010,34 +1144,40 @@ class ExtractTab(QWidget):
     def _on_yt_download_completed(self, path: str):
         self._video_path = path
         self.video_path_edit.setText(path)
-        if not self.score_name_edit.text():
-            self.score_name_edit.setText(Path(path).stem)
+        if not self.project_edit.text():
+            self.project_edit.setText(Path(path).stem)
         self._log(f"Video downloaded: {path}")
         self._load_preview()
-        self._extracting = False
+        self._busy = False
         self.download_btn.setEnabled(True)
         self.download_btn.setText("Download")
         self.yt_url_edit.setEnabled(True)
-        self.start_btn.setEnabled(True)
+        self._update_state()
 
     def _reset_download_ui(self):
-        self._extracting = False
+        self._busy = False
         self.download_btn.setEnabled(True)
         self.download_btn.setText("Download")
         self.yt_url_edit.setEnabled(True)
+
+    def _browse_video(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Video", "",
+            "Video files (*.mp4 *.avi *.mkv *.mov);;All files (*.*)")
+        if path:
+            self.video_path_edit.setText(path)
 
     def _on_path_changed(self, path: str):
         valid = bool(path) and os.path.exists(path)
-        self.start_btn.setEnabled(valid and not self._extracting)
         if valid and path != self._video_path:
             self._load_preview()
+        self._update_state()
 
     def _load_preview(self):
         path = self.video_path_edit.text().strip()
         if not path or not os.path.exists(path):
             return
         try:
-            # Close previous video if already open
             if self._api.get_video_info() is not None:
                 self._api.close_video()
             info = self._api.open_video(path)
@@ -1047,14 +1187,13 @@ class ExtractTab(QWidget):
             self.seek_bar.set_start(2.0)
             self.seek_bar.set_end(info.duration)
 
-            # Auto-populate score name
-            if not self.score_name_edit.text():
-                self.score_name_edit.setText(Path(path).stem)
+            if not self.project_edit.text():
+                self.project_edit.setText(Path(path).stem)
+                if not self.pdf_name_edit.text():
+                    self.pdf_name_edit.setText(Path(path).stem)
 
-            # Show frame 0 in crop tab, sync crop ratio from config
-            default_ratio = self._api.get_config().get("default_crop_ratio", 0.35)
-            self.crop_widget.set_ratio(default_ratio)
-            self.crop_default_label.setText(f"Default: {int(default_ratio * 100)}%")
+            ratio = self.crop_spin.value()
+            self.crop_widget.set_ratio(ratio)
             img = self._api.read_frame_at(0.0)
             if img is not None:
                 self.crop_widget.set_frame(self._img_to_pixmap(img))
@@ -1083,106 +1222,187 @@ class ExtractTab(QWidget):
         if img is not None:
             self.crop_widget.set_frame(self._img_to_pixmap(img))
 
+    def _on_crop_spin_changed(self, val: float):
+        self.crop_widget.set_ratio(val)
+        if self._has_existing_score:
+            self._api.reapply_crop(val)
+            first = self._api.get_first_page_image()
+            if first is not None:
+                self.crop_widget.set_frame(self._img_to_pixmap(first))
+            self.crop_original_label.setText(
+                f"(was {int(self._loaded_original_ratio * 100)}%)" if self._loaded_original_ratio else "")
+
+    def _set_crop_default(self):
+        ratio = self.crop_spin.value()
+        try:
+            self._api.update_config({"default_crop_ratio": ratio})
+            self._log(f"Crop default set to {int(ratio * 100)}%")
+        except ValueError as e:
+            QMessageBox.warning(self, "Error", str(e))
+
+    # ── State management ──
+
+    def _update_state(self):
+        has_project = bool(self.project_edit.text().strip())
+        has_video = bool(self._video_path and os.path.exists(self._video_path))
+        has_pages = self._api.get_page_count() > 0
+        can_act = not self._busy
+
+        if self._busy:
+            pass  # button text set by _on_action
+        elif self._has_existing_score and has_pages:
+            self.action_btn.setText("Regenerate PDF")
+            self.action_btn.setEnabled(can_act)
+            self.status_label.setText(
+                f"Loaded {self._api.get_page_count()} pages — adjust crop ratio and regenerate")
+        elif has_project and has_video:
+            self.action_btn.setText("Start Extraction")
+            self.action_btn.setEnabled(can_act)
+            self.status_label.setText("Ready — video loaded")
+        else:
+            self.action_btn.setText("Start Extraction")
+            self.action_btn.setEnabled(False)
+            if not has_project:
+                self.status_label.setText("New project — enter a score name or select an existing one")
+            elif not has_video:
+                self.status_label.setText("Pick a video to start")
+            else:
+                self.status_label.setText("Ready")
+
+    # ── Action button ──
+
+    def _on_action(self):
+        if self._busy:
+            return
+        if self._completed_pdf_path:
+            self._open_pdf()
+        elif self._has_existing_score and self._api.get_page_count() > 0:
+            self._regenerate_pdf()
+        else:
+            self._start_extraction()
+
     def _start_extraction(self):
         video_path = self._video_path
         if not video_path or not os.path.exists(video_path):
             QMessageBox.warning(self, "Error", "Please select a valid video file.")
             return
 
-        output_folder = self.get_output_folder()
-        score_name = self.get_score_name()
-        if not output_folder:
-            QMessageBox.warning(self, "Error", "Please select an output folder.")
+        project = self.project_edit.text().strip()
+        if not project:
+            QMessageBox.warning(self, "Error", "Please enter a project name.")
             return
-        if not score_name:
-            QMessageBox.warning(self, "Error", "Please enter a score name.")
-            return
-
-        output_path = self.get_output_path()
 
         main_win = self.window()
         if hasattr(main_win, 'config_tab'):
             main_win.config_tab.apply_to_api()
-        # Crop widget's live position always wins over ConfigTab spinbox
-        self._api.update_config({"default_crop_ratio": self.crop_widget.get_ratio()})
+        self._api.update_config({"default_crop_ratio": self.crop_spin.value()})
 
         start_time = self.seek_bar.get_start()
         duration = self.seek_bar.get_end()
         no_ocr = (self._api.get_config().get("ocr_confidence_threshold", 40) == 0)
 
-        self._extracting = True
-        self.start_btn.setEnabled(False)
-        self.start_btn.setText("Extracting…")
+        self._busy = True
+        self.action_btn.setText("Extracting…")
+        self.action_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
-        self.browse_btn.setEnabled(False)
-        self.yt_url_edit.setEnabled(False)
-        self.download_btn.setEnabled(False)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
+        self.status_label.setText("Extracting pages from video…")
 
         self._api.start_extraction(
             video_path=video_path,
             no_ocr=no_ocr,
             start_time=start_time,
             duration=duration,
-            output_folder=output_folder,
-            score_name=score_name,
+            output_folder=self._parent_dir,
+            score_name=project,
         )
 
-    def _cancel_extraction(self):
-        if self._extracting:
-            self._api.cancel_extraction()
-
-    def _set_crop_default(self):
-        ratio = self.crop_widget.get_ratio()
-        try:
-            self._api.update_config({"default_crop_ratio": ratio})
-            self.crop_default_label.setText(f"Default: {int(ratio * 100)}%")
-            self._log(f"Crop default set to {int(ratio * 100)}%")
-        except ValueError as e:
-            QMessageBox.warning(self, "Error", str(e))
-
-    def on_completed(self, page_count: int):
-        self._log(f"Extraction complete: {page_count} pages found")
-        if page_count == 0:
-            self._log("No pages detected. Skipping PDF generation.")
-            self._reset_ui()
+    def _regenerate_pdf(self):
+        output_path = self.get_output_path()
+        if not output_path:
+            QMessageBox.warning(self, "Error", "Please set a project name.")
             return
 
-        # Auto-generate PDF
-        output_path = self.get_output_path()
-        self._log(f"Generating PDF: {output_path}")
-        title = self.get_score_name() or None
+        main_win = self.window()
+        if hasattr(main_win, 'config_tab'):
+            main_win.config_tab.apply_to_api()
+
+        self._api.update_config({"default_crop_ratio": self.crop_spin.value()})
+        self._api.reapply_crop(self.crop_spin.value())
+
+        pdf_name = self.pdf_name_edit.text().strip()
+        title = pdf_name if pdf_name else None
+
+        self._busy = True
+        self.action_btn.setText("Generating PDF…")
+        self.action_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(False)
+        self.progress_bar.setValue(0)
+        self.log_edit.clear()
+        self.status_label.setText("Generating PDF from loaded pages…")
+
+        if hasattr(main_win, '_generating_pdf'):
+            main_win._generating_pdf = True
+
         try:
             self._api.generate_pdf(output_path, title=title)
         except RuntimeError as e:
+            if hasattr(main_win, '_generating_pdf'):
+                main_win._generating_pdf = False
             QMessageBox.warning(self, "Error", str(e))
             self._reset_ui()
 
-    def on_pdf_completed(self, page_count: int):
-        output_path = self.get_output_path()
-        self._log(f"PDF saved to: {output_path}")
-        msg = QMessageBox(self)
-        msg.setIcon(QMessageBox.Icon.Information)
-        msg.setWindowTitle("Success")
-        msg.setText(f"PDF generated successfully!\n\n{output_path}")
-        open_btn = msg.addButton("Open PDF", QMessageBox.ButtonRole.ActionRole)
-        msg.addButton(QMessageBox.StandardButton.Ok)
-        msg.exec()
-        if msg.clickedButton() == open_btn:
+    def _cancel(self):
+        if self._busy:
+            self._api.cancel_extraction()
+            self._log("Cancelling…")
+
+    def _open_pdf(self):
+        if self._completed_pdf_path and os.path.exists(self._completed_pdf_path):
             try:
-                os.startfile(output_path)
+                os.startfile(self._completed_pdf_path)
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Could not open PDF:\n{e}")
-        self._reset_ui()
+        self._completed_pdf_path = None
+        self._update_state()
+
+    # ── Callbacks from MainWindow ──
+
+    def on_completed(self, page_count: int):
+        self._log(f"Operation complete: {page_count} pages")
+        if page_count == 0:
+            self._log("No pages resulted. Skipping PDF.")
+            self._reset_ui()
+            return
+
+        if not self._has_existing_score:
+            output_path = self.get_output_path()
+            self._log(f"Generating PDF: {output_path}")
+            title = self.pdf_name_edit.text().strip() or None
+            try:
+                self._api.generate_pdf(output_path, title=title)
+            except RuntimeError as e:
+                QMessageBox.warning(self, "Error", str(e))
+                self._reset_ui()
+
+    def on_pdf_completed(self, page_count: int):
+        output_path = self.get_output_path()
+        self._completed_pdf_path = output_path
+        self._log(f"PDF saved to: {output_path}")
+        self.status_label.setText(f"✓ PDF saved — {output_path}")
+        self.action_btn.setText("Open PDF")
+        self.action_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self._busy = False
 
     def on_cancelled(self):
-        self._log("Extraction cancelled by user.")
+        self._log("Cancelled by user.")
         self._reset_ui()
 
     def on_error(self, message: str):
         self._log(f"[Error] {message}")
-        if not self._extracting:
+        if not self._busy:
             QMessageBox.critical(self, "Error", message)
         self._reset_ui()
 
@@ -1191,286 +1411,29 @@ class ExtractTab(QWidget):
 
     def on_progress(self, phase: str, percent: float, _detail: str):
         self.progress_bar.setValue(int(percent))
+        if phase == "extracting":
+            self.action_btn.setText(f"Extracting… {int(percent)}%")
+        elif phase == "generating_pdf":
+            self.action_btn.setText(f"Generating PDF… {int(percent)}%")
 
     def _reset_ui(self):
-        self._extracting = False
-        self.start_btn.setText("Start Extraction")
-        self.start_btn.setEnabled(bool(self._video_path and os.path.exists(self._video_path)))
+        self._busy = False
         self.cancel_btn.setEnabled(False)
-        self.browse_btn.setEnabled(True)
+        self.action_btn.setText("Start Extraction")
         self.download_btn.setEnabled(True)
         self.download_btn.setText("Download")
         self.yt_url_edit.setEnabled(True)
+        self.browse_btn.setEnabled(True)
+        self._update_state()
 
     def _log(self, msg: str):
         self.log_edit.append(msg)
 
 
-# ── Gallery Tab ──────────────────────────────────────────────────────
-
-class GalleryTab(QWidget):
-    def __init__(self, api: GuiApi, parent=None):
-        super().__init__(parent)
-        self._api = api
-
-        layout = QVBoxLayout(self)
-        layout.setSpacing(8)
-
-        header = QHBoxLayout()
-        self.count_label = QLabel("Pages: 0")
-        self.count_label.setObjectName("count")
-        header.addWidget(self.count_label)
-        header.addStretch()
-        layout.addLayout(header)
-
-        self.list_widget = QListWidget()
-        self.list_widget.setViewMode(QListView.ViewMode.IconMode)
-        self.list_widget.setIconSize(QSize(160, 120))
-        self.list_widget.setGridSize(QSize(180, 150))
-        self.list_widget.setWordWrap(True)
-        self.list_widget.setSpacing(6)
-        self.list_widget.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        self.list_widget.itemDoubleClicked.connect(self._show_preview)
-        layout.addWidget(self.list_widget, 1)
-
-        btn_row = QHBoxLayout()
-        self.move_up_btn = QPushButton("▲ Move Up")
-        self.move_up_btn.setObjectName("secondary")
-        self.move_down_btn = QPushButton("▼ Move Down")
-        self.move_down_btn.setObjectName("secondary")
-        self.delete_btn = QPushButton("Delete")
-        self.delete_btn.setObjectName("danger")
-        self.clear_btn = QPushButton("Clear All")
-        self.clear_btn.setObjectName("danger")
-        btn_row.addWidget(self.move_up_btn)
-        btn_row.addWidget(self.move_down_btn)
-        btn_row.addWidget(self.delete_btn)
-        btn_row.addWidget(self.clear_btn)
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
-
-        self.move_up_btn.clicked.connect(self._move_up)
-        self.move_down_btn.clicked.connect(self._move_down)
-        self.delete_btn.clicked.connect(self._delete)
-        self.clear_btn.clicked.connect(self._clear_all)
-
-        self.setEnabled(False)
-
-    def refresh(self):
-        self.list_widget.clear()
-        count = self._api.get_page_count()
-        self.count_label.setText(f"Pages: {count}")
-        self.setEnabled(count > 0)
-
-        for i in range(count):
-            thumb_bytes = self._api.get_page_thumbnail(i)
-            if thumb_bytes:
-                pixmap = QPixmap()
-                pixmap.loadFromData(thumb_bytes)
-                icon = QIcon(pixmap)
-                item = QListWidgetItem(icon, f"Page {i + 1}")
-                item.setData(Qt.ItemDataRole.UserRole, i)
-                item.setSizeHint(QSize(170, 140))
-                self.list_widget.addItem(item)
-
-    def _get_selected_index(self) -> Optional[int]:
-        items = self.list_widget.selectedItems()
-        if not items:
-            QMessageBox.information(self, "Select a page",
-                                    "Please select a page first.")
-            return None
-        return self.list_widget.row(items[0])
-
-    def _move_up(self):
-        idx = self._get_selected_index()
-        if idx is None or idx == 0:
-            return
-        new_order = list(range(self._api.get_page_count()))
-        new_order[idx], new_order[idx - 1] = new_order[idx - 1], new_order[idx]
-        self._api.reorder_pages(new_order)
-        self.refresh()
-        self.list_widget.setCurrentRow(idx - 1)
-
-    def _move_down(self):
-        idx = self._get_selected_index()
-        if idx is None or idx >= self._api.get_page_count() - 1:
-            return
-        new_order = list(range(self._api.get_page_count()))
-        new_order[idx], new_order[idx + 1] = new_order[idx + 1], new_order[idx]
-        self._api.reorder_pages(new_order)
-        self.refresh()
-        self.list_widget.setCurrentRow(idx + 1)
-
-    def _delete(self):
-        idx = self._get_selected_index()
-        if idx is None:
-            return
-        self._api.remove_page(idx)
-        self.refresh()
-
-    def _clear_all(self):
-        if self._api.get_page_count() == 0:
-            return
-        reply = QMessageBox.question(self, "Clear All Pages",
-                                     "Remove all detected pages?",
-                                     QMessageBox.StandardButton.Yes |
-                                     QMessageBox.StandardButton.No)
-        if reply == QMessageBox.StandardButton.Yes:
-            self._api.clear_pages()
-            self.refresh()
-
-    def _show_preview(self, item: QListWidgetItem):
-        idx = item.data(Qt.ItemDataRole.UserRole)
-        if idx is None:
-            return
-        full_bytes = self._api.get_page_full(idx)
-        if full_bytes:
-            pixmap = QPixmap()
-            pixmap.loadFromData(full_bytes)
-            dialog = PagePreviewDialog(pixmap, f"Page {idx + 1}", self)
-            dialog.exec()
 
 
-# ── Export Tab ───────────────────────────────────────────────────────
 
-class ExportTab(QWidget):
-    def __init__(self, api: GuiApi, parent=None):
-        super().__init__(parent)
-        self._api = api
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-
-        title = QLabel("Export")
-        title.setObjectName("title")
-        layout.addWidget(title)
-
-        # Output path (read-only display; set via Extract tab)
-        out_row = QHBoxLayout()
-        out_label = QLabel("Output PDF:")
-        out_label.setFixedWidth(80)
-        self.output_edit = QLineEdit()
-        self.output_edit.setPlaceholderText("output.pdf")
-        self.output_edit.setReadOnly(True)
-        out_row.addWidget(out_label)
-        out_row.addWidget(self.output_edit, 1)
-        layout.addLayout(out_row)
-
-        self.regenerate_btn = QPushButton("Regenerate PDF")
-        self.regenerate_btn.setEnabled(False)
-        layout.addWidget(self.regenerate_btn)
-
-        # Saved scores section
-        layout.addWidget(QLabel(""))
-        saved_label = QLabel("Previous Scores")
-        saved_label.setStyleSheet(f"font-size: 16px; font-weight: 600; color: {INK};")
-        layout.addWidget(saved_label)
-
-        self.score_combo = QComboBox()
-        self.score_combo.setMinimumHeight(32)
-        layout.addWidget(self.score_combo)
-
-        sb_btn_row = QHBoxLayout()
-        self.load_score_btn = QPushButton("Load Pages")
-        self.load_score_btn.setObjectName("secondary")
-        self.delete_score_btn = QPushButton("Delete Score")
-        self.delete_score_btn.setObjectName("danger")
-        self.refresh_score_btn = QPushButton("Refresh")
-        self.refresh_score_btn.setObjectName("secondary")
-        sb_btn_row.addWidget(self.load_score_btn)
-        sb_btn_row.addWidget(self.delete_score_btn)
-        sb_btn_row.addWidget(self.refresh_score_btn)
-        sb_btn_row.addStretch()
-        layout.addLayout(sb_btn_row)
-
-        # Status
-        self.status_label = QLabel("")
-        self.status_label.setObjectName("muted")
-        layout.addWidget(self.status_label)
-
-        layout.addStretch()
-
-        # Connections
-        self.regenerate_btn.clicked.connect(self._regenerate)
-        self.load_score_btn.clicked.connect(self._load_saved_score)
-        self.delete_score_btn.clicked.connect(self._delete_saved_score)
-        self.refresh_score_btn.clicked.connect(self.refresh_saved_scores)
-
-    def refresh_saved_scores(self):
-        self.score_combo.clear()
-        try:
-            scores = self._api.list_saved_scores("")
-            for s in scores:
-                label = f"{s.score_name} ({s.page_count} pages)"
-                self.score_combo.addItem(label, s.path)
-            self._set_status(f"Found {len(scores)} previous scores.")
-        except Exception as e:
-            self._set_status(f"Error listing scores: {e}")
-
-    def set_output_path(self, path: str):
-        self.output_edit.setText(path)
-
-    def get_output_path(self) -> str:
-        path = self.output_edit.text().strip()
-        if not path:
-            path = "score.pdf"
-            self.output_edit.setText(path)
-        return path
-
-    def _regenerate(self):
-        output = self.get_output_path()
-        if self._api.get_page_count() == 0:
-            QMessageBox.warning(self, "No Pages",
-                                "No pages loaded. Load a score or run extraction first.")
-            return
-        self.regenerate_btn.setEnabled(False)
-        self.regenerate_btn.setText("Generating…")
-        self._set_status(f"Generating PDF: {output}")
-        try:
-            self._api.generate_pdf(output)
-        except RuntimeError as e:
-            QMessageBox.warning(self, "Error", str(e))
-            self.regenerate_btn.setEnabled(True)
-            self.regenerate_btn.setText("Regenerate PDF")
-
-    def _load_saved_score(self):
-        path = self.score_combo.currentData()
-        if not path:
-            QMessageBox.information(self, "Select Score",
-                                    "Select a previous score from the list.")
-            return
-        try:
-            count = self._api.load_saved_score(path)
-            self._set_status(f"Loaded {count} pages from score.")
-            self.regenerate_btn.setEnabled(True)
-
-            main_win = self.window()
-            if hasattr(main_win, 'gallery_tab'):
-                main_win.gallery_tab.refresh()
-                main_win.tabs.setCurrentWidget(main_win.gallery_tab)
-        except Exception as e:
-            QMessageBox.warning(self, "Error", f"Could not load score:\n{e}")
-
-    def _delete_saved_score(self):
-        path = self.score_combo.currentData()
-        if not path:
-            QMessageBox.information(self, "Select Score",
-                                    "Select a previous score from the list.")
-            return
-        reply = QMessageBox.question(self, "Delete Score",
-                                     f"Delete this score permanently?\n\n{path}",
-                                     QMessageBox.StandardButton.Yes |
-                                     QMessageBox.StandardButton.No)
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                self._api.delete_saved_score(path)
-                self.refresh_saved_scores()
-                self._set_status("Score deleted.")
-            except Exception as e:
-                QMessageBox.warning(self, "Error", f"Could not delete:\n{e}")
-
-    def _set_status(self, msg: str):
-        self.status_label.setText(msg)
 
 
 # ── Main Window ──────────────────────────────────────────────────────
@@ -1495,7 +1458,6 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(12, 12, 12, 12)
 
-        # Header
         header = QLabel("Score Extractor")
         header.setObjectName("title")
         header.setStyleSheet(f"""
@@ -1505,16 +1467,12 @@ class MainWindow(QMainWindow):
         """)
         main_layout.addWidget(header)
 
-        # Tabs (Config is last — Extract opens by default)
+        # Tabs
         self.tabs = QTabWidget()
         self.extract_tab = ExtractTab(self.api)
-        self.gallery_tab = GalleryTab(self.api)
-        self.export_tab = ExportTab(self.api)
         self.config_tab = ConfigTab(self.api)
 
         self.tabs.addTab(self.extract_tab, "Extract")
-        self.tabs.addTab(self.gallery_tab, "Gallery")
-        self.tabs.addTab(self.export_tab, "Export")
         self.tabs.addTab(self.config_tab, "Config")
 
         main_layout.addWidget(self.tabs, 1)
@@ -1535,9 +1493,6 @@ class MainWindow(QMainWindow):
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
-        # Refresh scores and config when the respective tabs become visible
-        QTimer.singleShot(200, self.export_tab.refresh_saved_scores)
-
     def _on_progress(self, phase: str, percent: float, detail: str):
         self.extract_tab.on_progress(phase, percent, detail)
         self.status_bar.showMessage(detail)
@@ -1555,12 +1510,9 @@ class MainWindow(QMainWindow):
         if self._generating_pdf:
             self._generating_pdf = False
             self.extract_tab.on_pdf_completed(page_count)
-            self.gallery_tab.refresh()
-            self.export_tab.refresh_saved_scores()
         else:
             self.extract_tab.on_completed(page_count)
-            self.gallery_tab.refresh()
-            score_dir = str(Path(self.extract_tab.get_output_folder()) / self.extract_tab.get_score_name())
+            score_dir = self.extract_tab.get_project_dir()
             self.api.open_debug_folder(score_dir)
             if page_count > 0:
                 self._generating_pdf = True
@@ -1574,12 +1526,7 @@ class MainWindow(QMainWindow):
         self.extract_tab._on_yt_download_completed(path)
 
     def _on_tab_changed(self, index: int):
-        if index == 1:  # Gallery tab
-            self.gallery_tab.refresh()
-        elif index == 2:  # Export tab
-            self.export_tab.set_output_path(self.extract_tab.get_output_path())
-            self.export_tab.refresh_saved_scores()
-        elif index == 3:  # Config tab
+        if index == 1:
             self.config_tab.refresh_from_api()
 
 
