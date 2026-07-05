@@ -393,6 +393,13 @@ class GuiApi:
                 self._emit_progress("extracting", 100.0, "Extraction complete")
                 self._emit_completed(len(self._pages))
                 self._emit_log(f"Extraction complete: {len(self._pages)} pages found")
+            else:
+                self._pages.clear()
+                self._page_png_cache.clear()
+                self._state.phase = "idle"
+                import shutil
+                shutil.rmtree(score_dir, ignore_errors=True)
+                self._emit_cancelled()
 
         except Exception as e:
             self._state.phase = "error"
