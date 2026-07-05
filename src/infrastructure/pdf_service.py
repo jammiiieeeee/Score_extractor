@@ -35,8 +35,6 @@ class PdfService(IPdfService):
         c.drawCentredString(width / 2, height - margin, title)
         y_offset -= 40
 
-        strips_on_page = 0
-
         for idx, img in enumerate(images):
             img_h, img_w = img.shape[:2]
             y_start = int(img_h * config.crop_top_offset)
@@ -50,13 +48,11 @@ class PdfService(IPdfService):
             draw_width = usable_width
             draw_height = draw_width / strip_aspect
 
-            if y_offset - draw_height < margin or strips_on_page >= config.default_strips_per_page:
+            if y_offset - draw_height < margin:
                 c.showPage()
                 y_offset = height - margin
-                strips_on_page = 0
 
             c.drawImage(temp_img_path, margin, y_offset - draw_height, width=draw_width, height=draw_height)
             y_offset -= draw_height
-            strips_on_page += 1
 
         c.save()

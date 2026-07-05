@@ -120,18 +120,6 @@ def test_all():
         except ValueError:
             pass
 
-    def test_update_config_rejects_oob_int():
-        try:
-            api.update_config({"default_strips_per_page": 0})
-            assert False, "Should have raised ValueError"
-        except ValueError:
-            pass
-        try:
-            api.update_config({"default_strips_per_page": 21})
-            assert False, "Should have raised ValueError"
-        except ValueError:
-            pass
-
     def test_update_config_rejects_oob_confidence():
         try:
             api.update_config({"ocr_confidence_threshold": -1})
@@ -493,8 +481,7 @@ def test_all():
         ("update_config", test_update_config),
         ("update_config rejects unknown key", test_update_config_rejects_unknown_key),
         ("update_config rejects OOB float", test_update_config_rejects_oob_float),
-        ("update_config rejects OOB int", test_update_config_rejects_oob_int),
-        ("update_config rejects OOB confidence", test_update_config_rejects_oob_confidence),
+            ("update_config rejects OOB confidence", test_update_config_rejects_oob_confidence),
         ("reset_config", test_reset_config),
         ("load_config_file", test_load_config_file),
         ("save_config_file", test_save_config_file),

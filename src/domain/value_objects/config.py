@@ -27,7 +27,7 @@ class ScoreConfig:
     # PDF Output
     default_crop_ratio: float = 0.32             # Height of each PDF strip
     crop_top_offset: float = 0.0                 # Starting Y offset for crop
-    default_strips_per_page: int = 7             # Strips per PDF page
+
 
     # Bar Detection
     bar_min_diff_threshold: float = 500.0        # Minimum summed column diff to accept bar position

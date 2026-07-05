@@ -588,13 +588,11 @@ class ConfigTab(QWidget):
         form.setSpacing(18)
 
         self.crop_ratio = self._spin_float(0.0, 1.0, 0.01, 0.35)
-        self.strips = self._spin_int(1, 20, 7)
         self.sensitivity = self._spin_float(0.0, 1.0, 0.01, 0.96)
         self.min_interval = self._spin_float(0.0, 60.0, 0.5, 3.0)
         self.ocr_conf = self._spin_int(0, 100, 40)
 
         form.addRow("Crop ratio:", self.crop_ratio)
-        form.addRow("Strips per page:", self.strips)
         form.addRow("Page change sensitivity:", self.sensitivity)
         form.addRow("Min seconds between captures:", self.min_interval)
         form.addRow("OCR confidence:", self.ocr_conf)
@@ -687,7 +685,7 @@ class ConfigTab(QWidget):
 
     def _all_spins(self):
         return [
-            self.crop_ratio, self.strips, self.sensitivity, self.min_interval, self.ocr_conf,
+            self.crop_ratio, self.sensitivity, self.min_interval, self.ocr_conf,
             self.adv_frame_check, self.adv_top_ratio, self.adv_a_delay, self.adv_b_delay,
             self.adv_overlay, self.adv_dup_top, self.adv_pixel_sim, self.adv_row_sim,
             self.adv_row_cov, self.adv_ocr_horiz, self.adv_crop_offset, self.adv_blank_std,
@@ -700,7 +698,6 @@ class ConfigTab(QWidget):
         try:
             updates = {
                 "default_crop_ratio": self.crop_ratio.value(),
-                "default_strips_per_page": self.strips.value(),
                 "change_detection_threshold": self.sensitivity.value(),
                 "min_screenshot_interval": self.min_interval.value(),
                 "ocr_confidence_threshold": self.ocr_conf.value(),
@@ -731,11 +728,10 @@ class ConfigTab(QWidget):
         try:
             cfg = self._api.get_config()
             self.crop_ratio.setValue(cfg.get("default_crop_ratio", 0.35))
-            self.strips.setValue(cfg.get("default_strips_per_page", 7))
             self.sensitivity.setValue(cfg.get("change_detection_threshold", 0.96))
             self.min_interval.setValue(cfg.get("min_screenshot_interval", 3.0))
             self.ocr_conf.setValue(cfg.get("ocr_confidence_threshold", 40))
-            self.adv_frame_check.setValue(cfg.get("frame_check_interval", 0.2))
+            self.adv_frame_check.setValue(cfg.get("frame_check_interval", 0.8))
             self.adv_top_ratio.setValue(cfg.get("top_analysis_ratio", 0.34))
             self.adv_a_delay.setValue(cfg.get("a_capture_delay", 0.3))
             self.adv_b_delay.setValue(cfg.get("b_capture_delay", 3.0))
