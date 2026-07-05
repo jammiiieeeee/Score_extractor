@@ -232,14 +232,12 @@ class GuiApi:
     def get_video_info(self) -> Optional[VideoInfo]:
         return self._video_info
 
-    def read_frame_at(self, timestamp: float) -> Optional[bytes]:
+    def read_frame_at(self, timestamp: float) -> Optional[np.ndarray]:
         if self._video_service is None or self._video_info is None:
             return None
         frame_idx = int(timestamp * self._video_info.fps)
         img, _ = self._video_service.read_frame_at(frame_idx)
-        if img is None:
-            return None
-        return self._encode_png(img)
+        return img
 
     def close_video(self) -> None:
         if self._video_service:
@@ -461,6 +459,7 @@ class GuiApi:
                 'noplaylist': True,
                 'playlistend': 1,
                 'ffmpeg_location': ffmpeg_path,
+                'merge_output_format': 'mp4',
             }
 
             self._emit_log(f"Downloading: {url}")

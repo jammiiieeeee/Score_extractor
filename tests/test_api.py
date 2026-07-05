@@ -191,10 +191,10 @@ def test_all():
             raise SkipTest("No test video found")
         if api._video_info is None:
             api.open_video(test_video)
-        png = api.read_frame_at(0.0)
-        assert png is not None
-        assert isinstance(png, bytes)
-        assert len(png) > 100
+        img = api.read_frame_at(0.0)
+        assert img is not None
+        assert isinstance(img, np.ndarray)
+        assert img.shape[2] == 3
 
     # ── 9. close_video() ───────────────────────────────────────────────
     def test_close_video():

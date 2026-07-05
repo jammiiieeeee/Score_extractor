@@ -372,18 +372,18 @@ class DualHandleSeekBar(QWidget):
         self._dragging: Optional[str] = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 2, 8, 2)
-        layout.setSpacing(2)
+        layout.setContentsMargins(8, 0, 8, 0)
+        layout.setSpacing(0)
 
         # Groove surface
         self.groove = QWidget()
-        self.groove.setMinimumHeight(36)
+        self.groove.setMinimumHeight(24)
         self.groove.setMouseTracking(True)
         layout.addWidget(self.groove)
 
         # Controls row
         ctrl = QHBoxLayout()
-        ctrl.setSpacing(6)
+        ctrl.setSpacing(4)
         self.start_cb = QCheckBox("Start-time capture")
         self.start_cb.setChecked(True)
         self.start_label = QLabel("00:00.0")
@@ -483,13 +483,13 @@ class DualHandleSeekBar(QWidget):
         if self._start_enabled:
             painter.setBrush(QColor(ACCENT))
             painter.setPen(QPen(QColor("white"), 2))
-            painter.drawEllipse(x1 - 9, mid - 9, 18, 18)
+            painter.drawEllipse(x1 - 7, mid - 7, 14, 14)
 
         # End handle
         if self._end_enabled:
             painter.setBrush(QColor(ACCENT))
             painter.setPen(QPen(QColor("white"), 2))
-            painter.drawEllipse(x2 - 9, mid - 9, 18, 18)
+            painter.drawEllipse(x2 - 7, mid - 7, 14, 14)
 
         painter.end()
 
@@ -513,9 +513,9 @@ class DualHandleSeekBar(QWidget):
         d_start = dist_to(x_start) if self._start_enabled else 999
         d_end = dist_to(x_end) if self._end_enabled else 999
 
-        if d_start < 20 and d_start <= d_end:
+        if d_start < 16 and d_start <= d_end:
             self._dragging = 'start'
-        elif d_end < 20:
+        elif d_end < 16:
             self._dragging = 'end'
         else:
             self._dragging = None
@@ -808,10 +808,10 @@ class ExtractTab(QWidget):
         self.yt_url_edit.setPlaceholderText("Paste YouTube video URL")
 
         self.quality_combo = QComboBox()
-        self.quality_combo.addItem("Best (≤1080p)", "bestvideo[height<=1080]+bestaudio/best[height<=1080]")
-        self.quality_combo.addItem("720p", "best[height<=720]")
-        self.quality_combo.addItem("480p", "best[height<=480]")
-        self.quality_combo.addItem("360p", "best[height<=360]")
+        self.quality_combo.addItem("Best (≤1080p)", "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]")
+        self.quality_combo.addItem("720p", "best[ext=mp4][height<=720]")
+        self.quality_combo.addItem("480p", "best[ext=mp4][height<=480]")
+        self.quality_combo.addItem("360p", "best[ext=mp4][height<=360]")
         self.quality_combo.addItem("Best available", "best")
         self.quality_combo.setCurrentIndex(0)
         self.quality_combo.setFixedWidth(100)
@@ -833,14 +833,7 @@ class ExtractTab(QWidget):
         self.video_path_edit.hide()
         self.browse_btn.hide()
 
-        # Row 1 — PDF title
-        title_label = QLabel("PDF title:")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.custom_title_edit = QLineEdit()
-        input_grid.addWidget(title_label, 1, 0)
-        input_grid.addWidget(self.custom_title_edit, 1, 1)
-
-        # Row 2 — Output folder
+        # Row 1 — Output folder
         out_label = QLabel("Output folder:")
         out_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.output_folder_edit = QLineEdit()
@@ -854,25 +847,26 @@ class ExtractTab(QWidget):
             self.output_folder_edit.setText(default_dir)
         self.output_browse_btn = QPushButton("Browse…")
         self.output_browse_btn.setObjectName("secondary")
-        input_grid.addWidget(out_label, 2, 0)
-        input_grid.addWidget(self.output_folder_edit, 2, 1)
-        input_grid.addWidget(self.output_browse_btn, 2, 2)
+        input_grid.addWidget(out_label, 1, 0)
+        input_grid.addWidget(self.output_folder_edit, 1, 1)
+        input_grid.addWidget(self.output_browse_btn, 1, 2)
 
-        # Row 3 — Score name
+        # Row 2 — Score name
         name_label = QLabel("Score name:")
         name_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.score_name_edit = QLineEdit()
         self.score_name_edit.setPlaceholderText("Auto-filled from video")
-        input_grid.addWidget(name_label, 3, 0)
-        input_grid.addWidget(self.score_name_edit, 3, 1)
+        input_grid.addWidget(name_label, 2, 0)
+        input_grid.addWidget(self.score_name_edit, 2, 1)
 
         layout.addLayout(input_grid)
 
         # ── Unified preview (crop + dual seekbar) ──
         self.crop_widget = CropPreviewWidget()
-        layout.addWidget(self.crop_widget, 1)
+        layout.addWidget(self.crop_widget, 2)
 
         self.seek_bar = DualHandleSeekBar()
+        self.seek_bar.setMaximumHeight(60)
         layout.addWidget(self.seek_bar)
 
         # Crop bar
@@ -1016,7 +1010,8 @@ class ExtractTab(QWidget):
     def _on_yt_download_completed(self, path: str):
         self._video_path = path
         self.video_path_edit.setText(path)
-        self.custom_title_edit.setText(Path(path).stem)
+        if not self.score_name_edit.text():
+            self.score_name_edit.setText(Path(path).stem)
         self._log(f"Video downloaded: {path}")
         self._load_preview()
         self._extracting = False
@@ -1052,21 +1047,17 @@ class ExtractTab(QWidget):
             self.seek_bar.set_start(2.0)
             self.seek_bar.set_end(info.duration)
 
-            # Auto-populate score name and PDF title
+            # Auto-populate score name
             if not self.score_name_edit.text():
                 self.score_name_edit.setText(Path(path).stem)
-            if not self.custom_title_edit.text():
-                self.custom_title_edit.setText(Path(path).stem)
 
             # Show frame 0 in crop tab, sync crop ratio from config
             default_ratio = self._api.get_config().get("default_crop_ratio", 0.35)
             self.crop_widget.set_ratio(default_ratio)
             self.crop_default_label.setText(f"Default: {int(default_ratio * 100)}%")
-            png_bytes = self._api.read_frame_at(0.0)
-            if png_bytes:
-                pixmap = QPixmap()
-                pixmap.loadFromData(png_bytes)
-                self.crop_widget.set_frame(pixmap)
+            img = self._api.read_frame_at(0.0)
+            if img is not None:
+                self.crop_widget.set_frame(self._img_to_pixmap(img))
 
             self._log("Video loaded: " + path)
             self._log(f"Duration: {info.duration:.1f}s, FPS: {info.fps:.2f}, "
@@ -1074,14 +1065,23 @@ class ExtractTab(QWidget):
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Could not open video:\n{e}")
 
+    @staticmethod
+    def _img_to_pixmap(img: np.ndarray) -> QPixmap:
+        h, w = img.shape[:2]
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        qt_img = QImage(rgb.data, w, h, w * 3, QImage.Format.Format_RGB888)
+        return QPixmap.fromImage(qt_img.copy())
+
     def _on_seek(self, ts: float):
         if ts < 0 or self._api.get_video_info() is None:
             return
-        png_bytes = self._api.read_frame_at(ts)
-        if png_bytes:
-            pixmap = QPixmap()
-            pixmap.loadFromData(png_bytes)
-            self.crop_widget.set_frame(pixmap)
+        now = time.monotonic()
+        if now - getattr(self, '_last_seek', 0.0) < 0.100:
+            return
+        self._last_seek = now
+        img = self._api.read_frame_at(ts)
+        if img is not None:
+            self.crop_widget.set_frame(self._img_to_pixmap(img))
 
     def _start_extraction(self):
         video_path = self._video_path
@@ -1152,7 +1152,7 @@ class ExtractTab(QWidget):
         # Auto-generate PDF
         output_path = self.get_output_path()
         self._log(f"Generating PDF: {output_path}")
-        title = self.custom_title_edit.text().strip() or None
+        title = self.get_score_name() or None
         try:
             self._api.generate_pdf(output_path, title=title)
         except RuntimeError as e:
