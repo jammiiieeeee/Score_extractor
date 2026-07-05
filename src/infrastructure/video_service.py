@@ -122,17 +122,31 @@ class VideoService(IVideoService):
                 bar_x = 0
                 merge_x = 0
             else:
-                # Scan right-to-left, first column > 50% of max is the bar
-                threshold = max_diff * 0.5
-                bar_x_small = -1
+                # Detect right edge of bar (right-to-left, column > 50% of max)
+                right_threshold = max_diff * 0.5
+                bar_right_small = -1
                 for col in range(len(relevant_sum) - 1, -1, -1):
-                    if relevant_sum[col] > threshold:
-                        bar_x_small = col
+                    if relevant_sum[col] > right_threshold:
+                        bar_right_small = col
                         break
-                if bar_x_small < 0:
-                    bar_x_small = int(np.argmax(relevant_sum))
-                bar_x = int(bar_x_small * (w / small_w))
-                merge_x = max(0, min(bar_x + bar_padding_px, w))
+                if bar_right_small < 0:
+                    bar_right_small = int(np.argmax(relevant_sum))
+
+                # Detect left edge of bar (left-to-right, column > 20% of max)
+                left_threshold = max_diff * 0.2
+                bar_left_small = -1
+                for col in range(bar_right_small - 1, -1, -1):
+                    if relevant_sum[col] < left_threshold:
+                        bar_left_small = col + 1
+                        break
+                if bar_left_small < 0:
+                    bar_left_small = 0
+
+                bar_x = int(bar_right_small * (w / small_w))
+                bar_left = int(bar_left_small * (w / small_w))
+                bar_width = bar_x - bar_left
+                # Set merge point to the bar's left edge, fully excluding the bar body
+                merge_x = max(0, min(bar_left + bar_padding_px, w))
         else:
             bar_x = 0
             merge_x = 0

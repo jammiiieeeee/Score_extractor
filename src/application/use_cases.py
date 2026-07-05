@@ -245,7 +245,7 @@ class ExtractScoreUseCase:
 
     def _save_bar_profile_plot(
         self, frame_a: np.ndarray, frame_b: np.ndarray,
-        crop_ratio: float, bar_x: int, bar_padding_px: int,
+        crop_ratio: float, bar_x: int, bar_width: int, bar_padding_px: int,
         margin_col: int, output_path: Path, page_num: int,
         deduplicator, peaks=None, has_clean=None, has_left_spike=None
     ):
@@ -316,11 +316,16 @@ class ExtractScoreUseCase:
                         color='red', fontweight='bold')
 
         bar_x_640 = int(round(bar_x * (640 / w)))
-        merge_x_640 = int(round(bar_x_640 + bar_padding_px * (640 / w)))
+        bar_left_640 = max(0, bar_x_640 - int(round(bar_width * (640 / w))))
+        merge_x_640 = max(0, min(640, bar_left_640 + int(round(bar_padding_px * (640 / w)))))
         if bar_x_640 > 0:
             ax.axvline(x=bar_x_640, color='green', linestyle=':', alpha=0.5)
-            ax.annotate(f'bar_x={bar_x_640}', xy=(bar_x_640, max_val * 0.4),
+            ax.annotate(f'right={bar_x_640}', xy=(bar_x_640, max_val * 0.4),
                         fontsize=7, color='green')
+            if bar_left_640 > 0:
+                ax.axvline(x=bar_left_640, color='green', linestyle=':', alpha=0.3)
+                ax.annotate(f'left={bar_left_640}', xy=(bar_left_640, max_val * 0.35),
+                            fontsize=7, color='green')
             if 0 < merge_x_640 < 640:
                 ax.axvline(x=merge_x_640, color='darkgreen', linestyle='-', alpha=0.8)
                 ax.annotate(f'merge_x={merge_x_640}', xy=(merge_x_640, max_val * 0.3),
@@ -351,12 +356,12 @@ class ExtractScoreUseCase:
 
         # Merge frames (always applied, including start-time)
         debug_path = str(output_dir / "debug" / f"bar_profile_page_{page_num:03d}.txt") if debug else None
-        merged_img, bar_x = self.video_service.merge_frames(
+        merged_img, bar_x, bar_width = self.video_service.merge_frames(
             frame_a.image, frame_b.image, self.config.b_overlay_width_ratio,
             self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
             self.config.bar_padding_px, debug_path
         )
-        log(f"  Bar edge at x={bar_x} for page {page_num}")
+        log(f"  Bar right edge at x={bar_x}, width={bar_width}px for page {page_num}")
 
         # Upscale merged to original resolution (used for saving, storing, and dedup comparison)
         full_img = cv2.resize(merged_img, (self._orig_w, self._orig_h),
@@ -417,7 +422,7 @@ class ExtractScoreUseCase:
             plot_path = output_dir / "debug" / f"bar_profile_page_{page_num:03d}.png"
             self._save_bar_profile_plot(
                 frame_a.image, frame_b.image, self.config.default_crop_ratio,
-                bar_x, self.config.bar_padding_px,
+                bar_x, bar_width, self.config.bar_padding_px,
                 int(640 * self.config.bar_left_margin), plot_path, page_num,
                 deduplicator, peaks=bar_peaks, has_clean=has_clean_profile,
                 has_left_spike=has_left_spike
