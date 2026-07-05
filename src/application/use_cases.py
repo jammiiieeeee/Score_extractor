@@ -49,8 +49,8 @@ class ExtractScoreUseCase:
         else:
             if not self.ocr_service.initialize():
                 on_log("[Warning] OCR initialization failed, continuing without OCR.")
-                from src.infrastructure.ocr_service import OcrService
-                effective_ocr = OcrService()
+                from src.domain.interfaces import _NoopOcrService
+                effective_ocr = _NoopOcrService()
             else:
                 effective_ocr = self.ocr_service
 

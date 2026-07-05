@@ -159,6 +159,7 @@ class GuiApi:
             "pixel_similarity_threshold", "row_similarity_threshold",
             "row_coverage_threshold", "ocr_horizontal_ratio",
             "default_crop_ratio", "crop_top_offset",
+            "bar_left_margin",
         }
         valid_float_any = {
             "frame_check_interval", "min_screenshot_interval",
