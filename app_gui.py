@@ -7,7 +7,7 @@ from urllib.parse import urlparse, parse_qs
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, pyqtSignal
 from PyQt6.QtGui import QAction, QFont, QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -845,6 +845,13 @@ class ExtractTab(QWidget):
         out_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.output_folder_edit = QLineEdit()
         self.output_folder_edit.setPlaceholderText("Select output folder…")
+        self._settings = QSettings("ScoreExtractor", "App")
+        saved = self._settings.value("output_folder", "")
+        if saved:
+            self.output_folder_edit.setText(saved)
+        else:
+            default_dir = str(Path(__file__).resolve().parent / "output")
+            self.output_folder_edit.setText(default_dir)
         self.output_browse_btn = QPushButton("Browse…")
         self.output_browse_btn.setObjectName("secondary")
         input_grid.addWidget(out_label, 2, 0)
@@ -910,6 +917,7 @@ class ExtractTab(QWidget):
         self.browse_btn.clicked.connect(self._browse_video)
         self.video_path_edit.textChanged.connect(self._on_path_changed)
         self.output_browse_btn.clicked.connect(self._browse_output)
+        self.output_folder_edit.editingFinished.connect(lambda: self._settings.setValue("output_folder", self.output_folder_edit.text()))
         self.start_btn.clicked.connect(self._start_extraction)
         self.cancel_btn.clicked.connect(self._cancel_extraction)
         self.local_radio.toggled.connect(self._on_source_toggled)
@@ -949,9 +957,10 @@ class ExtractTab(QWidget):
 
     def _browse_output(self):
         path = QFileDialog.getExistingDirectory(
-            self, "Select Output Folder", "")
+            self, "Select Output Folder", self.output_folder_edit.text())
         if path:
             self.output_folder_edit.setText(path)
+            self._settings.setValue("output_folder", path)
 
     def _on_source_toggled(self):
         local = self.local_radio.isChecked()
@@ -1094,6 +1103,8 @@ class ExtractTab(QWidget):
         main_win = self.window()
         if hasattr(main_win, 'config_tab'):
             main_win.config_tab.apply_to_api()
+        # Crop widget's live position always wins over ConfigTab spinbox
+        self._api.update_config({"default_crop_ratio": self.crop_widget.get_ratio()})
 
         start_time = self.seek_bar.get_start()
         duration = self.seek_bar.get_end()

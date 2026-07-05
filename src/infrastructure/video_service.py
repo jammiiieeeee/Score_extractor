@@ -95,7 +95,7 @@ class VideoService(IVideoService):
         timestamp = frame_idx / self.fps
         return frame, timestamp
 
-    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, bar_padding_px: int = -10, debug_save_path: Optional[str] = None) -> Tuple[np.ndarray, int]:
+    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, bar_padding_px: int = -10, debug_save_path: Optional[str] = None) -> Tuple[np.ndarray, int, int]:
         h, w = frame_a.shape[:2]
 
         # Downscale to 640px for bar detection
@@ -116,6 +116,7 @@ class VideoService(IVideoService):
         search_range = int(small_w * overlay_width_ratio)
         relevant_sum = vertical_sum[:search_range]
 
+        bar_width = 0
         if len(relevant_sum) > 0:
             max_diff = float(np.max(relevant_sum))
             if max_diff < min_diff_threshold:
@@ -157,7 +158,8 @@ class VideoService(IVideoService):
         result = frame_a.copy()
         result[:, 0:merge_x] = frame_b[:, 0:merge_x]
 
-        return result, bar_x
+        bar_width = max(0, bar_width)
+        return result, bar_x, bar_width
 
     def close(self) -> None:
         if self.cap:

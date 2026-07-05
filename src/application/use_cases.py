@@ -382,7 +382,7 @@ class ExtractScoreUseCase:
         is_dup = False
         merged_number = None
         if ocr_service.is_enabled() and full_a is not None and full_b is not None:
-            ocr_merged, _ = self.video_service.merge_frames(
+            ocr_merged, _, _ = self.video_service.merge_frames(
                 full_a, full_b, self.config.b_overlay_width_ratio,
                 self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
                 self.config.bar_padding_px, None
