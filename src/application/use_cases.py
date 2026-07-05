@@ -319,17 +319,22 @@ class ExtractScoreUseCase:
         bar_left_640 = max(0, bar_x_640 - int(round(bar_width * (640 / w))))
         merge_x_640 = max(0, min(640, bar_left_640 + int(round(bar_padding_px * (640 / w)))))
         if bar_x_640 > 0:
-            ax.axvline(x=bar_x_640, color='green', linestyle=':', alpha=0.5)
-            ax.annotate(f'right={bar_x_640}', xy=(bar_x_640, max_val * 0.4),
-                        fontsize=7, color='green')
+            # Shade the bar region
+            ax.axvspan(bar_left_640, bar_x_640, alpha=0.08, color='orange', label='Playback bar')
+            ax.axvline(x=bar_x_640, color='orange', linestyle='-', alpha=0.9, linewidth=2)
+            ax.annotate(f'Bar right edge (col {bar_x_640})', xy=(bar_x_640, max_val * 0.5),
+                        fontsize=8, color='orange', fontweight='bold',
+                        rotation=90, va='bottom')
             if bar_left_640 > 0:
-                ax.axvline(x=bar_left_640, color='green', linestyle=':', alpha=0.3)
-                ax.annotate(f'left={bar_left_640}', xy=(bar_left_640, max_val * 0.35),
-                            fontsize=7, color='green')
+                ax.axvline(x=bar_left_640, color='orange', linestyle='-', alpha=0.7, linewidth=2)
+                ax.annotate(f'Bar left edge (col {bar_left_640})', xy=(bar_left_640, max_val * 0.35),
+                            fontsize=8, color='orange', fontweight='bold',
+                            rotation=90, va='bottom')
             if 0 < merge_x_640 < 640:
-                ax.axvline(x=merge_x_640, color='darkgreen', linestyle='-', alpha=0.8)
-                ax.annotate(f'merge_x={merge_x_640}', xy=(merge_x_640, max_val * 0.3),
-                            fontsize=7, color='darkgreen')
+                ax.axvline(x=merge_x_640, color='crimson', linestyle='-', alpha=0.9, linewidth=2)
+                ax.annotate(f'Overlay cutoff (col {merge_x_640})', xy=(merge_x_640, max_val * 0.65),
+                            fontsize=8, color='crimson', fontweight='bold',
+                            rotation=90, va='bottom')
 
         ax.set_xlabel('Column (640px scale)')
         ax.set_ylabel('Summed absdiff')
