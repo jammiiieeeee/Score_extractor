@@ -25,6 +25,7 @@ class ExtractScoreUseCase:
         self.file_service = file_service
         self.config = config
         self.deduplicator = Deduplicator(config, ocr_service)
+        self._attempt_num = 0
 
     def execute(
         self,
@@ -107,6 +108,7 @@ class ExtractScoreUseCase:
 
                 a_frame = Frame(a_img.copy(), a_ts, start_idx)
                 b_frame = Frame(b_img.copy(), b_ts, b_idx)
+                self._attempt_num += 1
                 self._store_page(a_frame, b_frame, unique_pages, output_dir, debug, log,
                                  effective_ocr, deduplicator, on_page_detected)
                 last_trigger_idx = start_idx
@@ -197,6 +199,7 @@ class ExtractScoreUseCase:
                         b_ts = a_frame.timestamp
 
                     b_frame = Frame(b_img.copy(), b_ts, b_idx)
+                    self._attempt_num += 1
                     self._store_page(a_frame, b_frame, unique_pages, output_dir, debug, log,
                                      effective_ocr, deduplicator, on_page_detected)
                     last_trigger_idx = a_frame.index
@@ -344,7 +347,7 @@ class ExtractScoreUseCase:
         deduplicator,
         on_page_detected: Optional[Callable[[int, np.ndarray], None]] = None,
     ):
-        page_num = len(unique_pages) + 1
+        page_num = self._attempt_num
 
         # Merge frames (always applied, including start-time)
         debug_path = str(output_dir / "debug" / f"bar_profile_page_{page_num:03d}.txt") if debug else None

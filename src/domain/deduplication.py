@@ -31,7 +31,7 @@ class Deduplicator:
             return []
 
         threshold = max_val * 0.3
-        min_dist = 3
+        min_dist = max(3, int(target_w * 0.06))
 
         peaks = []
         for i in range(2, len(col_sums) - 2):
