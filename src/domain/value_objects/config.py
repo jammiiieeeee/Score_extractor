@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class ScoreConfig:
     # Change Detection
     change_detection_threshold: float = 0.96     # SSIM similarity score (1.0 = identical)
-    frame_check_interval: float = 0.2            # Seek every N seconds
+    frame_check_interval: float = 0.8            # Seek every N seconds
     top_analysis_ratio: float = 0.34             # Top portion of frame for SSIM ROI
     min_screenshot_interval: float = 3.0         # Cooldown between captures (seconds)
 

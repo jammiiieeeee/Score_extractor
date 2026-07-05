@@ -79,6 +79,7 @@ class ExtractScoreUseCase:
         seek_step = max(1, int(self.config.frame_check_interval * fps))
         scan_step = max(1, int(0.1 * fps))
 
+
         unique_pages: List[Frame] = []
         last_trigger_idx = -cooldown_frames
         last_stable_frame: Optional[Frame] = None
@@ -135,7 +136,6 @@ class ExtractScoreUseCase:
                 break
 
             t0 = time.time()
-            # Fast-forward through intermediate frames (grab only, no decode)
             if seek_step > 1:
                 self.video_service.skip_frames(seek_step - 1)
             frame_img, timestamp, current_idx = self.video_service.read_next_frame()
@@ -143,7 +143,7 @@ class ExtractScoreUseCase:
                 break
 
             t_read = time.time() - t0
-            current_frame = Frame(frame_img.copy(), timestamp, current_idx)
+            current_frame = Frame(frame_img, timestamp, current_idx)
             n_frames += 1
 
             total_frames = self.video_service.get_total_frames()
@@ -178,26 +178,8 @@ class ExtractScoreUseCase:
                 if score < self.config.change_detection_threshold:
                     log(f"  Change detected at ~{timestamp:.1f}s, scanning for precise trigger...")
 
-                    # Scan Mode: backtrack and check every 0.1s
-                    scan_start = last_stable_frame.index + scan_step
-                    a_frame = None
-
-                    for scan_idx in range(scan_start, current_idx + 1, scan_step):
-                        if is_cancelled():
-                            break
-                        scan_img, scan_ts = self.video_service.read_frame_at(scan_idx)
-                        if scan_img is None:
-                            break
-                        scan_score = ssim(get_roi(last_stable_frame.image), get_roi(scan_img))
-                        if scan_score < self.config.change_detection_threshold:
-                            a_frame = Frame(scan_img.copy(), scan_ts, scan_idx)
-                            break
-
-                    if is_cancelled():
-                        break
-
-                    if a_frame is None:
-                        a_frame = current_frame
+                    # Scan Mode: current frame is trigger point
+                    a_frame = current_frame
 
                     # Apply a_capture_delay to skip page-flip animation
                     delay_frames = int(self.config.a_capture_delay * fps)
@@ -262,11 +244,14 @@ class ExtractScoreUseCase:
         self, frame_a: np.ndarray, frame_b: np.ndarray,
         crop_ratio: float, bar_x: int, bar_padding_px: int,
         margin_col: int, output_path: Path, page_num: int,
-        deduplicator
+        deduplicator, peaks=None, has_clean=None, has_left_spike=None
     ):
-        import matplotlib
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
+        if not hasattr(self, '_plt'):
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            self._plt = plt
+        plt = self._plt
 
         h, w = frame_a.shape[:2]
         scale = 640 / w
@@ -293,11 +278,15 @@ class ExtractScoreUseCase:
                     xy=(margin_col, max_val * 0.9), fontsize=8, color='red',
                     fontweight='bold', rotation=90, va='bottom')
 
-        peaks = deduplicator._get_bar_profile_peaks(frame_a, frame_b, crop_ratio)
+        if peaks is None:
+            peaks = deduplicator._get_bar_profile_peaks(frame_a, frame_b, crop_ratio)
 
         n_peaks = len(peaks)
         two_spike_ok = 2 <= n_peaks <= 4
-        left_margin_ok = deduplicator.has_left_spike_in_margin(frame_a, frame_b, crop_ratio) if two_spike_ok else False
+        if has_left_spike is None and two_spike_ok:
+            has_left_spike = deduplicator.has_left_spike_in_margin(frame_a, frame_b, crop_ratio)
+        elif has_left_spike is None:
+            has_left_spike = False
 
         if n_peaks >= 1:
             sorted_peaks = sorted(peaks[:2], key=lambda p: p[0])
@@ -311,9 +300,9 @@ class ExtractScoreUseCase:
 
             if n_peaks >= 2:
                 left_col = sorted_peaks[0][0]
-                ax.annotate('LEFT SPIKE OK' if left_margin_ok else 'LEFT SPIKE REJECTED',
+                ax.annotate('LEFT SPIKE OK' if has_left_spike else 'LEFT SPIKE REJECTED',
                             xy=(left_col, 0), fontsize=8,
-                            color='green' if left_margin_ok else 'red',
+                            color='green' if has_left_spike else 'red',
                             fontweight='bold')
 
         if two_spike_ok:
@@ -368,50 +357,41 @@ class ExtractScoreUseCase:
 
         # Upscale merged to original resolution (used for saving, storing, and dedup comparison)
         full_img = cv2.resize(merged_img, (self._orig_w, self._orig_h),
-                              interpolation=cv2.INTER_CUBIC)
+                              interpolation=cv2.INTER_LINEAR)
 
-        # Write debug A/B frames (full-res for clarity)
+        # Read full-res A/B once, use for both debug and OCR
+        full_a = full_b = None
+        if ocr_service.is_enabled() or debug:
+            full_a, _ = self.video_service.read_full_frame_at(frame_a.index)
+            full_b, _ = self.video_service.read_full_frame_at(frame_b.index)
         if debug:
-            dbg_a, _ = self.video_service.read_full_frame_at(frame_a.index)
-            dbg_b, _ = self.video_service.read_full_frame_at(frame_b.index)
-            if dbg_a is not None:
-                cv2.imwrite(str(output_dir / "debug" / f"page_{page_num:03d}_A.png"), dbg_a)
-            if dbg_b is not None:
-                cv2.imwrite(str(output_dir / "debug" / f"page_{page_num:03d}_B.png"), dbg_b)
+            if full_a is not None:
+                cv2.imwrite(str(output_dir / "debug" / f"page_{page_num:03d}_A.png"), full_a)
+            if full_b is not None:
+                cv2.imwrite(str(output_dir / "debug" / f"page_{page_num:03d}_B.png"), full_b)
 
         # Deduplication check
         is_dup = False
         merged_number = None
-        if ocr_service.is_enabled():
-            full_a, _ = self.video_service.read_full_frame_at(frame_a.index)
-            full_b, _ = self.video_service.read_full_frame_at(frame_b.index)
-            if full_a is not None and full_b is not None:
-                ocr_merged, _ = self.video_service.merge_frames(
-                    full_a, full_b, self.config.b_overlay_width_ratio,
-                    self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
-                    self.config.bar_padding_px, None
-                )
-                merged_number = ocr_service.get_leftmost_number(
-                    ocr_merged, self.config.duplicate_top_ratio,
-                    self.config.ocr_horizontal_ratio, self.config.ocr_confidence_threshold
-                )
-            else:
-                merged_number = ocr_service.get_leftmost_number(
-                    merged_img, self.config.duplicate_top_ratio,
-                    self.config.ocr_horizontal_ratio, self.config.ocr_confidence_threshold
-                )
+        if ocr_service.is_enabled() and full_a is not None and full_b is not None:
+            ocr_merged, _ = self.video_service.merge_frames(
+                full_a, full_b, self.config.b_overlay_width_ratio,
+                self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
+                self.config.bar_padding_px, None
+            )
+            merged_number = ocr_service.get_leftmost_number(
+                ocr_merged, self.config.duplicate_top_ratio,
+                self.config.ocr_horizontal_ratio, self.config.ocr_confidence_threshold
+            )
 
-        # Guard rail: if the bar profile between the original A and B frames
-        # lacks two clean peaks, treat as duplicate (likely false trigger)
-        if not is_dup and not deduplicator.has_clean_bar_profile(
+        # Guard rail: compute bar profile peaks once
+        has_clean_profile, has_left_spike, bar_peaks = deduplicator.check_bar_profile(
             frame_a.image, frame_b.image, self.config.default_crop_ratio
-        ):
+        )
+        if not is_dup and not has_clean_profile:
             is_dup = True
             log(f"  Page {page_num}: No clean bar profile, treated as duplicate")
-
-        if not is_dup and not deduplicator.has_left_spike_in_margin(
-            frame_a.image, frame_b.image, self.config.default_crop_ratio
-        ):
+        if not is_dup and not has_left_spike:
             is_dup = True
             log(f"  Page {page_num}: Left spike outside margin, treated as duplicate")
 
@@ -436,7 +416,8 @@ class ExtractScoreUseCase:
                 frame_a.image, frame_b.image, self.config.default_crop_ratio,
                 bar_x, self.config.bar_padding_px,
                 int(640 * self.config.bar_left_margin), plot_path, page_num,
-                deduplicator
+                deduplicator, peaks=bar_peaks, has_clean=has_clean_profile,
+                has_left_spike=has_left_spike
             )
 
 

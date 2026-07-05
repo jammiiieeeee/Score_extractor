@@ -59,6 +59,17 @@ class Deduplicator:
         margin_col = int(640 * self.config.bar_left_margin)
         return left_col < margin_col
 
+    def check_bar_profile(self, frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float):
+        """Returns (has_clean, has_left_spike, peaks) from a single peak computation."""
+        peaks = self._get_bar_profile_peaks(frame_a, frame_b, crop_ratio)
+        has_clean = 2 <= len(peaks) <= 4
+        has_left_spike = False
+        if len(peaks) >= 2:
+            left_col = sorted(peaks[:2], key=lambda p: p[0])[0][0]
+            margin_col = int(640 * self.config.bar_left_margin)
+            has_left_spike = left_col < margin_col
+        return has_clean, has_left_spike, peaks
+
     def _get_cached_number(self, image: np.ndarray) -> Optional[int]:
         key = id(image)
         if key not in self._number_cache:
