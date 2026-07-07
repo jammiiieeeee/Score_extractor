@@ -24,140 +24,173 @@ from gui_bridge import ExtractionSignals
 from src.api.gui_api import GuiApi, ScoreInfo
 
 
-# ── Palette (ink-on-cream-paper) ──────────────────────────────────────
+# ── Palette (piano ebony-and-brass) ───────────────────────────────────
 
-PAPER      = "#f5f0e8"
-CARD       = "#ffffff"
-INK        = "#1a1a2e"
-MUTED      = "#6b6b8d"
-ACCENT     = "#c0392b"
-ACCENT_H   = "#e74c3c"
-GREEN      = "#27ae60"
-BORDER     = "#ddd8cd"
-CREAM_DARK = "#e8e0d0"
+BG        = "#161616"
+SURFACE   = "#1e1e1e"
+SURFACE2  = "#282828"
+INK       = "#e8e8e8"
+MUTED     = "#888888"
+BRASS     = "#d4a843"
+BRASS_H   = "#e0b85a"
+WOOD      = "#6d4c2a"
+GREEN     = "#5aaa5a"
+DANGER    = "#cc4444"
+BORDER    = "#333333"
+BORDER2   = "#444444"
 
 STYLESHEET = f"""
 QMainWindow, QWidget {{
-    background-color: {PAPER};
+    background-color: {BG};
     color: {INK};
-    font-family: "Segoe UI", "Noto Sans", sans-serif;
+    font-family: "Segoe UI", "Noto Sans SC", "Noto Sans JP", "Noto Sans", sans-serif;
     font-size: 13px;
 }}
-QTabWidget::pane {{
-    background: {CARD};
+QWidget#roundedWidget {{
+    background: {SURFACE};
     border: 1px solid {BORDER};
-    border-radius: 6px;
+    border-radius: 8px;
+}}
+QTabWidget::pane {{
+    background: transparent;
+    border: none;
+}}
+QTabBar {{
+    background: transparent;
 }}
 QTabBar::tab {{
-    background: {CREAM_DARK};
-    color: {INK};
-    border: 1px solid {BORDER};
-    border-bottom: none;
-    border-top-left-radius: 6px;
-    border-top-right-radius: 6px;
+    background: transparent;
+    color: {MUTED};
+    border: none;
+    border-bottom: 2px solid transparent;
     padding: 8px 20px;
-    margin-right: 2px;
+    margin-right: 4px;
     font-weight: 600;
+    font-size: 14px;
+}}
+QTabBar::tab:hover {{
+    color: {INK};
 }}
 QTabBar::tab:selected {{
-    background: {CARD};
-    color: {ACCENT};
-    border-bottom: 2px solid {ACCENT};
+    color: {BRASS};
+    border-bottom: 2px solid {BRASS};
 }}
 QPushButton {{
-    background: {ACCENT};
-    color: white;
+    background: {BRASS};
+    color: {BG};
     border: none;
-    border-radius: 5px;
+    border-radius: 6px;
     padding: 8px 18px;
-    font-weight: 600;
+    font-weight: 700;
     font-size: 13px;
 }}
 QPushButton:hover {{
-    background: {ACCENT_H};
+    background: {BRASS_H};
 }}
 QPushButton:pressed {{
-    background: #992d22;
+    background: #b89230;
 }}
 QPushButton:disabled {{
-    background: {BORDER};
+    background: {SURFACE2};
     color: {MUTED};
 }}
 QPushButton.secondary {{
-    background: {CARD};
+    background: transparent;
     color: {INK};
-    border: 1px solid {BORDER};
+    border: 1px solid {BORDER2};
     padding: 8px 14px;
 }}
 QPushButton.secondary:hover {{
-    background: {CREAM_DARK};
+    background: {SURFACE2};
+    border-color: {BRASS};
 }}
 QPushButton.danger {{
-    background: {MUTED};
+    background: transparent;
+    color: {DANGER};
+    border: 1px solid {DANGER};
 }}
 QPushButton.danger:hover {{
-    background: {ACCENT};
+    background: {DANGER};
+    color: white;
 }}
 QLineEdit {{
-    background: {CARD};
+    background: #0d0d0d;
     border: 1px solid {BORDER};
-    border-radius: 4px;
-    padding: 6px 10px;
+    border-radius: 6px;
+    padding: 7px 12px;
     color: {INK};
+    selection-background-color: {BRASS};
+    selection-color: {BG};
 }}
 QLineEdit:focus {{
-    border-color: {ACCENT};
+    border-color: {BRASS};
 }}
 QDoubleSpinBox, QSpinBox {{
-    background: {CARD};
+    background: #0d0d0d;
     border: 1px solid {BORDER};
-    border-radius: 4px;
+    border-radius: 6px;
     padding: 4px 10px;
     color: {INK};
     min-height: 26px;
     font-size: 14px;
 }}
+QDoubleSpinBox:focus, QSpinBox:focus {{
+    border-color: {BRASS};
+}}
 QGroupBox {{
-    background: {CARD};
+    background: {SURFACE};
     border: 1px solid {BORDER};
-    border-radius: 6px;
+    border-radius: 8px;
     margin-top: 12px;
-    padding-top: 18px;
+    padding-top: 20px;
     font-weight: 600;
 }}
 QGroupBox::title {{
     subcontrol-origin: margin;
     left: 14px;
-    padding: 0 6px;
-    color: {INK};
+    padding: 0 8px;
+    color: {BRASS};
 }}
 QCheckBox {{
     spacing: 8px;
+    color: {INK};
 }}
 QCheckBox::indicator {{
     width: 18px;
     height: 18px;
     border-radius: 4px;
-    border: 1px solid {BORDER};
+    border: 1px solid {BORDER2};
+    background: #0d0d0d;
+}}
+QCheckBox::indicator:checked {{
+    background: {BRASS};
+    border-color: {BRASS};
+    image: url(__CHECK_PLACEHOLDER__);
+}}
+QCheckBox::indicator:hover {{
+    border-color: {BRASS};
 }}
 QSlider::groove:horizontal {{
-    background: {BORDER};
-    height: 6px;
-    border-radius: 3px;
+    background: {SURFACE2};
+    height: 4px;
+    border-radius: 2px;
 }}
 QSlider::handle:horizontal {{
-    background: {ACCENT};
-    width: 18px;
-    height: 18px;
+    background: {BRASS};
+    width: 16px;
+    height: 16px;
     margin: -6px 0;
-    border-radius: 9px;
+    border-radius: 8px;
+}}
+QSlider::handle:horizontal:hover {{
+    background: {BRASS_H};
 }}
 QSlider::sub-page:horizontal {{
-    background: {ACCENT};
-    border-radius: 3px;
+    background: {BRASS};
+    border-radius: 2px;
 }}
 QProgressBar {{
-    background: {CREAM_DARK};
+    background: #0d0d0d;
     border: 1px solid {BORDER};
     border-radius: 6px;
     text-align: center;
@@ -166,26 +199,30 @@ QProgressBar {{
     color: {INK};
 }}
 QProgressBar::chunk {{
-    background: {GREEN};
+    background: {BRASS};
     border-radius: 5px;
 }}
 QTextEdit {{
-    background: {CARD};
-    border: 1px solid {BORDER};
-    border-radius: 4px;
-    color: {INK};
-    font-family: "Consolas", "Courier New", monospace;
-    font-size: 12px;
-}}
-QListWidget {{
-    background: {CARD};
+    background: #0d0d0d;
     border: 1px solid {BORDER};
     border-radius: 6px;
     color: {INK};
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    padding: 6px;
+}}
+QTextEdit:focus {{
+    border-color: {BRASS};
+}}
+QListWidget {{
+    background: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+    color: {INK};
 }}
 QListWidget::item:selected {{
-    background: {CREAM_DARK};
-    border: 2px solid {ACCENT};
+    background: {SURFACE2};
+    border: 1px solid {BRASS};
     border-radius: 6px;
 }}
 QScrollArea {{
@@ -194,6 +231,7 @@ QScrollArea {{
 }}
 QLabel {{
     color: {INK};
+    background: transparent;
 }}
 QLabel.muted {{
     color: {MUTED};
@@ -203,17 +241,38 @@ QLabel.title {{
     font-size: 22px;
     font-weight: 700;
     color: {INK};
+    letter-spacing: 0.5px;
 }}
 QLabel.count {{
     font-size: 14px;
     font-weight: 600;
-    color: {ACCENT};
+    color: {BRASS};
 }}
 QComboBox {{
-    background: {CARD};
+    background: #0d0d0d;
+    border: 1px solid {BORDER};
+    border-radius: 6px;
+    padding: 6px 12px;
+    color: {INK};
+    min-height: 24px;
+}}
+QComboBox:focus {{
+    border-color: {BRASS};
+}}
+QComboBox::drop-down {{
+    border: none;
+    width: 24px;
+}}
+QComboBox::down-arrow {{
+    image: none;
+    border: none;
+}}
+QComboBox QAbstractItemView {{
+    background: {SURFACE};
     border: 1px solid {BORDER};
     border-radius: 4px;
-    padding: 6px 10px;
+    selection-background-color: {SURFACE2};
+    selection-color: {BRASS};
     color: {INK};
 }}
 QFormLayout {{
@@ -221,12 +280,60 @@ QFormLayout {{
 }}
 QSplitter::handle {{
     background: {BORDER};
-    width: 2px;
+    width: 1px;
 }}
-QCheckBox::indicator:checked {{
-    background: {ACCENT};
-    border-color: {ACCENT};
-    image: url(__CHECK_PLACEHOLDER__);
+QFrame#hline {{
+    color: {BORDER};
+}}
+QScrollBar:vertical {{
+    background: {BG};
+    width: 8px;
+    border: none;
+}}
+QScrollBar::handle:vertical {{
+    background: {SURFACE2};
+    border-radius: 4px;
+    min-height: 30px;
+}}
+QScrollBar::handle:vertical:hover {{
+    background: {BORDER2};
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0;
+}}
+QScrollBar:horizontal {{
+    background: {BG};
+    height: 8px;
+    border: none;
+}}
+QScrollBar::handle:horizontal {{
+    background: {SURFACE2};
+    border-radius: 4px;
+    min-width: 30px;
+}}
+QScrollBar::handle:horizontal:hover {{
+    background: {BORDER2};
+}}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+    width: 0;
+}}
+QRadioButton {{
+    color: {INK};
+    spacing: 8px;
+}}
+QRadioButton::indicator {{
+    width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    border: 1px solid {BORDER2};
+    background: #0d0d0d;
+}}
+QRadioButton::indicator:checked {{
+    background: {BRASS};
+    border-color: {BRASS};
+}}
+QRadioButton::indicator:hover {{
+    border-color: {BRASS};
 }}
 """
 
@@ -300,16 +407,16 @@ class CropPreviewWidget(QWidget):
 
             # Overlay: transparent red band from top to crop line
             line_y = oy + int(ph * self._ratio)
-            overlay = QColor(192, 57, 43, 40)
+            overlay = QColor(212, 168, 67, 25)
             painter.fillRect(ox, oy, pw, line_y - oy, overlay)
 
             # Crop line
-            pen = QPen(QColor(192, 57, 43), 3)
+            pen = QPen(QColor(212, 168, 67), 2)
             painter.setPen(pen)
             painter.drawLine(ox, line_y, ox + pw, line_y)
 
             # Grip ridges at center (indicates draggable)
-            pen_grip = QPen(QColor(192, 57, 43), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            pen_grip = QPen(QColor(212, 168, 67), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
             painter.setPen(pen_grip)
             cx = ox + pw // 2
             half = 8
@@ -317,13 +424,13 @@ class CropPreviewWidget(QWidget):
                 painter.drawLine(cx - half, line_y + dy, cx + half, line_y + dy)
 
             # Label
-            painter.setPen(QColor(192, 57, 43))
+            painter.setPen(QColor(212, 168, 67))
             font = QFont("Segoe UI", 11, QFont.Weight.Bold)
             painter.setFont(font)
             label = f"Crop: {int(self._ratio * 100)}%"
             painter.drawText(ox, line_y - 16, label)
         else:
-            painter.setPen(QColor(107, 107, 141))
+            painter.setPen(QColor(136, 136, 136))
             font = QFont("Segoe UI", 12)
             painter.setFont(font)
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
@@ -472,24 +579,24 @@ class DualHandleSeekBar(QWidget):
 
         # Groove background
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(BORDER))
+        painter.setBrush(QColor(SURFACE2))
         painter.drawRoundedRect(margin, mid - 3, track_w, 6, 3, 3)
 
         # Highlighted range when both enabled
         if self._start_enabled and self._end_enabled and x2 > x1:
-            painter.setBrush(QColor(ACCENT))
+            painter.setBrush(QColor(BRASS))
             painter.drawRoundedRect(x1, mid - 3, x2 - x1, 6, 3, 3)
 
         # Start handle
         if self._start_enabled:
-            painter.setBrush(QColor(ACCENT))
-            painter.setPen(QPen(QColor("white"), 2))
+            painter.setBrush(QColor(BRASS))
+            painter.setPen(QPen(QColor(BG), 2))
             painter.drawEllipse(x1 - 7, mid - 7, 14, 14)
 
         # End handle
         if self._end_enabled:
-            painter.setBrush(QColor(ACCENT))
-            painter.setPen(QPen(QColor("white"), 2))
+            painter.setBrush(QColor(BRASS))
+            painter.setPen(QPen(QColor(BG), 2))
             painter.drawEllipse(x2 - 7, mid - 7, 14, 14)
 
         painter.end()
@@ -783,7 +890,6 @@ class ExtractTab(QWidget):
 
         # ── Project field ──
         project_label = QLabel("Project:")
-        project_label.setStyleSheet("font-weight: 600; font-size: 14px;")
 
         self.project_edit = QLineEdit()
         self.project_edit.setPlaceholderText("Score name — type to search existing, or enter a new name")
@@ -810,7 +916,7 @@ class ExtractTab(QWidget):
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color: {BORDER};")
+        sep.setObjectName("hline")
         layout.addWidget(sep)
 
         # ── Source toggle ──
@@ -1436,6 +1542,43 @@ class ExtractTab(QWidget):
 
 
 
+# ── Piano-key motif divider ──────────────────────────────────────────
+
+class PianoKeyDivider(QWidget):
+    def paintEvent(self, event):
+        from PyQt6.QtGui import QPainter, QColor, QPen
+        painter = QPainter(self)
+        w = self.width()
+        h = self.height()
+        key_w = 18
+        key_h = 18
+        black_h = 12
+        black_w = 10
+        offset = 12
+
+        # Brushed brass line across the rest
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(212, 168, 67))
+        painter.drawRect(offset + 8 * key_w, h // 2 - 1, w - offset - 8 * key_w, 2)
+
+        # Draw 8 white keys
+        for i in range(8):
+            x = offset + i * key_w
+            painter.setPen(QPen(QColor(51, 51, 51), 1))
+            painter.setBrush(QColor(232, 232, 232))
+            painter.drawRect(x, h // 2 - key_h // 2, key_w - 1, key_h)
+
+        # Draw 6 black keys (skip positions where there's no black key)
+        black_positions = [0, 1, 3, 4, 5, 7]
+        for i in black_positions:
+            bx = offset + (i + 1) * key_w - black_w // 2
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(22, 22, 22))
+            painter.drawRect(bx, h // 2 - key_h // 2, black_w, black_h)
+
+        painter.end()
+
+
 # ── Main Window ──────────────────────────────────────────────────────
 
 class MainWindow(QMainWindow):
@@ -1462,10 +1605,14 @@ class MainWindow(QMainWindow):
         header.setObjectName("title")
         header.setStyleSheet(f"""
             font-size: 26px; font-weight: 700;
-            color: {INK}; padding: 4px 0 8px 0;
-            border-bottom: 2px solid {ACCENT};
+            color: {INK}; padding: 4px 0 4px 0;
         """)
         main_layout.addWidget(header)
+
+        # Piano-key motif divider
+        piano_div = PianoKeyDivider()
+        piano_div.setFixedHeight(28)
+        main_layout.addWidget(piano_div)
 
         # Tabs
         self.tabs = QTabWidget()
