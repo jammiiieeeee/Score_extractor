@@ -353,6 +353,27 @@ QRadioButton::indicator:checked {{
 QRadioButton::indicator:hover {{
     border-color: {BRASS};
 }}
+QCompleter QAbstractItemView {{
+    background: {SURFACE};
+    border: 1px solid {BORDER2};
+    border-radius: 4px;
+    outline: none;
+    padding: 4px 0px;
+}}
+QCompleter QAbstractItemView::item {{
+    padding: 6px 12px;
+    min-height: 24px;
+    color: {INK};
+    border: none;
+}}
+QCompleter QAbstractItemView::item:selected {{
+    background: {SURFACE2};
+    color: {BRASS};
+}}
+QCompleter QAbstractItemView::item:hover {{
+    background: {SURFACE2};
+    color: {INK};
+}}
 """
 
 
