@@ -18,7 +18,10 @@ class FileService(IFileService):
 
     def save_page_image(self, score_dir: Path, page_num: int, image: np.ndarray) -> Path:
         path = score_dir / "photos" / f"page_{page_num:03d}_merged.png"
-        cv2.imwrite(str(path), image)
+        ext = path.suffix
+        success, buf = cv2.imencode(ext, image)
+        if success:
+            buf.tofile(str(path))
         return path
 
     def load_page_images(self, score_dir: Path) -> List[np.ndarray]:

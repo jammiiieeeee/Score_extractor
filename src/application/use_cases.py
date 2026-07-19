@@ -380,9 +380,13 @@ class ExtractScoreUseCase:
             full_b, _ = self.video_service.read_full_frame_at(frame_b.index)
         if debug:
             if full_a is not None:
-                cv2.imwrite(str(output_dir / "debug" / f"page_{page_num:03d}_A.png"), full_a)
+                success, buf = cv2.imencode('.png', full_a)
+                if success:
+                    buf.tofile(str(output_dir / "debug" / f"page_{page_num:03d}_A.png"))
             if full_b is not None:
-                cv2.imwrite(str(output_dir / "debug" / f"page_{page_num:03d}_B.png"), full_b)
+                success, buf = cv2.imencode('.png', full_b)
+                if success:
+                    buf.tofile(str(output_dir / "debug" / f"page_{page_num:03d}_B.png"))
 
         # Deduplication check
         is_dup = False

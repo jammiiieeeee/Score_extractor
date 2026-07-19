@@ -42,7 +42,9 @@ class PdfService(IPdfService):
             cropped_img = img[y_start:y_end, :]
 
             temp_img_path = f"temp_strip_{idx}.png"
-            cv2.imwrite(temp_img_path, cropped_img)
+            success, buf = cv2.imencode('.png', cropped_img)
+            if success:
+                buf.tofile(temp_img_path)
 
             strip_aspect = cropped_img.shape[1] / cropped_img.shape[0]
             draw_width = usable_width
