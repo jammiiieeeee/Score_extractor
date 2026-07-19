@@ -110,7 +110,7 @@ class ExtractScoreUseCase:
                 b_frame = Frame(b_img.copy(), b_ts, b_idx)
                 self._attempt_num += 1
                 self._store_page(a_frame, b_frame, unique_pages, output_dir, debug, log,
-                                 effective_ocr, deduplicator, on_page_detected)
+                                 effective_ocr, deduplicator, on_page_detected, is_first=True)
                 last_trigger_idx = start_idx
                 last_stable_frame = b_frame
                 current_idx = b_idx
@@ -356,6 +356,7 @@ class ExtractScoreUseCase:
         ocr_service: IOcrService,
         deduplicator,
         on_page_detected: Optional[Callable[[int, np.ndarray], None]] = None,
+        is_first: bool = False,
     ):
         page_num = self._attempt_num
 
@@ -397,16 +398,17 @@ class ExtractScoreUseCase:
                 self.config.ocr_horizontal_ratio, self.config.ocr_confidence_threshold
             )
 
-        # Guard rail: compute bar profile peaks once
+        # Guard rail: compute bar profile peaks once (skip for first page)
         has_clean_profile, has_left_spike, bar_peaks = deduplicator.check_bar_profile(
             frame_a.image, frame_b.image, self.config.default_crop_ratio
         )
-        if not is_dup and not has_clean_profile:
-            is_dup = True
-            log(f"  Page {page_num}: No clean bar profile, treated as duplicate")
-        if not is_dup and not has_left_spike:
-            is_dup = True
-            log(f"  Page {page_num}: Left spike outside margin, treated as duplicate")
+        if not is_first:
+            if not is_dup and not has_clean_profile:
+                is_dup = True
+                log(f"  Page {page_num}: No clean bar profile, treated as duplicate")
+            if not is_dup and not has_left_spike:
+                is_dup = True
+                log(f"  Page {page_num}: Left spike outside margin, treated as duplicate")
 
         for existing in unique_pages:
             if deduplicator.is_duplicate(existing.image, full_img, b_number=merged_number):

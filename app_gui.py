@@ -1,13 +1,16 @@
 import os
 import sys
 import time
+import subprocess
+import shutil
+import glob as _glob
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse, parse_qs
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, pyqtSignal, QStringListModel
+from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, pyqtSignal, QStringListModel, QObject, QThread
 from PyQt6.QtGui import QAction, QFont, QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import QCompleter
 from PyQt6.QtWidgets import (
@@ -261,18 +264,33 @@ QComboBox:focus {{
 }}
 QComboBox::drop-down {{
     border: none;
-    width: 24px;
+    width: 28px;
+    subcontrol-position: center right;
 }}
 QComboBox::down-arrow {{
-    image: none;
-    border: none;
+    image: url(__CHEVRON_PLACEHOLDER__);
+    width: 12px;
+    height: 12px;
 }}
 QComboBox QAbstractItemView {{
     background: {SURFACE};
-    border: 1px solid {BORDER};
+    border: 1px solid {BORDER2};
     border-radius: 4px;
-    selection-background-color: {SURFACE2};
-    selection-color: {BRASS};
+    outline: none;
+    padding: 4px 0px;
+}}
+QComboBox QAbstractItemView::item {{
+    padding: 6px 12px;
+    min-height: 24px;
+    color: {INK};
+    border: none;
+}}
+QComboBox QAbstractItemView::item:selected {{
+    background: {SURFACE2};
+    color: {BRASS};
+}}
+QComboBox QAbstractItemView::item:hover {{
+    background: {SURFACE2};
     color: {INK};
 }}
 QFormLayout {{
@@ -339,6 +357,7 @@ QRadioButton::indicator:hover {{
 
 
 CHECK_INDICATOR_PATH: str = ""
+CHEVRON_PATH: str = ""
 
 
 def _generate_check_pixmap() -> str:
@@ -357,6 +376,22 @@ def _generate_check_pixmap() -> str:
     return path.replace("\\", "/")
 
 
+def _generate_chevron_pixmap() -> str:
+    from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen
+    import tempfile
+    path = os.path.join(tempfile.gettempdir(), f"score_extractor_chevron_{os.getpid()}.png")
+    pm = QPixmap(12, 12)
+    pm.fill(QColor(Qt.GlobalColor.transparent))
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(QPen(QColor(BRASS), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    p.drawLine(2, 4, 6, 8)
+    p.drawLine(6, 8, 10, 4)
+    p.end()
+    pm.save(path)
+    return path.replace("\\", "/")
+
+
 # ── Crop Preview Widget ──────────────────────────────────────────────
 
 class CropPreviewWidget(QWidget):
@@ -368,7 +403,7 @@ class CropPreviewWidget(QWidget):
         self._ratio = 0.35
         self._drag_active = False
         self._image_rect = None
-        self.setMinimumSize(320, 240)
+        self.setMinimumSize(320, 120)
         self.setMouseTracking(True)
         self._cursor_over_line = False
 
@@ -500,7 +535,7 @@ class DualHandleSeekBar(QWidget):
         ctrl.addWidget(self.start_cb)
         ctrl.addWidget(self.start_label)
 
-        self.end_cb = QCheckBox("End duration")
+        self.end_cb = QCheckBox("End offset (s)")
         self.end_cb.setChecked(False)
         self.end_label = QLabel("00:00.0")
         self.end_label.setObjectName("muted")
@@ -728,7 +763,7 @@ class ConfigTab(QWidget):
             ("Crop top offset:", self._spin_float(0.0, 1.0, 0.01, 0.0)),
             ("Blank content std threshold:", self._spin_float(0.0, 50.0, 0.5, 3.0)),
             ("Bar min diff threshold:", self._spin_float(0.0, 50000.0, 100.0, 500.0)),
-            ("Bar overlay offset (px):", self._spin_int(-200, 200, 10)),
+            ("Bar overlay offset (px):", self._spin_int(-200, 200, -15)),
         ]
 
         for r, (label_text, spinbox) in enumerate(adv_fields):
@@ -852,7 +887,7 @@ class ConfigTab(QWidget):
             self.adv_crop_offset.setValue(cfg.get("crop_top_offset", 0.0))
             self.adv_blank_std.setValue(cfg.get("blank_content_std_threshold", 3.0))
             self.adv_bar_diff.setValue(cfg.get("bar_min_diff_threshold", 500.0))
-            self.adv_bar_pad.setValue(cfg.get("bar_padding_px", -10))
+            self.adv_bar_pad.setValue(cfg.get("bar_padding_px", -15))
             self.debug_cb.setChecked(self._api.is_debug_mode())
         finally:
             self._updating = False
@@ -868,6 +903,101 @@ class ConfigTab(QWidget):
 
 # ── Extract Tab ──────────────────────────────────────────────────────
 
+class PreviewSeeker(QObject):
+    """Background frame reader using FFmpeg subprocess for fast seeking."""
+    frame_ready = pyqtSignal(object)  # QImage, safe cross-thread
+    seek_requested = pyqtSignal(float, float)
+
+    def __init__(self):
+        super().__init__()
+        self._cap = None
+        self._path: Optional[str] = None
+        self._fps = 1.0
+        self._width = 0
+        self._height = 0
+        self._seek_seq = 0
+        self._ffmpeg = self._find_ffmpeg()
+        self.seek_requested.connect(self._do_seek)
+
+    def open(self, path: str):
+        self.close()
+        self._path = path
+        self._cap = cv2.VideoCapture(path)
+        self._fps = self._cap.get(cv2.CAP_PROP_FPS) or 1.0
+        self._width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self._height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    def close(self):
+        if self._cap:
+            self._cap.release()
+            self._cap = None
+        self._path = None
+
+    @staticmethod
+    def _find_ffmpeg() -> str:
+        path = shutil.which("ffmpeg")
+        if path:
+            return path
+        pattern = r"C:\Users\*\AppData\Local\Microsoft\WinGet\Packages\*ffmpeg*\bin\ffmpeg.exe"
+        matches = _glob.glob(pattern)
+        return matches[0] if matches else "ffmpeg"
+
+    def _read_frame_ffmpeg(self, ts: float) -> Optional[np.ndarray]:
+        if not self._path:
+            return None
+        cmd = [
+            self._ffmpeg,
+            "-hide_banner", "-loglevel", "error",
+            "-hwaccel", "auto",
+            "-ss", f"{ts:.3f}",
+            "-i", self._path,
+            "-frames:v", "1",
+            "-vf", "scale=640:-2",
+            "-f", "rawvideo",
+            "-pix_fmt", "rgb24",
+            "pipe:1",
+        ]
+        try:
+            proc = subprocess.run(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=5,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return None
+        if proc.returncode != 0 or not proc.stdout:
+            return None
+        data = proc.stdout
+        if len(data) < 9:
+            return None
+        out_w = 640
+        out_h = len(data) // (out_w * 3)
+        if out_h == 0:
+            return None
+        return np.frombuffer(data[:out_w * out_h * 3], dtype=np.uint8).reshape(out_h, out_w, 3)
+
+    def _do_seek(self, ts: float, fps_hint: float):
+        if self._path is None:
+            return
+        self._seek_seq += 1
+        seq = self._seek_seq
+        t0 = time.time()
+        try:
+            rgb = self._read_frame_ffmpeg(ts)
+            elapsed = (time.time() - t0) * 1000
+            if rgb is None:
+                print(f"[PreviewSeeker] frame miss ts={ts:.2f}ms={elapsed:.0f}")
+                return
+            if seq != self._seek_seq:
+                print(f"[PreviewSeeker] stale discard ts={ts:.2f}ms={elapsed:.0f}")
+                return
+            h, w = rgb.shape[:2]
+            qt_img = QImage(rgb.data, w, h, w * 3, QImage.Format.Format_RGB888)
+            self.frame_ready.emit(qt_img.copy())
+            print(f"[PreviewSeeker] frame ok ts={ts:.2f}ms={elapsed:.0f}")
+        except RuntimeError:
+            pass
+
+
 class ExtractTab(QWidget):
     extraction_completed = pyqtSignal(int)
 
@@ -882,42 +1012,23 @@ class ExtractTab(QWidget):
         self._project_dir: str = ""
         self._has_existing_score = False
 
+        # Background preview seeker thread
+        self._preview_thread = QThread(self)
+        self._preview_seeker = PreviewSeeker()
+        self._preview_seeker.moveToThread(self._preview_thread)
+        self._preview_seeker.frame_ready.connect(self._on_preview_frame)
+        self._preview_thread.start()
+
+        self._seek_coalesce = QTimer(self)
+        self._seek_coalesce.setSingleShot(True)
+        self._seek_coalesce.setTimerType(Qt.TimerType.PreciseTimer)
+        self._seek_coalesce.timeout.connect(self._emit_pending_seek)
+        self._pending_seek_ts: Optional[float] = None
+
         self._settings = QSettings("ScoreExtractor", "App")
         self._parent_dir = self._settings.value("parent_dir", str(Path(__file__).resolve().parent / "output"))
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(6)
-
-        # ── Project field ──
-        project_label = QLabel("Project:")
-
-        self.project_edit = QLineEdit()
-        self.project_edit.setPlaceholderText("Score name — type to search existing, or enter a new name")
-        self._completer_model = QStringListModel()
-        self._completer = QCompleter(self._completer_model, self)
-        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        self.project_edit.setCompleter(self._completer)
-
-        self.project_browse_btn = QPushButton("Browse…")
-        self.project_browse_btn.setObjectName("secondary")
-
-        project_row = QHBoxLayout()
-        project_row.addWidget(project_label)
-        project_row.addWidget(self.project_edit, 1)
-        project_row.addWidget(self.project_browse_btn)
-        layout.addLayout(project_row)
-
-        # ── Status line ──
-        self.status_label = QLabel("New project — pick a video to start")
-        self.status_label.setObjectName("muted")
-        self.status_label.setWordWrap(True)
-        layout.addWidget(self.status_label)
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setObjectName("hline")
-        layout.addWidget(sep)
 
         # ── Source toggle ──
         toggle_row = QHBoxLayout()
@@ -954,13 +1065,14 @@ class ExtractTab(QWidget):
         self.yt_url_edit.setPlaceholderText("Paste YouTube video URL")
 
         self.quality_combo = QComboBox()
-        self.quality_combo.addItem("Best (≤1080p)", "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]")
-        self.quality_combo.addItem("720p", "best[ext=mp4][height<=720]")
-        self.quality_combo.addItem("480p", "best[ext=mp4][height<=480]")
-        self.quality_combo.addItem("360p", "best[ext=mp4][height<=360]")
+        self.quality_combo.addItem("Best (≤1080p)", "bestvideo[height<=1080]+bestaudio/best[height<=1080]")
+        self.quality_combo.addItem("720p", "bestvideo[height<=720]+bestaudio/best[height<=720]")
+        self.quality_combo.addItem("480p", "bestvideo[height<=480]+bestaudio/best[height<=480]")
+        self.quality_combo.addItem("360p", "bestvideo[height<=360]+bestaudio/best[height<=360]")
         self.quality_combo.addItem("Best available", "best")
-        self.quality_combo.setCurrentIndex(0)
-        self.quality_combo.setFixedWidth(100)
+        saved_qi = self._api.get_config().get("yt_quality_index", 0)
+        self.quality_combo.setCurrentIndex(min(saved_qi, self.quality_combo.count() - 1))
+        self.quality_combo.setFixedWidth(130)
 
         self.download_btn = QPushButton("Download")
         self.download_btn.setObjectName("secondary")
@@ -981,13 +1093,46 @@ class ExtractTab(QWidget):
 
         layout.addLayout(input_grid)
 
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setObjectName("hline")
+        layout.addWidget(sep)
+
+        # ── Project field ──
+        project_label = QLabel("Project:")
+
+        self.project_edit = QLineEdit()
+        self.project_edit.setPlaceholderText("Score name — type to search existing, or enter a new name")
+        self._completer_model = QStringListModel()
+        self._completer = QCompleter(self._completer_model, self)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.project_edit.setCompleter(self._completer)
+
+        self.project_browse_btn = QPushButton("Browse…")
+        self.project_browse_btn.setObjectName("secondary")
+
+        project_row = QHBoxLayout()
+        project_row.addWidget(project_label)
+        project_row.addWidget(self.project_edit, 1)
+        project_row.addWidget(self.project_browse_btn)
+        layout.addLayout(project_row)
+
+        # ── Status line ──
+        self.status_label = QLabel("Select a video source above to begin")
+        self.status_label.setObjectName("muted")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+
         # ── Crop preview ──
         self.crop_widget = CropPreviewWidget()
-        layout.addWidget(self.crop_widget, 2)
+        layout.addWidget(self.crop_widget, 1)
 
         self.seek_bar = DualHandleSeekBar()
-        self.seek_bar.setMaximumHeight(60)
+        self.seek_bar.setMaximumHeight(80)
+        self.seek_bar.setMinimumHeight(60)
         layout.addWidget(self.seek_bar)
+        layout.addSpacing(4)
 
         # ── Crop ratio row ──
         crop_row = QHBoxLayout()
@@ -1059,6 +1204,7 @@ class ExtractTab(QWidget):
         self._on_source_toggled()
         self.download_btn.clicked.connect(self._on_yt_download)
         self.yt_url_edit.textChanged.connect(self._on_yt_url_changed)
+        self.quality_combo.currentIndexChanged.connect(self._on_quality_changed)
         self.seek_bar.seek_changed.connect(self._on_seek)
         self.crop_spin.valueChanged.connect(self._on_crop_spin_changed)
         self.set_default_btn.clicked.connect(self._set_crop_default)
@@ -1190,7 +1336,7 @@ class ExtractTab(QWidget):
         if not self.pdf_name_edit.text():
             self.pdf_name_edit.setText(self.project_edit.text())
         self._set_video_controls_enabled(True)
-        self.status_label.setText("New project — pick a video to start")
+        self.status_label.setText("Select a video source above to begin")
         self._update_state()
 
     # ── Source toggle ──
@@ -1215,6 +1361,9 @@ class ExtractTab(QWidget):
         valid = bool(self.yt_url_edit.text().strip())
         self.download_btn.setEnabled(valid and not self._busy)
 
+    def _on_quality_changed(self, index: int):
+        self._api.update_config({"yt_quality_index": index})
+
     def _on_yt_download(self):
         url = self.yt_url_edit.text().strip()
         if not url:
@@ -1238,6 +1387,7 @@ class ExtractTab(QWidget):
         self.download_btn.setEnabled(False)
         self.download_btn.setText("Downloading…")
         self.yt_url_edit.setEnabled(False)
+        self.quality_combo.setEnabled(False)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
         try:
@@ -1250,14 +1400,18 @@ class ExtractTab(QWidget):
     def _on_yt_download_completed(self, path: str):
         self._video_path = path
         self.video_path_edit.setText(path)
-        if not self.project_edit.text():
-            self.project_edit.setText(Path(path).stem)
+        title = self._api._last_download_title or Path(path).stem
+        prev_title = self._api._prev_download_title
+        cur_name = self.project_edit.text().strip()
+        if not cur_name or cur_name == prev_title:
+            self.project_edit.setText(title)
         self._log(f"Video downloaded: {path}")
         self._load_preview()
         self._busy = False
         self.download_btn.setEnabled(True)
         self.download_btn.setText("Download")
         self.yt_url_edit.setEnabled(True)
+        self.quality_combo.setEnabled(True)
         self._update_state()
 
     def _reset_download_ui(self):
@@ -1265,6 +1419,7 @@ class ExtractTab(QWidget):
         self.download_btn.setEnabled(True)
         self.download_btn.setText("Download")
         self.yt_url_edit.setEnabled(True)
+        self.quality_combo.setEnabled(True)
 
     def _browse_video(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -1304,6 +1459,7 @@ class ExtractTab(QWidget):
             if img is not None:
                 self.crop_widget.set_frame(self._img_to_pixmap(img))
 
+            self._preview_seeker.open(path)
             self._log("Video loaded: " + path)
             self._log(f"Duration: {info.duration:.1f}s, FPS: {info.fps:.2f}, "
                       f"Resolution: {info.width}x{info.height}")
@@ -1320,13 +1476,22 @@ class ExtractTab(QWidget):
     def _on_seek(self, ts: float):
         if ts < 0 or self._api.get_video_info() is None:
             return
-        now = time.monotonic()
-        if now - getattr(self, '_last_seek', 0.0) < 0.100:
+        self._pending_seek_ts = ts
+        if not self._seek_coalesce.isActive():
+            self._seek_coalesce.start(16)  # ~60 fps dispatch
+
+    def _emit_pending_seek(self):
+        if self._pending_seek_ts is None:
             return
-        self._last_seek = now
-        img = self._api.read_frame_at(ts)
-        if img is not None:
-            self.crop_widget.set_frame(self._img_to_pixmap(img))
+        ts = self._pending_seek_ts
+        self._pending_seek_ts = None
+        info = self._api.get_video_info()
+        self._preview_seeker.seek_requested.emit(ts, info.fps if info else 30.0)
+        if self._pending_seek_ts is not None:
+            self._seek_coalesce.start()
+
+    def _on_preview_frame(self, qt_img: QImage):
+        self.crop_widget.set_frame(QPixmap.fromImage(qt_img))
 
     def _on_crop_spin_changed(self, val: float):
         self.crop_widget.set_ratio(val)
@@ -1364,14 +1529,14 @@ class ExtractTab(QWidget):
         elif has_project and has_video:
             self.action_btn.setText("Start Extraction")
             self.action_btn.setEnabled(can_act)
-            self.status_label.setText("Ready — video loaded")
+            self.status_label.setText("Ready — click Start Extraction to begin")
         else:
             self.action_btn.setText("Start Extraction")
             self.action_btn.setEnabled(False)
-            if not has_project:
-                self.status_label.setText("New project — enter a score name or select an existing one")
-            elif not has_video:
-                self.status_label.setText("Pick a video to start")
+            if not has_video:
+                self.status_label.setText("Select a video source above to begin")
+            elif not has_project:
+                self.status_label.setText("Enter a score name to continue")
             else:
                 self.status_label.setText("Ready")
 
@@ -1529,6 +1694,7 @@ class ExtractTab(QWidget):
         self.download_btn.setEnabled(True)
         self.download_btn.setText("Download")
         self.yt_url_edit.setEnabled(True)
+        self.quality_combo.setEnabled(True)
         self.browse_btn.setEnabled(True)
         self._update_state()
 
@@ -1585,9 +1751,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Score Extractor")
-        self.setMinimumSize(960, 700)
+        self.setMinimumSize(960, 760)
         self.resize(1100, 780)
-        self.setStyleSheet(STYLESHEET.replace("__CHECK_PLACEHOLDER__", CHECK_INDICATOR_PATH))
+        self.setStyleSheet(STYLESHEET.replace("__CHECK_PLACEHOLDER__", CHECK_INDICATOR_PATH).replace("__CHEVRON_PLACEHOLDER__", CHEVRON_PATH))
 
         # Core API
         self.api = GuiApi()
@@ -1676,6 +1842,12 @@ class MainWindow(QMainWindow):
         if index == 1:
             self.config_tab.refresh_from_api()
 
+    def closeEvent(self, event):
+        self.extract_tab._preview_seeker.close()
+        self.extract_tab._preview_thread.quit()
+        self.extract_tab._preview_thread.wait(2000)
+        super().closeEvent(event)
+
 
 # ── Entrypoint ───────────────────────────────────────────────────────
 
@@ -1685,7 +1857,9 @@ def main():
     app.setApplicationName("Score Extractor")
 
     global CHECK_INDICATOR_PATH
+    global CHEVRON_PATH
     CHECK_INDICATOR_PATH = _generate_check_pixmap()
+    CHEVRON_PATH = _generate_chevron_pixmap()
 
     # Set app-wide font
     font = QFont("Segoe UI", 10)

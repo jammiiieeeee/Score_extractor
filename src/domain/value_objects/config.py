@@ -31,8 +31,11 @@ class ScoreConfig:
 
     # Bar Detection
     bar_min_diff_threshold: float = 500.0        # Minimum summed column diff to accept bar position
-    bar_padding_px: int = -10                    # B overlay offset from bar left edge (positive = extend into bar, negative = retract before bar)
+    bar_padding_px: int = -15                    # B overlay offset from bar left edge (positive = extend into bar, negative = retract before bar)
     bar_left_margin: float = 0.20                # Left spike must be within this fraction (0-1) of frame width
 
     # Blank / End Detection
     blank_content_std_threshold: float = 3.0     # Pixel std below this = blank screen
+
+    # YouTube Download
+    yt_quality_index: int = 0                     # Combo box index for quality preset

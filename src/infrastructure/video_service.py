@@ -4,7 +4,6 @@ from typing import Tuple, Optional
 from src.domain.interfaces import IVideoService
 
 class VideoService(IVideoService):
-    TARGET_WIDTH = 640
 
     def __init__(self):
         self.cap = None
@@ -33,13 +32,6 @@ class VideoService(IVideoService):
     def get_total_frames(self) -> int:
         return int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    def _resize(self, frame):
-        h, w = frame.shape[:2]
-        if w <= self.TARGET_WIDTH:
-            return frame
-        target_h = int(h * (self.TARGET_WIDTH / w))
-        return cv2.resize(frame, (self.TARGET_WIDTH, target_h), interpolation=cv2.INTER_AREA)
-
     def read_frames(self):
         if not self.cap:
             return
@@ -51,7 +43,7 @@ class VideoService(IVideoService):
                 break
             
             timestamp = frame_idx / self.fps
-            yield self._resize(frame), timestamp, frame_idx
+            yield frame, timestamp, frame_idx
             frame_idx += 1
 
     def read_frame_at(self, frame_idx: int):
@@ -63,7 +55,7 @@ class VideoService(IVideoService):
             return None, None
         timestamp = frame_idx / self.fps
         self._seq_idx = frame_idx
-        return self._resize(frame), timestamp
+        return frame, timestamp
 
     def read_next_frame(self):
         if not self.cap:
@@ -73,7 +65,7 @@ class VideoService(IVideoService):
             return None, None, None
         self._seq_idx += 1
         timestamp = self._seq_idx / self.fps
-        return self._resize(frame), timestamp, self._seq_idx
+        return frame, timestamp, self._seq_idx
 
     def skip_frames(self, count: int):
         """Read and discard count frames without decoding into images."""
@@ -95,7 +87,7 @@ class VideoService(IVideoService):
         timestamp = frame_idx / self.fps
         return frame, timestamp
 
-    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, bar_padding_px: int = -10, debug_save_path: Optional[str] = None) -> Tuple[np.ndarray, int, int]:
+    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, bar_padding_px: int = -15, debug_save_path: Optional[str] = None) -> Tuple[np.ndarray, int, int]:
         h, w = frame_a.shape[:2]
 
         # Downscale to 640px for bar detection

@@ -64,6 +64,8 @@ class GuiApi:
         self._download_thread: Optional[threading.Thread] = None
         self._cancel_flag = False
         self._debug_mode = False
+        self._last_download_title: Optional[str] = None
+        self._prev_download_title: Optional[str] = None
         self._state = ExtractionState("idle", 0, 0.0, 0.0)
         self._extraction_start_time = 0.0
 
@@ -171,7 +173,7 @@ class GuiApi:
             "blank_content_std_threshold", "bar_min_diff_threshold",
         }
         valid_int_0_100 = {"ocr_confidence_threshold"}
-        valid_int_any = {"bar_padding_px"}
+        valid_int_any = {"bar_padding_px", "yt_quality_index"}
 
         valid_keys = valid_float_0_1 | valid_float_any | valid_int_0_100 | valid_int_any
 
@@ -411,6 +413,18 @@ class GuiApi:
         finally:
             self._extraction_thread = None
 
+    @staticmethod
+    def _find_ffmpeg() -> str:
+        import shutil
+        path = shutil.which("ffmpeg")
+        if path:
+            return path
+        # Fallback: common WinGet install location
+        import glob as _glob
+        pattern = r"C:\Users\*\AppData\Local\Microsoft\WinGet\Packages\*ffmpeg*\bin\ffmpeg.exe"
+        matches = _glob.glob(pattern)
+        return matches[0] if matches else "ffmpeg"
+
     # ═════════════════════════════════════════════════════════════════════
     #  YouTube Download
     # ═════════════════════════════════════════════════════════════════════
@@ -436,7 +450,7 @@ class GuiApi:
 
             dl_dir = self._file_service.base_dir / "yt_dl"
             dl_dir.mkdir(parents=True, exist_ok=True)
-            output_template = str(dl_dir / "%(title)s.%(ext)s")
+            output_template = str(dl_dir / "%(id)s.%(ext)s")
 
             finished_logged = False
 
@@ -453,7 +467,7 @@ class GuiApi:
                     finished_logged = True
                     self._emit_log("  Download finished, processing...")
 
-            ffmpeg_path = r"C:\Users\hosze\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe"
+            ffmpeg_path = self._find_ffmpeg()
             ydl_opts = {
                 'format': fmt,
                 'outtmpl': output_template,
@@ -470,14 +484,31 @@ class GuiApi:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 video_title = info.get('title', 'video')
-                candidates = list(dl_dir.glob(f"{video_title}.*"))
-                candidates.extend(dl_dir.glob("*.mp4"))
+
+                # Debug: log selected formats and codecs
+                formats = info.get('requested_formats') or info.get('formats', [])
+                if info.get('requested_formats'):
+                    for f in info['requested_formats']:
+                        codec = f.get('vcodec') or f.get('acodec', '?')
+                        ext = f.get('ext', '?')
+                        res = f"{f.get('width', '?')}x{f.get('height', '?')}" if f.get('vcodec') else 'audio'
+                        self._emit_log(f"  Format: {ext} | {res} | codec={codec}")
+                else:
+                    vcodec = info.get('vcodec', '?')
+                    acodec = info.get('acodec', '?')
+                    self._emit_log(f"  Codec: video={vcodec}  audio={acodec}")
+
+                video_id = info.get('id', 'video')
+                candidates = list(dl_dir.glob(f"{video_id}.*"))
                 if not candidates:
                     candidates = sorted(dl_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)
                 if not candidates:
                     raise RuntimeError("Could not find downloaded video file")
                 video_path = str(candidates[0])
 
+            self._prev_download_title = self._last_download_title
+            self._last_download_title = video_title
+            self._emit_log(f"Title: {video_title}")
             self._emit_log(f"Downloaded to: {video_path}")
 
             if self._cancel_flag:
