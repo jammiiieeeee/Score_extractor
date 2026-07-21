@@ -288,9 +288,7 @@ def test_all():
         # Add a synthetic page
         img = make_test_image_ndarray(page_num=1)
         from src.domain.models import Frame
-        api._pages.append(Frame(img, 1.0, 0))
-        from src.api.gui_api import GuiApi as GA
-        api._page_png_cache.append(GA._encode_png(img))
+        api._pages.add(Frame(img, 1.0, 0))
 
         thumb = api.get_page_thumbnail(0)
         assert thumb is not None
@@ -326,12 +324,10 @@ def test_all():
     # ── 20. reorder_pages() ────────────────────────────────────────────
     def test_reorder_pages():
         api._pages.clear()
-        api._page_png_cache.clear()
         for i in range(3):
             img = make_test_image_ndarray(page_num=i)
             from src.domain.models import Frame
-            api._pages.append(Frame(img, float(i), i))
-            api._page_png_cache.append(None)
+            api._pages.add(Frame(img, float(i), i))
 
         api.reorder_pages([2, 0, 1])
         assert api.get_page_count() == 3
@@ -362,8 +358,7 @@ def test_all():
             for i in range(3):
                 img = make_test_image_ndarray(page_num=i)
                 from src.domain.models import Frame
-                api._pages.append(Frame(img, float(i), i))
-                api._page_png_cache.append(None)
+                api._pages.add(Frame(img, float(i), i))
 
         output = os.path.join(tempfile.gettempdir(), "_test_gui_output.pdf")
         api.generate_pdf(output)
@@ -461,7 +456,7 @@ def test_all():
         api._pages.clear()
         img = make_test_image_ndarray(page_num=1)
         from src.domain.models import Frame
-        api._pages.append(Frame(img, 1.0, 0))
+        api._pages.add(Frame(img, 1.0, 0))
 
         api.cleanup()
         assert api._video_info is None

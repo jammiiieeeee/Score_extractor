@@ -952,7 +952,6 @@ class PreviewSeeker(QObject):
             "-ss", f"{ts:.3f}",
             "-i", self._path,
             "-frames:v", "1",
-            "-vf", "scale=640:-2",
             "-f", "rawvideo",
             "-pix_fmt", "rgb24",
             "pipe:1",
@@ -969,7 +968,7 @@ class PreviewSeeker(QObject):
         data = proc.stdout
         if len(data) < 9:
             return None
-        out_w = 640
+        out_w = self._width
         out_h = len(data) // (out_w * 3)
         if out_h == 0:
             return None
@@ -1065,10 +1064,10 @@ class ExtractTab(QWidget):
         self.yt_url_edit.setPlaceholderText("Paste YouTube video URL")
 
         self.quality_combo = QComboBox()
-        self.quality_combo.addItem("Best (≤1080p)", "bestvideo[height<=1080]+bestaudio/best[height<=1080]")
-        self.quality_combo.addItem("720p", "bestvideo[height<=720]+bestaudio/best[height<=720]")
-        self.quality_combo.addItem("480p", "bestvideo[height<=480]+bestaudio/best[height<=480]")
-        self.quality_combo.addItem("360p", "bestvideo[height<=360]+bestaudio/best[height<=360]")
+        self.quality_combo.addItem("Best (≤1080p)", "bestvideo[height<=1080]")
+        self.quality_combo.addItem("720p", "bestvideo[height<=720]")
+        self.quality_combo.addItem("480p", "bestvideo[height<=480]")
+        self.quality_combo.addItem("360p", "best[height<=360]")
         self.quality_combo.addItem("Best available", "best")
         saved_qi = self._api.get_config().get("yt_quality_index", 0)
         self.quality_combo.setCurrentIndex(min(saved_qi, self.quality_combo.count() - 1))
@@ -1398,8 +1397,12 @@ class ExtractTab(QWidget):
             self._reset_download_ui()
 
     def _on_yt_download_completed(self, path: str):
-        self._video_path = path
-        self.video_path_edit.setText(path)
+        if self._api._original_video_path is not None:
+            preview_path = self._api._video_info.path
+        else:
+            preview_path = path
+        self._video_path = preview_path
+        self.video_path_edit.setText(preview_path)
         title = self._api._last_download_title or Path(path).stem
         prev_title = self._api._prev_download_title
         cur_name = self.project_edit.text().strip()

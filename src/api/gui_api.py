@@ -11,10 +11,12 @@ from typing import Optional, Callable, List
 
 from src.domain.value_objects.config import ScoreConfig
 from src.domain.models import Frame
+from src.domain.page_store import PageStore
 from src.infrastructure.video_service import VideoService
 from src.infrastructure.ocr_service import OcrService
 from src.infrastructure.pdf_service import PdfService
 from src.infrastructure.file_service import FileService
+from src.infrastructure.download_service import DownloadService
 from src.application.use_cases import ExtractScoreUseCase
 
 
@@ -44,18 +46,32 @@ class ScoreInfo:
 
 
 class GuiApi:
+    """Thin orchestrator that delegates to focused sub-modules.
+
+    Responsibilities:
+    - Config management (load/save/validate)
+    - Video lifecycle (open/close/preview)
+    - OCR lifecycle (init/status/preview)
+    - Extraction orchestration (threaded)
+    - PDF generation (threaded)
+    - YouTube download (threaded)
+    - Callback registry
+    - Score management (load/save/delete)
+    """
+
     def __init__(self, config_path: str = "config.json"):
         self._config_path = config_path
         self._config = self._load_config(config_path)
+
         self._file_service = FileService()
         self._video_service: Optional[VideoService] = None
         self._ocr_service: Optional[OcrService] = None
         self._pdf_service = PdfService()
+        self._pages = PageStore()
+        self._download_service = DownloadService(self._file_service.base_dir)
+
         self._video_info: Optional[VideoInfo] = None
-        self._pages: List[Frame] = []
-        self._page_png_cache: List[Optional[bytes]] = []
-        self._original_pages: List[Frame] = []
-        self._original_png_cache: List[Optional[bytes]] = []
+        self._original_video_path: Optional[str] = None
         self._loaded_score_path: Optional[str] = None
         self._loaded_score_metadata: dict = {}
 
@@ -92,15 +108,11 @@ class GuiApi:
 
     @staticmethod
     def _encode_png(img: np.ndarray) -> Optional[bytes]:
-        success, buf = cv2.imencode('.png', img)
-        if not success:
-            return None
-        return buf.tobytes()
+        return PageStore.encode_png(img)
 
     @staticmethod
     def _decode_png(data: bytes) -> Optional[np.ndarray]:
-        buf = np.frombuffer(data, dtype=np.uint8)
-        return cv2.imdecode(buf, cv2.IMREAD_COLOR)
+        return PageStore.decode_png(data)
 
     def _emit_progress(self, phase: str, percent: float, detail: str):
         if self._on_progress:
@@ -337,13 +349,12 @@ class GuiApi:
 
         self._cancel_flag = False
         self._pages.clear()
-        self._page_png_cache.clear()
         self._state = ExtractionState("extracting", 0, 0.0, 0.0)
         self._extraction_start_time = time.time()
 
         self._extraction_thread = threading.Thread(
             target=self._run_extraction,
-            args=(no_ocr, start_time, duration, self._debug_mode, output_folder, score_name),
+            args=(no_ocr, start_time, duration, self._debug_mode, output_folder, score_name, self._original_video_path),
             daemon=True,
         )
         self._extraction_thread.start()
@@ -361,7 +372,8 @@ class GuiApi:
         return self._state
 
     def _run_extraction(self, no_ocr: bool, start_time: float, duration: float,
-                        debug: bool, output_folder: str, score_name: str):
+                        debug: bool, output_folder: str, score_name: str,
+                        original_video_path: Optional[str] = None):
         try:
             score_dir = self._file_service.prepare_output_dir(output_folder, score_name)
 
@@ -386,10 +398,10 @@ class GuiApi:
                 on_log=self._emit_log,
                 on_progress=lambda pct, d: self._emit_progress("extracting", pct, d),
                 is_cancelled=lambda: self._cancel_flag,
+                original_video_path=original_video_path,
             )
 
-            self._pages = pages
-            self._page_png_cache = [self._encode_png(p.image) for p in pages]
+            self._pages.set_pages(pages)
 
             if not self._cancel_flag:
                 self._state.phase = "done"
@@ -399,7 +411,6 @@ class GuiApi:
                 self._emit_log(f"Extraction complete: {len(self._pages)} pages found")
             else:
                 self._pages.clear()
-                self._page_png_cache.clear()
                 self._state.phase = "idle"
                 import shutil
                 shutil.rmtree(score_dir, ignore_errors=True)
@@ -413,23 +424,12 @@ class GuiApi:
         finally:
             self._extraction_thread = None
 
-    @staticmethod
-    def _find_ffmpeg() -> str:
-        import shutil
-        path = shutil.which("ffmpeg")
-        if path:
-            return path
-        # Fallback: common WinGet install location
-        import glob as _glob
-        pattern = r"C:\Users\*\AppData\Local\Microsoft\WinGet\Packages\*ffmpeg*\bin\ffmpeg.exe"
-        matches = _glob.glob(pattern)
-        return matches[0] if matches else "ffmpeg"
-
     # ═════════════════════════════════════════════════════════════════════
     #  YouTube Download
     # ═════════════════════════════════════════════════════════════════════
 
-    def download_youtube(self, url: str, fmt: str = "bestvideo[height<=1080]+bestaudio/best[height<=1080]") -> None:
+    def download_youtube(self, url: str, fmt: str = "bestvideo[height<=1080]",
+                         scan_fmt: str = "best[height<=640]") -> None:
         if self.is_busy():
             raise RuntimeError("Extraction or PDF generation already in progress")
 
@@ -439,84 +439,42 @@ class GuiApi:
 
         self._download_thread = threading.Thread(
             target=self._run_youtube_download,
-            args=(url, fmt),
+            args=(url, fmt, scan_fmt),
             daemon=True,
         )
         self._download_thread.start()
 
-    def _run_youtube_download(self, url: str, fmt: str = "bestvideo[height<=1080]+bestaudio/best[height<=1080]"):
+    def _run_youtube_download(self, url: str, fmt: str = "bestvideo[height<=1080]",
+                              scan_fmt: str = "best[height<=640]"):
         try:
-            import yt_dlp
+            def on_progress(pct, detail):
+                self._state.current_timestamp = pct
+                self._emit_progress("downloading", pct, detail)
 
-            dl_dir = self._file_service.base_dir / "yt_dl"
-            dl_dir.mkdir(parents=True, exist_ok=True)
-            output_template = str(dl_dir / "%(id)s.%(ext)s")
-
-            finished_logged = False
-
-            def progress_hook(d):
-                nonlocal finished_logged
-                if self._cancel_flag:
-                    raise Exception("Download cancelled by user")
-                if d['status'] == 'downloading':
-                    total = d.get('total_bytes') or d.get('total_bytes_estimate') or 1
-                    pct = d.get('downloaded_bytes', 0) / total * 100
-                    self._state.current_timestamp = pct
-                    self._emit_progress("downloading", pct, f"Downloading... {pct:.0f}%")
-                elif d['status'] == 'finished' and not finished_logged:
-                    finished_logged = True
-                    self._emit_log("  Download finished, processing...")
-
-            ffmpeg_path = self._find_ffmpeg()
-            ydl_opts = {
-                'format': fmt,
-                'outtmpl': output_template,
-                'progress_hooks': [progress_hook],
-                'quiet': True,
-                'no_warnings': True,
-                'noplaylist': True,
-                'playlistend': 1,
-                'ffmpeg_location': ffmpeg_path,
-                'merge_output_format': 'mp4',
-            }
-
-            self._emit_log(f"Downloading: {url}")
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                video_title = info.get('title', 'video')
-
-                # Debug: log selected formats and codecs
-                formats = info.get('requested_formats') or info.get('formats', [])
-                if info.get('requested_formats'):
-                    for f in info['requested_formats']:
-                        codec = f.get('vcodec') or f.get('acodec', '?')
-                        ext = f.get('ext', '?')
-                        res = f"{f.get('width', '?')}x{f.get('height', '?')}" if f.get('vcodec') else 'audio'
-                        self._emit_log(f"  Format: {ext} | {res} | codec={codec}")
-                else:
-                    vcodec = info.get('vcodec', '?')
-                    acodec = info.get('acodec', '?')
-                    self._emit_log(f"  Codec: video={vcodec}  audio={acodec}")
-
-                video_id = info.get('id', 'video')
-                candidates = list(dl_dir.glob(f"{video_id}.*"))
-                if not candidates:
-                    candidates = sorted(dl_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)
-                if not candidates:
-                    raise RuntimeError("Could not find downloaded video file")
-                video_path = str(candidates[0])
+            result = self._download_service.download(
+                url, fmt, scan_fmt=scan_fmt,
+                on_progress=on_progress,
+                on_log=self._emit_log,
+                is_cancelled=lambda: self._cancel_flag,
+            )
 
             self._prev_download_title = self._last_download_title
-            self._last_download_title = video_title
-            self._emit_log(f"Title: {video_title}")
-            self._emit_log(f"Downloaded to: {video_path}")
+            self._last_download_title = result.video_title
 
             if self._cancel_flag:
                 raise Exception("Download cancelled by user")
 
-            self.open_video(video_path)
-            self._emit_download_completed(video_path)
-            self._emit_log(f"Video ready: {video_path}")
+            original_path = result.video_path
+
+            if scan_fmt and result.scan_path != result.video_path:
+                self._original_video_path = original_path
+                self.open_video(result.scan_path)
+            else:
+                self._original_video_path = None
+                self.open_video(result.video_path)
+
+            self._emit_download_completed(result.video_path)
+            self._emit_log(f"Video ready: {result.video_path}")
 
         except Exception as e:
             self._state.phase = "error"
@@ -528,50 +486,26 @@ class GuiApi:
             self._state.phase = "idle"
 
     # ═════════════════════════════════════════════════════════════════════
-    #  Page Management (16-21)
+    #  Page Management (16-21) — delegates to PageStore
     # ═════════════════════════════════════════════════════════════════════
 
     def get_page_count(self) -> int:
         return len(self._pages)
 
     def get_page_thumbnail(self, index: int) -> Optional[bytes]:
-        if index < 0 or index >= len(self._pages):
-            return None
-        img = self._pages[index].image
-        h, w = img.shape[:2]
-        thumb_w = 320
-        thumb_h = int(h * (thumb_w / w))
-        thumb = cv2.resize(img, (thumb_w, thumb_h))
-        return self._encode_png(thumb)
+        return self._pages.get_thumbnail(index)
 
     def get_page_full(self, index: int) -> Optional[bytes]:
-        if index < 0 or index >= len(self._pages):
-            return None
-        if self._page_png_cache[index] is not None:
-            return self._page_png_cache[index]
-        png = self._encode_png(self._pages[index].image)
-        self._page_png_cache[index] = png
-        return png
+        return self._pages.get_full_png(index)
 
     def remove_page(self, index: int) -> None:
-        if index < 0 or index >= len(self._pages):
-            raise IndexError(f"Page index {index} out of range (0-{len(self._pages) - 1})")
-        self._pages.pop(index)
-        self._page_png_cache.pop(index)
+        self._pages.remove(index)
 
     def reorder_pages(self, new_order: list[int]) -> None:
-        if len(new_order) != len(self._pages):
-            raise ValueError(f"New order length {len(new_order)} must match page count {len(self._pages)}")
-        if set(new_order) != set(range(len(self._pages))):
-            raise ValueError("New order must be a permutation of 0..N-1")
-        self._pages = [self._pages[i] for i in new_order]
-        self._page_png_cache = [self._page_png_cache[i] for i in new_order]
+        self._pages.reorder(new_order)
 
     def clear_pages(self) -> None:
         self._pages.clear()
-        self._page_png_cache.clear()
-        self._original_pages.clear()
-        self._original_png_cache.clear()
         self._loaded_score_path = None
         self._loaded_score_metadata = {}
 
@@ -598,7 +532,7 @@ class GuiApi:
 
     def _run_generate_pdf(self, output_path: str, title: Optional[str] = None):
         try:
-            images = [f.image for f in self._pages]
+            images = self._pages.all_images()
             final_title = title if title else Path(output_path).stem
             output = Path(output_path)
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -637,12 +571,10 @@ class GuiApi:
         if not images:
             raise RuntimeError(f"No page images found in {score_dir}/photos/")
 
+        from src.domain.models import Frame
         self._pages.clear()
-        self._page_png_cache.clear()
         for i, img in enumerate(images):
-            frame = Frame(img, 0.0, i)
-            self._pages.append(frame)
-            self._page_png_cache.append(self._encode_png(img))
+            self._pages.add(Frame(img, 0.0, i))
 
         if output_path is None:
             output_path = str(sb_path / f"{sb_path.name}.pdf")
@@ -661,16 +593,18 @@ class GuiApi:
     def load_saved_score(self, path: str) -> int:
         score_dir = Path(path)
         images = self._file_service.load_page_images(score_dir)
+
+        from src.domain.models import Frame
         self._pages.clear()
-        self._page_png_cache.clear()
-        self._original_pages.clear()
-        self._original_png_cache.clear()
+        working = []
+        originals = []
         for i, img in enumerate(images):
             frame = Frame(img, 0.0, i)
-            self._pages.append(frame)
-            self._page_png_cache.append(self._encode_png(img))
-            self._original_pages.append(Frame(img.copy(), 0.0, i))
-            self._original_png_cache.append(self._encode_png(img))
+            working.append(frame)
+            originals.append(Frame(img.copy(), 0.0, i))
+        self._pages.set_pages(working)
+        self._pages.set_originals(originals)
+
         self._loaded_score_path = path
         self._loaded_score_metadata = self._read_metadata(score_dir)
         meta_crop = self._loaded_score_metadata.get("crop_ratio", 0.35)
@@ -691,19 +625,10 @@ class GuiApi:
     # ═════════════════════════════════════════════════════════════════════
 
     def reapply_crop(self, ratio: float) -> None:
-        if not self._original_pages:
-            return
-        self._pages.clear()
-        self._page_png_cache.clear()
-        for i, frame in enumerate(self._original_pages):
-            h = frame.image.shape[0]
-            crop_px = int(h * ratio)
-            cropped = frame.image[crop_px:, :].copy()
-            self._pages.append(Frame(cropped, frame.timestamp, frame.index))
-            self._page_png_cache.append(self._encode_png(cropped))
+        self._pages.reapply_crop(ratio)
 
     def has_loaded_score(self) -> bool:
-        return len(self._original_pages) > 0 and self._loaded_score_path is not None
+        return self._pages.has_originals() and self._loaded_score_path is not None
 
     def get_loaded_score_path(self) -> Optional[str]:
         return self._loaded_score_path
@@ -762,7 +687,6 @@ class GuiApi:
     def cleanup(self) -> None:
         self.close_video()
         self._pages.clear()
-        self._page_png_cache.clear()
 
     def is_busy(self) -> bool:
         if self._download_thread is not None and self._download_thread.is_alive():

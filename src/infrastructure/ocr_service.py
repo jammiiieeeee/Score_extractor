@@ -2,24 +2,10 @@ import os
 import re
 import cv2
 import numpy as np
-import traceback
 from typing import Optional, List, Tuple
 
-# ===== CRITICAL FIX: SET ENV FLAGS BEFORE IMPORTING PADDLE =====
-os.environ['FLAGS_use_mkldnn'] = '0'
-os.environ['FLAGS_enable_mkldnn'] = '0'
-os.environ['FLAGS_use_ngraph'] = 'False'
-os.environ['PADDLE_DISABLE_STATIC'] = 'True'
-os.environ['FLAGS_enable_pir_in_executor'] = '0'
-os.environ['FLAGS_enable_pir_api'] = '0'
-
-try:
-    from paddleocr import PaddleOCR
-    PADDLE_AVAILABLE = True
-except ImportError:
-    PADDLE_AVAILABLE = False
-
 from src.domain.interfaces import IOcrService
+
 
 class OcrService(IOcrService):
     def __init__(self):
@@ -27,7 +13,17 @@ class OcrService(IOcrService):
         self.enabled = False
 
     def initialize(self) -> bool:
-        if not PADDLE_AVAILABLE:
+        # Set Paddle compatibility flags BEFORE importing PaddleOCR
+        os.environ['FLAGS_use_mkldnn'] = '0'
+        os.environ['FLAGS_enable_mkldnn'] = '0'
+        os.environ['FLAGS_use_ngraph'] = 'False'
+        os.environ['PADDLE_DISABLE_STATIC'] = 'True'
+        os.environ['FLAGS_enable_pir_in_executor'] = '0'
+        os.environ['FLAGS_enable_pir_api'] = '0'
+
+        try:
+            from paddleocr import PaddleOCR
+        except ImportError:
             print("Error: 'paddleocr' library not found. Please install requirements.")
             return False
 
