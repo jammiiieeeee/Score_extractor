@@ -1,0 +1,2346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Score Extractor — Fluid UI Prototype</title>
+<script src="https://cdn.jsdelivr.net/npm/framer-motion@11.0.3/dist/framer-motion.js"></script>
+<style>
+/* ═══════════════════════════════════════════════════════════════════
+   APPLE DESIGN SYSTEM — macOS / iOS Native Palette
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Background stack (Apple's layered grays with blue undertone) ── */
+  --bg: #1e1e1e;
+  --surface: rgba(44, 44, 46, 0.80);
+  --surface-solid: #2c2c2e;
+  --surface-2: rgba(58, 58, 60, 0.72);
+  --surface-2-solid: #3a3a3c;
+  --surface-3: rgba(72, 72, 74, 0.55);
+
+  /* ── Text hierarchy ── */
+  --ink: #f5f5f7;
+  --ink-secondary: rgba(245, 245, 247, 0.72);
+  --muted: #98989d;
+
+  /* ── Accent — Apple system blue ── */
+  --accent: #0a84ff;
+  --accent-hover: #409cff;
+  --accent-dim: rgba(10, 132, 255, 0.12);
+  --accent-glow: rgba(10, 132, 255, 0.25);
+
+  /* ── Semantic colors (Apple system) ── */
+  --green: #30d158;
+  --green-dim: rgba(48, 209, 88, 0.12);
+  --danger: #ff453a;
+  --danger-dim: rgba(255, 69, 58, 0.12);
+  --orange: #ff9f0a;
+  --orange-dim: rgba(255, 159, 10, 0.12);
+  --purple: #bf5af2;
+  --purple-dim: rgba(191, 90, 242, 0.12);
+
+  /* ── Borders — subtle, blue-tinted ── */
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --border-focus: rgba(10, 132, 255, 0.45);
+
+  /* ── Shadows ── */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.32), 0 0 1px rgba(0,0,0,0.36);
+  --shadow-md: 0 4px 14px rgba(0,0,0,0.40), 0 0 1px rgba(0,0,0,0.36);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,0.52), 0 0 1px rgba(0,0,0,0.36);
+  --shadow-xl: 0 20px 60px rgba(0,0,0,0.64), 0 0 1px rgba(0,0,0,0.36);
+
+  /* ── Typography ── */
+  --font: "SF Pro Text", "SF Pro Display", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", "Consolas", monospace;
+
+  /* ── Radii (Apple's standard radii) ── */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+
+  /* ── Material blur (Apple's vibrancy) ── */
+  --blur-sm: blur(20px) saturate(170%);
+  --blur-md: blur(40px) saturate(180%);
+  --blur-lg: blur(60px) saturate(200%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RESET & BASE
+   ═══════════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   TYPOGRAPHY — Optical sizing per Apple guidelines §15
+   ═══════════════════════════════════════════════════════════════════ */
+
+.display-text {
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  font-weight: 700;
+  font-optical-sizing: auto;
+}
+
+.title-text {
+  font-size: 1.25rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+
+.body-text {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+
+.caption-text {
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.mono-text {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  letter-spacing: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LAYOUT SHELL
+   ═══════════════════════════════════════════════════════════════════ */
+
+.app-shell {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SIDEBAR — Translucent material §12
+   ═══════════════════════════════════════════════════════════════════ */
+
+.sidebar {
+  width: 260px;
+  min-width: 260px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  backdrop-filter: var(--blur-md);
+  -webkit-backdrop-filter: var(--blur-md);
+  border-right: 1px solid var(--border);
+  position: relative;
+  z-index: 10;
+}
+
+.sidebar-header {
+  padding: 20px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-header .app-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-header .app-title .icon {
+  width: 24px;
+  height: 24px;
+  background: var(--accent);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: white;
+  font-weight: 800;
+}
+
+.sidebar-search {
+  padding: 12px 16px 8px;
+}
+
+.sidebar-search input {
+  width: 100%;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 7px 10px 7px 30px;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 10px center;
+}
+
+.sidebar-search input:focus {
+  border-color: var(--accent);
+}
+
+.sidebar-search input::placeholder {
+  color: var(--muted);
+}
+
+.sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+/* Scrollbar styling */
+.sidebar-content::-webkit-scrollbar { width: 4px; }
+.sidebar-content::-webkit-scrollbar-track { background: transparent; }
+.sidebar-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+/* ── Section headers ── */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 6px;
+}
+
+.section-header .label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.section-header .count {
+  font-size: 0.625rem;
+  color: var(--muted);
+  background: var(--surface-2-solid);
+  border-radius: 8px;
+  padding: 1px 7px;
+}
+
+/* ── Score items ── */
+.score-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s ease;
+}
+
+.score-item:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+.score-item.active {
+  background: var(--accent-dim);
+}
+
+.score-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+
+.score-item .status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.score-item .status-dot.done { background: var(--green); }
+.score-item .status-dot.active { background: var(--accent); }
+.score-item .status-dot.pending { background: var(--muted); opacity: 0.4; }
+
+.score-item .name {
+  flex: 1;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.score-item .meta {
+  font-size: 0.6875rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ── Sidebar footer ── */
+.sidebar-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar-footer .version {
+  font-size: 0.6875rem;
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MAIN CONTENT
+   ═══════════════════════════════════════════════════════════════════ */
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  background: var(--bg);
+}
+
+/* ── Top bar — translucent material ── */
+.top-bar {
+  height: 52px;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+  background: var(--surface);
+  backdrop-filter: var(--blur-md);
+  -webkit-backdrop-filter: var(--blur-md);
+  border-bottom: 1px solid var(--border);
+  z-index: 20;
+  position: relative;
+}
+
+.top-bar .score-name {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  border: none;
+  background: transparent;
+  outline: none;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  min-width: 200px;
+  transition: background 0.15s ease;
+}
+
+.top-bar .score-name:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+.top-bar .score-name:focus {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--accent);
+}
+
+.top-bar .spacer { flex: 1; }
+
+.top-bar .status-pill {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-pill.ready {
+  background: var(--green-dim);
+  color: var(--green);
+}
+
+.status-pill.ready::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  background: var(--green);
+  border-radius: 50%;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CONTENT AREA — Scrollable
+   ═══════════════════════════════════════════════════════════════════ */
+
+.content-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px;
+  scroll-behavior: auto;
+}
+
+.content-scroll::-webkit-scrollbar { width: 6px; }
+.content-scroll::-webkit-scrollbar-track { background: transparent; }
+.content-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   CARDS — Material surfaces §12
+   ═══════════════════════════════════════════════════════════════════ */
+
+.card {
+  background: var(--surface-2);
+  backdrop-filter: var(--blur-sm);
+  -webkit-backdrop-filter: var(--blur-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 18px;
+  margin-bottom: 14px;
+  position: relative;
+  transition: border-color 0.2s ease;
+}
+
+.card:hover {
+  border-color: var(--border-strong);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.card-header .label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.card-header .badge {
+  font-size: 0.625rem;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-radius: 8px;
+  padding: 2px 8px;
+  font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   VIDEO PREVIEW — with draggable crop line
+   ═══════════════════════════════════════════════════════════════════ */
+
+.preview-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #080808;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  cursor: default;
+}
+
+.preview-container .frame {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* Fake piano score frame */
+.preview-fake-frame {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(180deg, #1a1a1a 0%, #111 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.preview-fake-frame .staff-lines {
+  width: 80%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.preview-fake-frame .staff-line {
+  height: 1px;
+  background: rgba(255,255,255,0.12);
+  width: 100%;
+}
+
+.preview-fake-frame .staff-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.preview-fake-frame .note-dots {
+  display: flex;
+  gap: 16px;
+  margin-top: -2px;
+}
+
+.preview-fake-frame .note-dot {
+  width: 6px;
+  height: 6px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 50%;
+}
+
+.preview-fake-frame .piano-label {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.6875rem;
+  color: rgba(255,255,255,0.15);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Crop overlay */
+.crop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 35%;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  pointer-events: none;
+  z-index: 2;
+  border-bottom: 1.5px solid var(--accent);
+  transition: height 0.08s linear;
+}
+
+.crop-overlay .crop-label {
+  position: absolute;
+  bottom: 8px;
+  right: 10px;
+  font-size: 0.625rem;
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+/* Crop drag handle */
+.crop-handle {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: -14px;
+  width: 48px;
+  height: 28px;
+  background: var(--accent);
+  border-radius: 14px;
+  cursor: ns-resize;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.crop-handle:active {
+  background: var(--accent-hover);
+}
+
+.crop-handle .grip {
+  width: 18px;
+  height: 3px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SEEK BAR — Dual handle
+   ═══════════════════════════════════════════════════════════════════ */
+
+.seek-container {
+  position: relative;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 0 2px;
+  touch-action: none;
+}
+
+.seek-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
+}
+
+.seek-range {
+  position: absolute;
+  height: 4px;
+  background: var(--accent);
+  border-radius: 2px;
+  opacity: 0.7;
+}
+
+.seek-handle {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  border-radius: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  z-index: 3;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2), var(--shadow-sm);
+  transition: box-shadow 0.15s ease, transform 0.08s ease;
+  touch-action: none;
+}
+
+.seek-handle:hover {
+  box-shadow: 0 0 0 5px rgba(10, 132, 255, 0.25), var(--shadow-md);
+}
+
+.seek-handle:active {
+  cursor: grabbing;
+  box-shadow: 0 0 0 6px rgba(10, 132, 255, 0.3), var(--shadow-md);
+}
+
+.seek-handle.start { z-index: 4; }
+.seek-handle.end { z-index: 3; }
+
+.seek-time {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.6875rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  padding: 0 2px;
+  margin-top: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   INPUT CONTROLS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.input-field {
+  flex: 1;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  font-family: var(--font);
+}
+
+.input-field:focus {
+  border-color: var(--accent);
+  background: rgba(0,0,0,0.4);
+}
+
+.input-field::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.input-field.mono {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   BUTTONS — §1 Response: instant feedback on press
+   ═══════════════════════════════════════════════════════════════════ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-radius: var(--r-sm);
+  padding: 8px 18px;
+  font-family: var(--font);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.1s ease-out, background 0.12s ease, opacity 0.12s ease;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
+/* §1: Response on pointer-down, not release */
+.btn:active {
+  transform: scale(0.96);
+  filter: brightness(0.88);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn-primary:disabled {
+  background: var(--surface-2-solid);
+  color: var(--muted);
+  cursor: default;
+  transform: none;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--ink-secondary);
+  border: 1px solid var(--border-strong);
+}
+
+.btn-secondary:hover {
+  background: rgba(255,255,255,0.04);
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger-dim);
+}
+
+.btn-danger:hover {
+  background: var(--danger-dim);
+  border-color: var(--danger);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 10px;
+}
+
+.btn-ghost:hover {
+  color: var(--ink);
+  background: rgba(255,255,255,0.04);
+}
+
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 0.75rem;
+}
+
+.btn-lg {
+  padding: 10px 28px;
+  font-size: 0.875rem;
+  border-radius: var(--r-md);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PROGRESS BAR
+   ═══════════════════════════════════════════════════════════════════ */
+
+.progress-track {
+  width: 100%;
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LOG CONSOLE
+   ═══════════════════════════════════════════════════════════════════ */
+
+.log-panel {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.log-panel::-webkit-scrollbar { width: 4px; }
+.log-panel::-webkit-scrollbar-track { background: transparent; }
+.log-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 2px; }
+
+.log-line { margin-bottom: 1px; }
+.log-line .ts { color: rgba(255,255,255,0.2); }
+.log-line .info { color: var(--accent); }
+.log-line .ok { color: var(--green); }
+.log-line .err { color: var(--danger); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   PAGE THUMBNAILS — Horizontal carousel
+   ═══════════════════════════════════════════════════════════════════ */
+
+.thumb-carousel {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+}
+
+.thumb-carousel::-webkit-scrollbar { height: 3px; }
+.thumb-carousel::-webkit-scrollbar-track { background: transparent; }
+.thumb-carousel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+.thumb-item {
+  flex-shrink: 0;
+  width: 72px;
+  cursor: pointer;
+  scroll-snap-align: start;
+  position: relative;
+}
+
+.thumb-item .thumb-img {
+  width: 72px;
+  height: 96px;
+  background: var(--surface-2-solid);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.625rem;
+  color: var(--muted);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+  overflow: hidden;
+}
+
+.thumb-item:hover .thumb-img {
+  border-color: var(--accent);
+}
+
+.thumb-item.active .thumb-img {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.2);
+}
+
+.thumb-item .thumb-label {
+  text-align: center;
+  font-size: 0.625rem;
+  color: var(--muted);
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+.thumb-item.active .thumb-label {
+  color: var(--accent);
+}
+
+/* Fake staff lines in thumbnails */
+.thumb-staff {
+  width: 80%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.thumb-staff .line {
+  height: 0.5px;
+  background: rgba(255,255,255,0.1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   BOTTOM SHEET — Draggable §3 Interruptibility
+   ═══════════════════════════════════════════════════════════════════ */
+
+.bottom-sheet-scrim {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.bottom-sheet-scrim.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.bottom-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 101;
+  background: var(--surface-solid);
+  backdrop-filter: var(--blur-lg);
+  -webkit-backdrop-filter: var(--blur-lg);
+  border-top: 1px solid var(--border-strong);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  box-shadow: var(--shadow-xl);
+  touch-action: none;
+  transform: translateY(100%);
+}
+
+.bottom-sheet .drag-area {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 6px;
+  cursor: grab;
+}
+
+.bottom-sheet .drag-handle {
+  width: 36px;
+  height: 4px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 2px;
+}
+
+.bottom-sheet .sheet-content {
+  padding: 0 24px 32px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.bottom-sheet .sheet-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 16px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CONFIG GRID (inside bottom sheet)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.config-field .field-label {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.config-field .field-value {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 6px 10px;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.config-field .field-value:focus {
+  border-color: var(--accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ACTION BAR — Floating bottom
+   ═══════════════════════════════════════════════════════════════════ */
+
+.action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--surface);
+  backdrop-filter: var(--blur-md);
+  -webkit-backdrop-filter: var(--blur-md);
+  border-top: 1px solid var(--border);
+  gap: 12px;
+}
+
+.action-bar .left-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-bar .right-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   TOOLTIP
+   ═══════════════════════════════════════════════════════════════════ */
+
+.tooltip {
+  position: absolute;
+  background: var(--surface-solid);
+  backdrop-filter: var(--blur-md);
+  -webkit-backdrop-filter: var(--blur-md);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font-size: 0.6875rem;
+  color: var(--ink);
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: var(--shadow-md);
+  z-index: 50;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RADIO TOGGLE
+   ═══════════════════════════════════════════════════════════════════ */
+
+.source-toggle {
+  display: flex;
+  background: rgba(0,0,0,0.3);
+  border-radius: var(--r-sm);
+  padding: 2px;
+  border: 1px solid var(--border);
+}
+
+.source-toggle .option {
+  flex: 1;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.source-toggle .option.active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.source-toggle .option:not(.active):hover {
+  color: var(--ink);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   TAB NAV — Inline
+   ═══════════════════════════════════════════════════════════════════ */
+
+.tab-nav {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.tab-nav .tab {
+  padding: 8px 16px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.tab-nav .tab:hover {
+  color: var(--ink);
+}
+
+.tab-nav .tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   TOGGLE SWITCH
+   ═══════════════════════════════════════════════════════════════════ */
+
+.toggle {
+  width: 40px;
+  height: 24px;
+  background: rgba(120, 120, 128, 0.32);
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+  touch-action: manipulation;
+}
+
+.toggle.on {
+  background: var(--green);
+}
+
+.toggle .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.28);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   NOTIFICATION TOAST
+   ═══════════════════════════════════════════════════════════════════ */
+
+.toast-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--surface-solid);
+  backdrop-filter: var(--blur-md);
+  -webkit-backdrop-filter: var(--blur-md);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  padding: 10px 16px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8125rem;
+  pointer-events: auto;
+  max-width: 320px;
+}
+
+.toast .toast-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.toast .toast-text {
+  flex: 1;
+}
+
+.toast .toast-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   REDUCED MOTION — §14 Accessibility
+   ═══════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .sidebar, .top-bar, .bottom-sheet, .action-bar, .card {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--surface-solid);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .card, .input-field, .btn-secondary, .btn-danger {
+    border-width: 2px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ANIMATIONS — for elements entering/leaving
+   ═══════════════════════════════════════════════════════════════════ */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-in {
+  animation: fadeIn 0.4s ease-out both;
+}
+
+.animate-in-delay-1 { animation-delay: 0.05s; }
+.animate-in-delay-2 { animation-delay: 0.1s; }
+.animate-in-delay-3 { animation-delay: 0.15s; }
+.animate-in-delay-4 { animation-delay: 0.2s; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   POPOVER MENU
+   ═══════════════════════════════════════════════════════════════════ */
+
+.popover {
+  position: absolute;
+  background: var(--surface-solid);
+  backdrop-filter: var(--blur-lg);
+  -webkit-backdrop-filter: var(--blur-lg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-xl);
+  padding: 4px;
+  min-width: 180px;
+  z-index: 60;
+}
+
+.popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.popover-item:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+.popover-item.danger {
+  color: var(--danger);
+}
+
+.popover-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CONTEXTUAL LAYOUT HELPERS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.flex-1 { flex: 1; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.gap-4 { gap: 4px; }
+.gap-6 { gap: 6px; }
+.gap-8 { gap: 8px; }
+.gap-12 { gap: 12px; }
+.gap-16 { gap: 16px; }
+.mt-4 { margin-top: 4px; }
+.mt-8 { margin-top: 8px; }
+.mt-12 { margin-top: 12px; }
+.mb-4 { margin-bottom: 4px; }
+.mb-8 { margin-bottom: 8px; }
+.mb-12 { margin-bottom: 12px; }
+.w-full { width: 100%; }
+.text-muted { color: var(--muted); }
+.text-accent { color: var(--accent); }
+.text-sm { font-size: 0.75rem; }
+.text-xs { font-size: 0.6875rem; }
+.fw-600 { font-weight: 600; }
+.fw-700 { font-weight: 700; }
+.truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     APP SHELL
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<div class="app-shell">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="app-title">
+        <div class="icon">♪</div>
+        Score Extractor
+      </div>
+    </div>
+
+    <div class="sidebar-search">
+      <input type="text" placeholder="Search scores..." id="sidebarSearch">
+    </div>
+
+    <div class="sidebar-content" id="sidebarContent">
+      <div class="section-header">
+        <span class="label">Scores</span>
+        <span class="count">5</span>
+      </div>
+
+      <div class="score-item active" data-score="0">
+        <div class="status-dot done"></div>
+        <span class="name">Bach_Prelude_1</span>
+        <span class="meta">14 pp</span>
+      </div>
+      <div class="score-item" data-score="1">
+        <div class="status-dot done"></div>
+        <span class="name">Mozart_K545</span>
+        <span class="meta">8 pp</span>
+      </div>
+      <div class="score-item" data-score="2">
+        <div class="status-dot active"></div>
+        <span class="name">Chopin_Nocturne_Op9_No2</span>
+        <span class="meta">12 pp</span>
+      </div>
+      <div class="score-item" data-score="3">
+        <div class="status-dot pending"></div>
+        <span class="name">Debussy_Clair_de_Lune</span>
+        <span class="meta">—</span>
+      </div>
+      <div class="score-item" data-score="4">
+        <div class="status-dot done"></div>
+        <span class="name">Scale_Exercises</span>
+        <span class="meta">5 pp</span>
+      </div>
+
+      <div class="section-header mt-12">
+        <span class="label">Videos</span>
+        <span class="count">3</span>
+      </div>
+
+      <div class="score-item">
+        <div class="status-dot done"></div>
+        <span class="name">recital_2024.mp4</span>
+        <span class="meta"></span>
+      </div>
+      <div class="score-item">
+        <div class="status-dot done"></div>
+        <span class="name">lesson_week3.mkv</span>
+        <span class="meta"></span>
+      </div>
+      <div class="score-item">
+        <div class="status-dot active"></div>
+        <span class="name">practice_session.mov</span>
+        <span class="meta"></span>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="version">v1.0.0</div>
+    </div>
+  </aside>
+
+  <!-- ── MAIN CONTENT ── -->
+  <div class="main-content">
+
+    <!-- Top bar -->
+    <div class="top-bar">
+      <input class="score-name" value="Bach_Prelude_1" id="scoreNameInput">
+      <div class="spacer"></div>
+      <div class="status-pill ready">Ready</div>
+      <button class="btn btn-ghost btn-sm" id="configBtn" title="Settings">⚙</button>
+    </div>
+
+    <!-- Scrollable content -->
+    <div class="content-scroll" id="contentScroll">
+
+      <!-- Source selection -->
+      <div class="card animate-in">
+        <div class="card-header">
+          <span class="label">Source</span>
+          <span class="badge">Local File</span>
+        </div>
+
+        <div class="source-toggle mb-8" id="sourceToggle">
+          <div class="option active" data-source="local">Local File</div>
+          <div class="option" data-source="youtube">YouTube URL</div>
+        </div>
+
+        <div class="input-row" id="localInput">
+          <input class="input-field mono" placeholder="C:\Users\...\video.mp4" id="videoPathInput" readonly>
+          <button class="btn btn-secondary btn-sm" id="browseBtn">Browse</button>
+        </div>
+
+        <div class="input-row" id="youtubeInput" style="display:none">
+          <input class="input-field mono" placeholder="https://youtube.com/watch?v=..." id="youtubeUrlInput">
+          <button class="btn btn-primary btn-sm" id="downloadBtn">Download</button>
+        </div>
+      </div>
+
+      <!-- Video Preview with Crop -->
+      <div class="card animate-in animate-in-delay-1">
+        <div class="card-header">
+          <span class="label">Preview</span>
+          <span class="badge" id="frameTime">0:12.5</span>
+        </div>
+
+        <div class="preview-container" id="previewContainer">
+          <div class="preview-fake-frame">
+            <div class="piano-label">BACH — PRELUDE IN C MAJOR</div>
+            <div class="staff-group">
+              <div class="staff-lines">
+                <div class="staff-line"></div>
+                <div class="staff-line"></div>
+                <div class="staff-line"></div>
+                <div class="staff-line"></div>
+                <div class="staff-line"></div>
+              </div>
+              <div class="note-dots">
+                <div class="note-dot"></div>
+                <div class="note-dot" style="margin-top:-4px"></div>
+                <div class="note-dot"></div>
+                <div class="note-dot" style="margin-top:3px"></div>
+                <div class="note-dot"></div>
+                <div class="note-dot" style="margin-top:-2px"></div>
+              </div>
+            </div>
+            <div class="staff-group">
+              <div class="staff-lines">
+                <div class="staff-line"></div>
+                <div class="staff-line"></div>
+                <div class="staff-line"></div>
+                <div class="staff-line"></div>
+                <div class="staff-line"></div>
+              </div>
+              <div class="note-dots">
+                <div class="note-dot" style="margin-top:2px"></div>
+                <div class="note-dot"></div>
+                <div class="note-dot" style="margin-top:-3px"></div>
+                <div class="note-dot"></div>
+                <div class="note-dot" style="margin-top:1px"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Crop overlay — draggable -->
+          <div class="crop-overlay" id="cropOverlay">
+            <span class="crop-label" id="cropLabel">35%</span>
+            <div class="crop-handle" id="cropHandle">
+              <div class="grip"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Seek bar -->
+        <div class="seek-container mt-8" id="seekContainer">
+          <div class="seek-track"></div>
+          <div class="seek-range" id="seekRange"></div>
+          <div class="seek-handle start" id="seekStart"></div>
+          <div class="seek-handle end" id="seekEnd"></div>
+        </div>
+        <div class="seek-time">
+          <span id="seekStartTime">0:00.0</span>
+          <span id="seekEndTime">3:24.0</span>
+        </div>
+      </div>
+
+      <!-- Crop ratio control -->
+      <div class="card animate-in animate-in-delay-2">
+        <div class="card-header">
+          <span class="label">Crop Settings</span>
+        </div>
+
+        <div class="flex items-center gap-12">
+          <div class="flex items-center gap-8 flex-1">
+            <span class="text-sm text-muted">Ratio:</span>
+            <input type="range" min="0" max="100" value="35" id="cropSlider"
+              style="flex:1; accent-color: var(--accent); height: 4px;">
+            <span class="text-sm fw-600" id="cropValue" style="min-width:36px; text-align:right">35%</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="setDefaultBtn">Set as Default</button>
+        </div>
+      </div>
+
+      <!-- Page Thumbnails -->
+      <div class="card animate-in animate-in-delay-3">
+        <div class="card-header">
+          <span class="label">Extracted Pages</span>
+          <span class="badge" id="pageCount">14 pages</span>
+        </div>
+
+        <div class="thumb-carousel" id="thumbCarousel">
+          <!-- Generated by JS -->
+        </div>
+      </div>
+
+      <!-- Progress & Log -->
+      <div class="card animate-in animate-in-delay-4">
+        <div class="card-header">
+          <span class="label">Status</span>
+          <span class="text-xs text-muted" id="statusText">Idle</span>
+        </div>
+
+        <div class="progress-track mb-8">
+          <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+        </div>
+
+        <div class="log-panel" id="logPanel">
+          <div class="log-line"><span class="ts">[00:00]</span> <span class="info">Ready.</span> Paste a URL or browse a file to start.</div>
+        </div>
+      </div>
+
+    </div><!-- /content-scroll -->
+
+    <!-- Action bar -->
+    <div class="action-bar">
+      <div class="left-actions">
+        <button class="btn btn-ghost btn-sm" id="openFolderBtn">📁 Open Folder</button>
+        <button class="btn btn-ghost btn-sm" id="debugBtn">🐛 Debug</button>
+      </div>
+      <div class="right-actions">
+        <button class="btn btn-danger btn-sm" id="cancelBtn" style="display:none">Cancel</button>
+        <button class="btn btn-primary btn-lg" id="actionBtn">Start Extraction</button>
+      </div>
+    </div>
+
+  </div><!-- /main-content -->
+
+</div><!-- /app-shell -->
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     BOTTOM SHEET — Config Panel
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<div class="bottom-sheet-scrim" id="sheetScrim"></div>
+<div class="bottom-sheet" id="bottomSheet">
+  <div class="drag-area" id="sheetDragArea">
+    <div class="drag-handle"></div>
+  </div>
+  <div class="sheet-content">
+    <div class="sheet-title">Configuration</div>
+
+    <div class="tab-nav" id="configTabs">
+      <div class="tab active" data-tab="basic">Basic</div>
+      <div class="tab" data-tab="advanced">Advanced</div>
+    </div>
+
+    <div id="configBasic">
+      <div class="config-grid">
+        <div class="config-field">
+          <span class="field-label">Crop Ratio</span>
+          <input class="field-value" type="number" value="0.35" step="0.01" min="0" max="1">
+        </div>
+        <div class="config-field">
+          <span class="field-label">Page Change Sensitivity</span>
+          <input class="field-value" type="number" value="0.96" step="0.01" min="0" max="1">
+        </div>
+        <div class="config-field">
+          <span class="field-label">Min Seconds Between Captures</span>
+          <input class="field-value" type="number" value="3.0" step="0.5" min="0" max="60">
+        </div>
+        <div class="config-field">
+          <span class="field-label">OCR Confidence</span>
+          <input class="field-value" type="number" value="40" step="1" min="0" max="100">
+        </div>
+      </div>
+    </div>
+
+    <div id="configAdvanced" style="display:none">
+      <div class="config-grid">
+        <div class="config-field">
+          <span class="field-label">Frame Check Interval (s)</span>
+          <input class="field-value" type="number" value="0.2" step="0.05">
+        </div>
+        <div class="config-field">
+          <span class="field-label">Top Analysis Ratio</span>
+          <input class="field-value" type="number" value="0.34" step="0.01">
+        </div>
+        <div class="config-field">
+          <span class="field-label">A-Capture Delay (s)</span>
+          <input class="field-value" type="number" value="0.3" step="0.1">
+        </div>
+        <div class="config-field">
+          <span class="field-label">B-Capture Delay (s)</span>
+          <input class="field-value" type="number" value="3.0" step="0.5">
+        </div>
+        <div class="config-field">
+          <span class="field-label">B Overlay Width Ratio</span>
+          <input class="field-value" type="number" value="0.5" step="0.05">
+        </div>
+        <div class="config-field">
+          <span class="field-label">Duplicate Top Ratio</span>
+          <input class="field-value" type="number" value="0.27" step="0.01">
+        </div>
+        <div class="config-field">
+          <span class="field-label">Pixel Similarity Threshold</span>
+          <input class="field-value" type="number" value="0.95" step="0.01">
+        </div>
+        <div class="config-field">
+          <span class="field-label">Row Similarity Threshold</span>
+          <input class="field-value" type="number" value="0.98" step="0.01">
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between mt-12" style="padding: 12px 0; border-top: 1px solid var(--border); margin-top: 16px;">
+      <div class="flex items-center gap-8">
+        <div class="toggle" id="debugToggle"><div class="knob"></div></div>
+        <span class="text-sm">Debug Mode</span>
+      </div>
+      <button class="btn btn-secondary btn-sm" id="resetConfigBtn">Reset Defaults</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     TOAST CONTAINER
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<div class="toast-container" id="toastContainer"></div>
+
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   FLUID UI PROTOTYPE — Apple Design Principles Implementation
+
+   Implements:
+   §1  Response — instant feedback on pointer-down
+   §2  Direct manipulation — 1:1 pointer tracking
+   §3  Interruptibility — all animations grabbable
+   §4  Springs — Motion spring animations
+   §5  Velocity handoff — drag → spring seamless
+   §6  Momentum projection — flick → landing
+   §7  Spatial consistency — enter/exit same path
+   §9  Rubber-banding — soft scroll boundaries
+   §12 Materials — translucent layers
+   §13 Multimodal — toast feedback
+   §14 Reduced motion — media query
+   ═══════════════════════════════════════════════════════════════════ */
+
+const { animate, spring, motion, withSpring, withTiming } = window["framer-motion"] || {};
+
+// ── Helpers ──
+
+function clamp(val, min, max) { return Math.min(Math.max(val, min), max); }
+
+function rubberband(overshoot, dimension, constant = 0.55) {
+  return (overshoot * dimension * constant) / (dimension + constant * Math.abs(overshoot));
+}
+
+function project(initialVelocity, decelerationRate = 0.998) {
+  return (initialVelocity / 1000) * decelerationRate / (1 - decelerationRate);
+}
+
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = (seconds % 60).toFixed(1);
+  return `${m}:${s.padStart(4, '0')}`;
+}
+
+// ── Toast notifications (§13 Causality) ──
+
+function showToast(icon, text, duration = 3000) {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.innerHTML = `
+    <span class="toast-icon">${icon}</span>
+    <span class="toast-text">${text}</span>
+    <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+  `;
+  container.appendChild(toast);
+
+  // Spring animate in
+  if (animate) {
+    animate(toast, { opacity: [0, 1], y: [-20, 0] }, {
+      type: 'spring', bounce: 0.2, duration: 0.4
+    });
+  }
+
+  setTimeout(() => {
+    if (animate) {
+      animate(toast, { opacity: 0, y: -10 }, {
+        type: 'spring', bounce: 0, duration: 0.3
+      }).then(() => toast.remove());
+    } else {
+      toast.remove();
+    }
+  }, duration);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// §1 + §2: CROP HANDLE — Direct manipulation with 1:1 tracking
+// ═══════════════════════════════════════════════════════════════════
+
+(function initCropHandle() {
+  const handle = document.getElementById('cropHandle');
+  const overlay = document.getElementById('cropOverlay');
+  const label = document.getElementById('cropLabel');
+  const slider = document.getElementById('cropSlider');
+  const valueDisplay = document.getElementById('cropValue');
+  const container = document.getElementById('previewContainer');
+
+  let isDragging = false;
+  let startY = 0;
+  let startRatio = 0.35;
+
+  function updateCrop(ratio) {
+    ratio = clamp(ratio, 0.05, 0.95);
+    overlay.style.height = (ratio * 100) + '%';
+    label.textContent = Math.round(ratio * 100) + '%';
+    slider.value = Math.round(ratio * 100);
+    valueDisplay.textContent = Math.round(ratio * 100) + '%';
+    return ratio;
+  }
+
+  // §1: Feedback on pointer-down
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    isDragging = true;
+    startY = e.clientY;
+    startRatio = parseFloat(overlay.style.height) / 100 || 0.35;
+    handle.setPointerCapture(e.pointerId);
+    document.body.style.cursor = 'ns-resize';
+
+    // §1: Instant visual feedback
+    handle.style.transform = 'translate(-50%, -50%) scale(1.15)';
+  });
+
+  // §2: 1:1 tracking during drag
+  handle.addEventListener('pointermove', (e) => {
+    if (!isDragging) return;
+    const rect = container.getBoundingClientRect();
+    const deltaY = e.clientY - startY;
+    const deltaRatio = deltaY / rect.height;
+    updateCrop(startRatio + deltaRatio);
+  });
+
+  // §5: Velocity handoff on release → spring animation
+  handle.addEventListener('pointerup', (e) => {
+    if (!isDragging) return;
+    isDragging = false;
+    document.body.style.cursor = '';
+    handle.style.transform = 'translate(-50%, -50%) scale(1)';
+
+    // Snap to nearest 5%
+    const currentRatio = parseFloat(overlay.style.height) / 100;
+    const snapped = Math.round(currentRatio * 20) / 20;
+    const targetRatio = clamp(snapped, 0.05, 0.95);
+
+    if (animate) {
+      const fromHeight = parseFloat(overlay.style.height);
+      const toHeight = targetRatio * 100;
+      animate(overlay, { height: toHeight + '%' }, {
+        type: 'spring', bounce: 0.15, duration: 0.35
+      }).then(() => updateCrop(targetRatio));
+    } else {
+      updateCrop(targetRatio);
+    }
+
+    showToast('✂', `Crop set to ${Math.round(targetRatio * 100)}%`);
+  });
+
+  // Slider sync
+  slider.addEventListener('input', () => {
+    updateCrop(slider.value / 100);
+  });
+
+  // Initialize
+  updateCrop(0.35);
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════
+// §2 + §5: SEEK BAR — Dual handle with velocity tracking
+// ═══════════════════════════════════════════════════════════════════
+
+(function initSeekBar() {
+  const container = document.getElementById('seekContainer');
+  const range = document.getElementById('seekRange');
+  const startHandle = document.getElementById('seekStart');
+  const endHandle = document.getElementById('seekEnd');
+  const startLabel = document.getElementById('seekStartTime');
+  const endLabel = document.getElementById('seekEndTime');
+
+  const totalDuration = 204; // 3:24 in seconds
+  let startPos = 0.1;  // 10%
+  let endPos = 0.9;    // 90%
+  let activeHandle = null;
+  let velocityHistory = [];
+
+  function updateSeekBar() {
+    const startPx = startPos * 100;
+    const endPx = endPos * 100;
+    startHandle.style.left = startPx + '%';
+    endHandle.style.left = endPx + '%';
+    range.style.left = startPx + '%';
+    range.style.width = (endPx - startPx) + '%';
+    startLabel.textContent = formatTime(startPos * totalDuration);
+    endLabel.textContent = formatTime(endPos * totalDuration);
+  }
+
+  function startDrag(handle, e) {
+    e.preventDefault();
+    activeHandle = handle;
+    velocityHistory = [];
+    handle.setPointerCapture(e.pointerId);
+    handle.style.transform = 'translate(-50%, -50%) scale(1.3)';
+    document.body.style.cursor = 'grabbing';
+  }
+
+  [startHandle, endHandle].forEach(handle => {
+    handle.addEventListener('pointerdown', (e) => startDrag(handle, e));
+
+    handle.addEventListener('pointermove', (e) => {
+      if (activeHandle !== handle) return;
+      const rect = container.getBoundingClientRect();
+      const pos = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+
+      // Track velocity (§5)
+      velocityHistory.push({ pos, time: performance.now() });
+      if (velocityHistory.length > 5) velocityHistory.shift();
+
+      if (handle === startHandle) {
+        startPos = Math.min(pos, endPos - 0.02);
+      } else {
+        endPos = Math.max(pos, startPos + 0.02);
+      }
+      updateSeekBar();
+    });
+
+    handle.addEventListener('pointerup', (e) => {
+      if (activeHandle !== handle) return;
+      activeHandle = null;
+      document.body.style.cursor = '';
+      handle.style.transform = 'translate(-50%, -50%) scale(1)';
+
+      // §6: Momentum projection
+      if (velocityHistory.length >= 2) {
+        const last = velocityHistory[velocityHistory.length - 1];
+        const prev = velocityHistory[0];
+        const dt = (last.time - prev.time) / 1000;
+        if (dt > 0) {
+          const velocity = (last.pos - prev.pos) / dt;
+          const projected = last.pos + project(velocity * 100);
+          const target = clamp(projected, 0.02, 0.98);
+
+          if (animate) {
+            const currentPos = handle === startHandle ? startPos : endPos;
+            animate(handle, { left: (target * 100) + '%' }, {
+              type: 'spring', bounce: 0.1, duration: 0.4
+            }).then(() => {
+              if (handle === startHandle) startPos = target;
+              else endPos = target;
+              updateSeekBar();
+            });
+          }
+        }
+      }
+    });
+  });
+
+  updateSeekBar();
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════
+// §3: BOTTOM SHEET — Interruptible spring drag
+// ═══════════════════════════════════════════════════════════════════
+
+(function initBottomSheet() {
+  const sheet = document.getElementById('bottomSheet');
+  const scrim = document.getElementById('sheetScrim');
+  const dragArea = document.getElementById('sheetDragArea');
+  const configBtn = document.getElementById('configBtn');
+
+  let isOpen = false;
+  let isDragging = false;
+  let startY = 0;
+  let startTranslateY = 100; // percentage
+  let velocityHistory = [];
+
+  function openSheet() {
+    isOpen = true;
+    scrim.classList.add('visible');
+    if (animate) {
+      animate(sheet, { y: '0%' }, { type: 'spring', bounce: 0.08, duration: 0.45 });
+    } else {
+      sheet.style.transform = 'translateY(0%)';
+    }
+  }
+
+  function closeSheet() {
+    isOpen = false;
+    scrim.classList.remove('visible');
+    if (animate) {
+      animate(sheet, { y: '100%' }, { type: 'spring', bounce: 0, duration: 0.35 });
+    } else {
+      sheet.style.transform = 'translateY(100%)';
+    }
+  }
+
+  function toggleSheet() {
+    if (isOpen) closeSheet();
+    else openSheet();
+  }
+
+  configBtn.addEventListener('click', toggleSheet);
+  scrim.addEventListener('click', closeSheet);
+
+  // §3: Interruptible drag
+  dragArea.addEventListener('pointerdown', (e) => {
+    isDragging = true;
+    startY = e.clientY;
+    startTranslateY = isOpen ? 0 : 100;
+    velocityHistory = [];
+    dragArea.setPointerCapture(e.pointerId);
+    document.body.style.cursor = 'grabbing';
+    sheet.style.transition = 'none';
+  });
+
+  document.addEventListener('pointermove', (e) => {
+    if (!isDragging) return;
+    const rect = sheet.getBoundingClientRect();
+    const deltaY = e.clientY - startY;
+    const deltaPercent = (deltaY / window.innerHeight) * 100;
+    const newY = clamp(startTranslateY + deltaPercent, -10, 100);
+
+    // §9: Rubber-band past top
+    const displayY = newY < 0 ? rubberband(newY, 300) : newY;
+    sheet.style.transform = `translateY(${displayY}%)`;
+
+    // Update scrim opacity proportionally
+    const progress = 1 - (displayY / 100);
+    scrim.style.opacity = clamp(progress, 0, 0.6);
+
+    // Track velocity (§5)
+    velocityHistory.push({ y: displayY, time: performance.now() });
+    if (velocityHistory.length > 5) velocityHistory.shift();
+  });
+
+  document.addEventListener('pointerup', (e) => {
+    if (!isDragging) return;
+    isDragging = false;
+    document.body.style.cursor = '';
+
+    // §5: Velocity handoff
+    let finalY = parseFloat(sheet.style.transform.match(/translateY\((.+)%\)/)?.[1] || '0');
+
+    if (velocityHistory.length >= 2) {
+      const last = velocityHistory[velocityHistory.length - 1];
+      const prev = velocityHistory[0];
+      const dt = (last.time - prev.time) / 1000;
+      if (dt > 0.01) {
+        const velocity = (last.y - prev.y) / dt; // %/s
+        // §6: Project momentum
+        const projected = last.y + velocity * 0.15;
+        finalY = projected;
+      }
+    }
+
+    // Snap to open or closed
+    const shouldOpen = finalY < 50;
+
+    sheet.style.transition = '';
+    if (shouldOpen) openSheet();
+    else closeSheet();
+  });
+
+  // Config tabs
+  document.querySelectorAll('#configTabs .tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('#configTabs .tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const isBasic = tab.dataset.tab === 'basic';
+      document.getElementById('configBasic').style.display = isBasic ? '' : 'none';
+      document.getElementById('configAdvanced').style.display = isBasic ? 'none' : '';
+    });
+  });
+
+  // Debug toggle
+  document.getElementById('debugToggle').addEventListener('click', function() {
+    this.classList.toggle('on');
+    const isOn = this.classList.contains('on');
+    if (animate) {
+      const knob = this.querySelector('.knob');
+      animate(knob, { x: isOn ? 18 : 0 }, { type: 'spring', bounce: 0.2, duration: 0.3 });
+    }
+    showToast(isOn ? '🐛' : '✓', isOn ? 'Debug mode enabled' : 'Debug mode disabled');
+  });
+
+  // Reset defaults
+  document.getElementById('resetConfigBtn').addEventListener('click', () => {
+    showToast('↺', 'Configuration reset to defaults');
+  });
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════
+// §1: SOURCE TOGGLE — Instant feedback
+// ═══════════════════════════════════════════════════════════════════
+
+(function initSourceToggle() {
+  const toggle = document.getElementById('sourceToggle');
+  const localInput = document.getElementById('localInput');
+  const youtubeInput = document.getElementById('youtubeInput');
+  const badge = toggle.closest('.card').querySelector('.badge');
+
+  toggle.querySelectorAll('.option').forEach(option => {
+    option.addEventListener('click', () => {
+      toggle.querySelectorAll('.option').forEach(o => o.classList.remove('active'));
+      option.classList.add('active');
+
+      const isYoutube = option.dataset.source === 'youtube';
+      localInput.style.display = isYoutube ? 'none' : 'flex';
+      youtubeInput.style.display = isYoutube ? 'flex' : 'none';
+      badge.textContent = isYoutube ? 'YouTube' : 'Local File';
+
+      // §7: Spatial consistency — animate the switch
+      const target = isYoutube ? youtubeInput : localInput;
+      if (animate) {
+        animate(target, { opacity: [0, 1], x: [-10, 0] }, {
+          type: 'spring', bounce: 0, duration: 0.3
+        });
+      }
+    });
+  });
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════
+// §10: BUTTONS — Highlight on touch-down, cancel-by-drag
+// ═══════════════════════════════════════════════════════════════════
+
+(function initButtons() {
+  const actionBtn = document.getElementById('actionBtn');
+  const cancelBtn = document.getElementById('cancelBtn');
+  const browseBtn = document.getElementById('browseBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const setDefaultBtn = document.getElementById('setDefaultBtn');
+  const openFolderBtn = document.getElementById('openFolderBtn');
+
+  let isExtracting = false;
+
+  actionBtn.addEventListener('click', () => {
+    if (!isExtracting) {
+      isExtracting = true;
+      actionBtn.textContent = 'Extracting... 0%';
+      actionBtn.disabled = true;
+      cancelBtn.style.display = '';
+      document.getElementById('statusText').textContent = 'Extracting...';
+
+      // Simulate extraction progress
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += Math.random() * 8;
+        if (progress >= 100) {
+          progress = 100;
+          clearInterval(interval);
+          isExtracting = false;
+          actionBtn.textContent = 'Open PDF';
+          actionBtn.disabled = false;
+          cancelBtn.style.display = 'none';
+          document.getElementById('statusText').textContent = 'Complete';
+          showToast('✓', 'PDF generated successfully!');
+
+          // §13: Harmony — visual + haptic (if available)
+          if (navigator.vibrate) navigator.vibrate(50);
+        }
+        actionBtn.textContent = `Extracting... ${Math.round(progress)}%`;
+        document.getElementById('progressFill').style.width = progress + '%';
+      }, 200);
+
+      cancelBtn.onclick = () => {
+        clearInterval(interval);
+        isExtracting = false;
+        actionBtn.textContent = 'Start Extraction';
+        actionBtn.disabled = false;
+        cancelBtn.style.display = 'none';
+        document.getElementById('progressFill').style.width = '0%';
+        document.getElementById('statusText').textContent = 'Cancelled';
+        showToast('⊘', 'Extraction cancelled');
+      };
+    } else if (actionBtn.textContent.includes('Open PDF')) {
+      showToast('📄', 'Opening PDF...');
+    }
+  });
+
+  browseBtn.addEventListener('click', () => {
+    // Simulate file selection
+    document.getElementById('videoPathInput').value = 'C:\\Users\\jamie\\Music\\bach_prelude.mp4';
+    showToast('🎬', 'Video loaded: bach_prelude.mp4');
+  });
+
+  downloadBtn.addEventListener('click', () => {
+    const url = document.getElementById('youtubeUrlInput').value;
+    if (url) {
+      showToast('⬇', 'Starting download...');
+      document.getElementById('statusText').textContent = 'Downloading...';
+    }
+  });
+
+  setDefaultBtn.addEventListener('click', () => {
+    showToast('✓', 'Default crop ratio saved');
+  });
+
+  openFolderBtn.addEventListener('click', () => {
+    showToast('📁', 'Opening output folder...');
+  });
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════
+// §9: RUBBER-BANDING — Soft scroll boundaries
+// ═══════════════════════════════════════════════════════════════════
+
+(function initRubberBand() {
+  const scroll = document.getElementById('contentScroll');
+  let isAtTop = true;
+
+  scroll.addEventListener('scroll', () => {
+    isAtTop = scroll.scrollTop <= 0;
+  });
+
+  // Apply rubber-band at top via overscroll
+  scroll.addEventListener('wheel', (e) => {
+    if (isAtTop && e.deltaY < 0) {
+      e.preventDefault();
+      const overscroll = Math.abs(e.deltaY);
+      const displacement = rubberband(-overscroll, scroll.clientHeight);
+      scroll.style.transform = `translateY(${-displacement}px)`;
+      scroll.style.transition = 'transform 0.1s ease-out';
+
+      clearTimeout(scroll._rubberBandTimeout);
+      scroll._rubberBandTimeout = setTimeout(() => {
+        if (animate) {
+          animate(scroll, { y: 0 }, { type: 'spring', bounce: 0.3, duration: 0.5 });
+        } else {
+          scroll.style.transform = '';
+        }
+      }, 100);
+    }
+  }, { passive: false });
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════
+// PAGE THUMBNAILS — Generated with spring entrance
+// ═══════════════════════════════════════════════════════════════════
+
+(function initThumbnails() {
+  const carousel = document.getElementById('thumbCarousel');
+  const pages = 14;
+
+  for (let i = 0; i < pages; i++) {
+    const item = document.createElement('div');
+    item.className = 'thumb-item' + (i === 0 ? ' active' : '');
+    item.innerHTML = `
+      <div class="thumb-img">
+        <div class="thumb-staff">
+          <div class="line"></div>
+          <div class="line"></div>
+          <div class="line"></div>
+          <div class="line"></div>
+          <div class="line"></div>
+        </div>
+      </div>
+      <div class="thumb-label">P${i + 1}</div>
+    `;
+
+    // §1: Instant feedback on hover/tap
+    item.addEventListener('pointerdown', () => {
+      carousel.querySelectorAll('.thumb-item').forEach(t => t.classList.remove('active'));
+      item.classList.add('active');
+
+      if (animate) {
+        animate(item.querySelector('.thumb-img'), {
+          scale: [0.92, 1]
+        }, {
+          type: 'spring', bounce: 0.3, duration: 0.35
+        });
+      }
+    });
+
+    carousel.appendChild(item);
+
+    // §7: Stagger entrance animation
+    if (animate) {
+      animate(item, { opacity: [0, 1], y: [12, 0] }, {
+        type: 'spring', bounce: 0, duration: 0.3,
+        delay: i * 0.03
+      });
+    }
+  }
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════
+// §7: SCORE ITEM SELECTION — Spatial consistency
+// ═══════════════════════════════════════════════════════════════════
+
+(function initScoreItems() {
+  document.querySelectorAll('.score-item[data-score]').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.score-item[data-score]').forEach(s => s.classList.remove('active'));
+      item.classList.add('active');
+
+      const name = item.querySelector('.name').textContent;
+      document.getElementById('scoreNameInput').value = name;
+
+      // §7: Animate the content change
+      const cards = document.querySelectorAll('.content-scroll .card');
+      if (animate) {
+        cards.forEach((card, i) => {
+          animate(card, { opacity: [0.5, 1], y: [4, 0] }, {
+            type: 'spring', bounce: 0, duration: 0.25,
+            delay: i * 0.03
+          });
+        });
+      }
+
+      showToast('📄', `Loaded: ${name}`);
+    });
+  });
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════
+// §1: SIDEBAR SEARCH — Instant filtering
+// ═══════════════════════════════════════════════════════════════════
+
+(function initSearch() {
+  const input = document.getElementById('sidebarSearch');
+  const items = document.querySelectorAll('.score-item[data-score]');
+
+  input.addEventListener('input', () => {
+    const query = input.value.toLowerCase();
+    items.forEach(item => {
+      const name = item.querySelector('.name').textContent.toLowerCase();
+      const match = !query || name.includes(query);
+      item.style.display = match ? '' : 'none';
+
+      if (match && animate && query) {
+        animate(item, { opacity: [0, 1], x: [-5, 0] }, {
+          type: 'spring', bounce: 0, duration: 0.2
+        });
+      }
+    });
+  });
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════
+// §11: FRAME-LEVEL SMOOTHNESS — will-change hints
+// ═══════════════════════════════════════════════════════════════════
+
+// Apply will-change to elements that will animate
+document.querySelectorAll('.crop-overlay, .crop-handle, .seek-handle, .bottom-sheet, .toast').forEach(el => {
+  el.style.willChange = 'transform';
+});
+
+// Use requestAnimationFrame for any continuous updates
+let rafId = null;
+function smoothUpdate(fn) {
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = requestAnimationFrame(() => {
+    fn();
+    rafId = null;
+  });
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// INITIAL ANIMATION — Staggered card entrance
+// ═══════════════════════════════════════════════════════════════════
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (animate) {
+    // Animate sidebar items
+    document.querySelectorAll('.score-item').forEach((item, i) => {
+      animate(item, { opacity: [0, 1], x: [-10, 0] }, {
+        type: 'spring', bounce: 0, duration: 0.3,
+        delay: 0.1 + i * 0.04
+      });
+    });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// LOG SIMULATION — Populate with sample entries
+// ═══════════════════════════════════════════════════════════════════
+
+(function initLog() {
+  const log = document.getElementById('logPanel');
+  const entries = [
+    { ts: '00:00', cls: 'info', msg: 'Ready. Paste a URL or browse a file to start.' },
+    { ts: '00:00', cls: '', msg: 'OCR engine: PaddleOCR v3 (healthy)' },
+    { ts: '00:00', cls: '', msg: 'Default config loaded: sensitivity=0.96, crop=0.35' },
+  ];
+
+  // Keep existing entries, they were set in HTML
+})();
+
+</script>
+</body>
+</html>
