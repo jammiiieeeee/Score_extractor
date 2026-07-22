@@ -32,6 +32,34 @@ yt_cache/
 # Temp artifacts
 temp_strip_*.png
 cfg_test.json
+*.csv
+
+# Debug / R&D artifacts
+debug_*.py
+debug_*.png
+debug_*.csv
+scene_detect_*.py
+scene_detect_*.png
+spikes_*.png
+gap_threshold_*.png
+threshold_compare*.png
+spike_pages_*/
+start_detect_fast.py
+mark_spikes.py
+test_speed.py
+
+# Prototypes
+proto_*.py
+prototype_*.html
+prototype_*.py
+
+# Video cache (downloaded clips)
+*.webm
+*.f*.mp4
+*.f*.webm
+
+# Pytest
+.pytest_cache/
 
 # Log files
 *.log
