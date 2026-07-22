@@ -579,7 +579,9 @@ class DualHandleSeekBar(QWidget):
         return -1.0 if not self._start_enabled else self._start * self._duration
 
     def get_end(self) -> float:
-        return 0.0 if not self._end_enabled else self._end * self._duration
+        if not self._end_enabled:
+            return self._duration if self._duration > 0 else 0.0
+        return self._end * self._duration
 
     # ── Internals ──
 
@@ -735,9 +737,13 @@ class ConfigTab(QWidget):
         self.min_interval = self._spin_float(0.0, 60.0, 0.5, 3.0)
         self.ocr_conf = self._spin_int(0, 100, 40)
 
+        self.ocr_enabled = QCheckBox("Enable OCR")
+        self.ocr_enabled.setChecked(True)
+
         form.addRow("Crop ratio:", self.crop_ratio)
         form.addRow("Page change sensitivity:", self.sensitivity)
         form.addRow("Min seconds between captures:", self.min_interval)
+        form.addRow("", self.ocr_enabled)
         form.addRow("OCR confidence:", self.ocr_conf)
 
         layout.addLayout(form)
@@ -843,7 +849,7 @@ class ConfigTab(QWidget):
                 "default_crop_ratio": self.crop_ratio.value(),
                 "change_detection_threshold": self.sensitivity.value(),
                 "min_screenshot_interval": self.min_interval.value(),
-                "ocr_confidence_threshold": self.ocr_conf.value(),
+                "ocr_confidence_threshold": self.ocr_conf.value() if self.ocr_enabled.isChecked() else 0,
                 "frame_check_interval": self.adv_frame_check.value(),
                 "top_analysis_ratio": self.adv_top_ratio.value(),
                 "a_capture_delay": self.adv_a_delay.value(),
@@ -873,7 +879,9 @@ class ConfigTab(QWidget):
             self.crop_ratio.setValue(cfg.get("default_crop_ratio", 0.35))
             self.sensitivity.setValue(cfg.get("change_detection_threshold", 0.96))
             self.min_interval.setValue(cfg.get("min_screenshot_interval", 3.0))
-            self.ocr_conf.setValue(cfg.get("ocr_confidence_threshold", 40))
+            ocr_conf = cfg.get("ocr_confidence_threshold", 40)
+            self.ocr_enabled.setChecked(ocr_conf > 0)
+            self.ocr_conf.setValue(ocr_conf if ocr_conf > 0 else 40)
             self.adv_frame_check.setValue(cfg.get("frame_check_interval", 0.8))
             self.adv_top_ratio.setValue(cfg.get("top_analysis_ratio", 0.34))
             self.adv_a_delay.setValue(cfg.get("a_capture_delay", 0.3))

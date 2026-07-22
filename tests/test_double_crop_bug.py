@@ -1,11 +1,10 @@
 """
-Tests verifying the double-crop bug is fixed.
+Tests verifying PdfService crops images correctly.
 
 After the fix:
-- PdfService.create_pdf() no longer crops images
-- Callers are responsible for providing final images
-- CLI explicitly crops before calling PdfService
-- GUI slider re-crop is the only crop step
+- PdfService.create_pdf() crops images using config settings
+- Callers pass uncropped images
+- User can regenerate PDF with different crop ratio
 
 Run: pytest tests/test_double_crop_bug.py -v
 """
@@ -37,42 +36,28 @@ def make_tall_image(width=800, height=1000):
     Bottom 900px: WHITE
     """
     img = np.ones((height, width, 3), dtype=np.uint8) * 255
-    img[0:100, :, :] = [0, 0, 255]  # Red top strip
+    img[0:100, :, :] = [0, 0, 255]  # Red top strip (BGR)
     return img
 
 
-def crop_height(img, ratio, top_offset=0.0):
-    """Replicate what callers should do before passing to PdfService."""
-    img_h = img.shape[0]
-    y_start = int(img_h * top_offset)
-    y_end = int(img_h * (top_offset + ratio))
-    return img[y_start:y_end, :]
+def read_strip(idx=0):
+    """Read the temp strip file and clean up."""
+    temp_strip = Path(f"temp_strip_{idx}.png")
+    if temp_strip.exists():
+        strip_img = cv2.imread(str(temp_strip))
+        temp_strip.unlink()
+        return strip_img
+    return None
 
 
 # ── Tests ────────────────────────────────────────────────────────────────
 
 
-class TestDoubleCropBugFixed:
-    """Verify the double-crop bug is fixed."""
+class TestPdfServiceCrops:
+    """Verify PdfService crops images correctly."""
 
-    def test_reapply_crop_produces_correct_height(self):
-        """PageStore.reapply_crop should crop originals to expected height."""
-        img = make_tall_image(800, 1000)
-        store = PageStore()
-        store.set_originals([Frame(img, 0.0, 0)])
-
-        ratio = 0.1
-        store.reapply_crop(ratio)
-
-        result = store[0].image
-        expected_h = 1000 - int(1000 * ratio)  # 900
-        assert result.shape[0] == expected_h, (
-            f"reapply_crop should produce {expected_h}px, got {result.shape[0]}px"
-        )
-        assert result.shape[1] == 800
-
-    def test_pdf_service_no_longer_crops(self):
-        """PdfService.create_pdf should NOT crop images — it receives final images."""
+    def test_pdf_service_crops_to_ratio(self):
+        """PdfService.create_pdf should crop images using config ratio."""
         img = make_tall_image(800, 1000)
         config = ScoreConfig(default_crop_ratio=0.1, crop_top_offset=0.0)
 
@@ -81,143 +66,135 @@ class TestDoubleCropBugFixed:
             pdf_service = PdfService()
             pdf_service.create_pdf([img], output, config)
 
-            # Read back the temp strip to verify no cropping happened
-            temp_strip = Path("temp_strip_0.png")
-            if temp_strip.exists():
-                strip_img = cv2.imread(str(temp_strip))
-                # After fix: strip should be full height (1000px), not cropped
-                assert strip_img.shape[0] == 1000, (
-                    f"PdfService should not crop. Got {strip_img.shape[0]}px, expected 1000px"
-                )
-                temp_strip.unlink()
+            strip_img = read_strip()
+            assert strip_img is not None, "Temp strip not found"
+            # 1000 * 0.1 = 100px
+            assert strip_img.shape[0] == 100, (
+                f"PdfService should crop to 100px. Got {strip_img.shape[0]}px"
+            )
 
-    def test_single_crop_produces_correct_output(self):
-        """The full pipeline: reapply_crop then PdfService = single crop (fixed)."""
+    def test_pdf_service_crops_with_offset(self):
+        """PdfService.create_pdf should apply crop_top_offset."""
         img = make_tall_image(800, 1000)
-        ratio = 0.1
-        config = ScoreConfig(default_crop_ratio=ratio, crop_top_offset=0.0)
-
-        # Step 1: reapply_crop crops from 1000 to 900
-        store = PageStore()
-        store.set_originals([Frame(img, 0.0, 0)])
-        store.reapply_crop(ratio)
-        cropped_once = store[0].image
-        assert cropped_once.shape[0] == 900, "Step 1: reapply_crop should produce 900px"
-
-        # Step 2: PdfService no longer crops — image passes through unchanged
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output = Path(tmpdir) / "test.pdf"
-            pdf_service = PdfService()
-            pdf_service.create_pdf([cropped_once], output, config)
-
-            temp_strip = Path("temp_strip_0.png")
-            if temp_strip.exists():
-                strip_img = cv2.imread(str(temp_strip))
-                final_height = strip_img.shape[0]
-                temp_strip.unlink()
-            else:
-                final_height = cropped_once.shape[0]
-
-        expected_height = 900  # What user intends
-        actual_height = final_height
-
-        print(f"\n  Original:  1000px")
-        print(f"  After crop 1 (reapply): {cropped_once.shape[0]}px")
-        print(f"  After PdfService (no crop): {actual_height}px")
-        print(f"  Expected:  {expected_height}px")
-
-        assert actual_height == expected_height, (
-            f"SINGLE CROP: expected {expected_height}px, got {actual_height}px"
-        )
-
-    def test_pdf_service_preserves_image_content(self):
-        """PdfService should preserve the full image — red strip stays if not cropped."""
-        img = make_tall_image(800, 1000)
-        config = ScoreConfig(default_crop_ratio=0.1, crop_top_offset=0.0)
+        config = ScoreConfig(default_crop_ratio=0.1, crop_top_offset=0.2)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "test.pdf"
             pdf_service = PdfService()
             pdf_service.create_pdf([img], output, config)
 
-            temp_strip = Path("temp_strip_0.png")
-            if temp_strip.exists():
-                strip_img = cv2.imread(str(temp_strip))
-                # Red strip should still be there (top-left pixel is red)
-                assert strip_img[0, 0, 2] == 255, "Red strip preserved — no cropping"
-                temp_strip.unlink()
+            strip_img = read_strip()
+            assert strip_img is not None, "Temp strip not found"
+            # offset 0.2, ratio 0.1 → y_start=200, y_end=300 → 100px
+            assert strip_img.shape[0] == 100, (
+                f"PdfService should crop to 100px. Got {strip_img.shape[0]}px"
+            )
+            # Red was at rows 0-100, we start at row 200, so no red
+            # Check that top-left is NOT red (BGR: 0,0,255)
+            pixel = strip_img[0, 0]
+            assert not (pixel[0] == 0 and pixel[1] == 0 and pixel[2] == 255), "Red strip should be cropped out"
 
-    def test_various_ratios_all_single_crop(self):
-        """All ratios produce correct single-crop output."""
+    def test_pdf_service_preserves_content(self):
+        """PdfService should preserve the correct region."""
+        img = make_tall_image(800, 1000)
+        config = ScoreConfig(default_crop_ratio=0.5, crop_top_offset=0.0)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "test.pdf"
+            pdf_service = PdfService()
+            pdf_service.create_pdf([img], output, config)
+
+            strip_img = read_strip()
+            assert strip_img is not None, "Temp strip not found"
+            # 1000 * 0.5 = 500px
+            assert strip_img.shape[0] == 500
+            # Red was at rows 0-100, we include it, so top-left should be red
+            assert strip_img[0, 0, 2] == 255, "Red strip preserved"
+
+    def test_various_ratios(self):
+        """All ratios produce correct crop."""
         img = make_tall_image(800, 1000)
         config = ScoreConfig(crop_top_offset=0.0)
 
         for ratio in [0.05, 0.1, 0.2, 0.32, 0.5]:
-            store = PageStore()
-            store.set_originals([Frame(img, 0.0, 0)])
-            store.reapply_crop(ratio)
-            after_crop = store[0].image
-
             config.default_crop_ratio = ratio
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 output = Path(tmpdir) / "test.pdf"
                 pdf_service = PdfService()
-                pdf_service.create_pdf([after_crop], output, config)
+                pdf_service.create_pdf([img], output, config)
 
-                temp_strip = Path("temp_strip_0.png")
-                if temp_strip.exists():
-                    strip_img = cv2.imread(str(temp_strip))
-                    final_height = strip_img.shape[0]
-                    temp_strip.unlink()
-                else:
-                    final_height = after_crop.shape[0]
-
-            expected = 1000 - int(1000 * ratio)
-            actual = final_height
-
-            assert actual == expected, (
-                f"ratio={ratio}: expected {expected}px, got {actual}px"
-            )
+                strip_img = read_strip()
+                assert strip_img is not None, "Temp strip not found"
+                expected = int(1000 * ratio)
+                assert strip_img.shape[0] == expected, (
+                    f"ratio={ratio}: expected {expected}px, got {strip_img.shape[0]}px"
+                )
 
 
-class TestDoubleCropIntegration:
-    """Integration test: full pipeline through PdfService.create_pdf."""
+class TestRegenerateWithDifferentCrop:
+    """Verify user can regenerate PDF with different crop ratio."""
 
-    def test_pdf_service_receives_already_cropped_images(self):
-        """When the GUI calls reapply_crop then generate_pdf, PdfService
-        receives images that were already cropped by PageStore — and does NOT crop again."""
-
+    def test_regenerate_with_different_crop(self):
+        """Extract once, regenerate PDF with different crop ratio."""
         img = make_tall_image(800, 1000)
-        ratio = 0.1
-        config = ScoreConfig(default_crop_ratio=ratio, crop_top_offset=0.0)
+        config = ScoreConfig(default_crop_ratio=0.3, crop_top_offset=0.0)
 
-        # Simulate what _regenerate_pdf does (app_gui.py:1605-1623)
+        # Store uncropped image (simulating extraction)
+        store = PageStore()
+        store.set_originals([Frame(img, 0.0, 0)])
+        # Also add to working pages for all_images()
+        store._pages.append(Frame(img.copy(), 0.0, 0))
+
+        # First PDF with 30% crop
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output1 = Path(tmpdir) / "test1.pdf"
+            pdf_service = PdfService()
+            pdf_service.create_pdf(store.all_images(), output1, config)
+
+            strip1 = read_strip()
+            assert strip1 is not None, "Temp strip not found"
+            assert strip1.shape[0] == 300, "First PDF: 300px"
+
+        # Second PDF with 50% crop (user changed ratio)
+        config.default_crop_ratio = 0.5
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output2 = Path(tmpdir) / "test2.pdf"
+            pdf_service = PdfService()
+            pdf_service.create_pdf(store.all_images(), output2, config)
+
+            strip2 = read_strip()
+            assert strip2 is not None, "Temp strip not found"
+            assert strip2.shape[0] == 500, "Second PDF: 500px"
+
+        # Original image unchanged
+        assert store._original_pages[0].image.shape[0] == 1000, "Original unchanged"
+
+
+class TestReapplyCropStillWorks:
+    """Verify reapply_crop still works for GUI slider."""
+
+    def test_reapply_crop_then_pdf(self):
+        """reapply_crop crops originals, then PdfService crops again."""
+        img = make_tall_image(800, 1000)
+        config = ScoreConfig(default_crop_ratio=0.1, crop_top_offset=0.0)
+
         store = PageStore()
         store.set_originals([Frame(img, 0.0, 0)])
 
-        # Step 1: reapply_crop (app_gui.py:1606)
-        store.reapply_crop(ratio)
-        images_for_pdf = store.all_images()
+        # reapply_crop crops to 900px (removes top 10%)
+        store.reapply_crop(0.1)
+        assert store[0].image.shape[0] == 900, "reapply_crop: 900px"
 
-        assert images_for_pdf[0].shape[0] == 900, "Images should be 900px after reapply_crop"
-
-        # Step 2: PdfService.create_pdf does NOT crop them
+        # PdfService crops again to 90px (900 * 0.1)
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "test.pdf"
             pdf_service = PdfService()
-            pdf_service.create_pdf(images_for_pdf, output, config)
+            pdf_service.create_pdf(store.all_images(), output, config)
 
-            # Verify PDF was created
-            assert output.exists()
-
-            # Read back the temp strip — should be 900px (not 90px)
-            temp_strip = Path("temp_strip_0.png")
-            if temp_strip.exists():
-                strip_img = cv2.imread(str(temp_strip))
-                # After fix: strip is 900px (correct), not 90px (bug)
-                assert strip_img.shape[0] == 900, (
-                    f"PDF temp strip height is {strip_img.shape[0]}px — "
-                    f"should be 900px (single crop, no double-crop)"
-                )
-                temp_strip.unlink()
+            strip_img = read_strip()
+            assert strip_img is not None, "Temp strip not found"
+            # 900 * 0.1 = 90px
+            assert strip_img.shape[0] == 90, (
+                f"Expected 90px. Got {strip_img.shape[0]}px"
+            )
