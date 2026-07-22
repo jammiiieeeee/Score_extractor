@@ -122,8 +122,15 @@ def main():
 
             if pages:
                 print(f"Generating PDF: {output_pdf}")
+                cropped_images = []
+                for page in pages:
+                    img = page.image
+                    img_h = img.shape[0]
+                    y_start = int(img_h * config.crop_top_offset)
+                    y_end = int(img_h * (config.crop_top_offset + config.default_crop_ratio))
+                    cropped_images.append(img[y_start:y_end, :])
                 pdf_service.create_pdf(
-                    [f.image for f in pages],
+                    cropped_images,
                     Path(output_pdf),
                     config,
                     title_hint=score_name,

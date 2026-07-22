@@ -1603,7 +1603,6 @@ class ExtractTab(QWidget):
             main_win.config_tab.apply_to_api()
 
         self._api.update_config({"default_crop_ratio": self.crop_spin.value()})
-        self._api.reapply_crop(self.crop_spin.value())
 
         pdf_name = self.pdf_name_edit.text().strip()
         title = pdf_name if pdf_name else None
