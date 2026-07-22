@@ -30,7 +30,7 @@ class ExtractScoreUseCase:
         no_ocr: bool = False,
         start_time: float = -1.0,
         debug: bool = False,
-        duration: float = 0.0,
+        end_offset: float = 0.0,
         on_log: Callable[[str], None] = print,
         on_progress: Optional[Callable[[float, str], None]] = None,
         on_page_detected: Optional[Callable[[int, np.ndarray], None]] = None,
@@ -89,6 +89,9 @@ class ExtractScoreUseCase:
 
         log(f"Processing video: {video_path}")
 
+        # Get video duration for end_offset calculation
+        video_duration = self.video_service.get_total_frames() / self.video_service.get_fps() if self.video_service.get_fps() > 0 else 0.0
+
         # Initialize: handle start-time capture
         attempt_num = 0
         start_pair = stepper.initialize(start_time)
@@ -110,7 +113,7 @@ class ExtractScoreUseCase:
                 break
             current_frame, ssim_score = result
 
-            if stepper.check_duration_limit(current_frame.timestamp, duration):
+            if stepper.check_end_offset(current_frame.timestamp, end_offset, video_duration):
                 break
 
             if stepper.should_trigger(ssim_score):
@@ -123,7 +126,7 @@ class ExtractScoreUseCase:
                 )
 
         # Tail scan for end-credits
-        stepper.tail_scan(effective_ocr, unique_pages, stepper.current_idx, duration, debug, log_file)
+        stepper.tail_scan(effective_ocr, unique_pages, stepper.current_idx, end_offset, debug, log_file)
 
         # Release original video capture if opened
         committer.release()

@@ -333,7 +333,7 @@ class GuiApi:
     # ═════════════════════════════════════════════════════════════════════
 
     def start_extraction(self, video_path: Optional[str] = None, no_ocr: bool = False,
-                         start_time: float = 2.0, duration: float = 0.0,
+                         start_time: float = 2.0, end_offset: float = 0.0,
                          output_folder: str = "", score_name: str = "") -> None:
         if self.is_busy():
             raise RuntimeError("Extraction or PDF generation already in progress")
@@ -354,7 +354,7 @@ class GuiApi:
 
         self._extraction_thread = threading.Thread(
             target=self._run_extraction,
-            args=(no_ocr, start_time, duration, self._debug_mode, output_folder, score_name, self._original_video_path),
+            args=(no_ocr, start_time, end_offset, self._debug_mode, output_folder, score_name, self._original_video_path),
             daemon=True,
         )
         self._extraction_thread.start()
@@ -371,7 +371,7 @@ class GuiApi:
             self._state.elapsed_seconds = elapsed
         return self._state
 
-    def _run_extraction(self, no_ocr: bool, start_time: float, duration: float,
+    def _run_extraction(self, no_ocr: bool, start_time: float, end_offset: float,
                         debug: bool, output_folder: str, score_name: str,
                         original_video_path: Optional[str] = None):
         try:
@@ -385,16 +385,19 @@ class GuiApi:
                     self.init_ocr()
                 effective_ocr = self._ocr_service if (self._ocr_service and self._ocr_service.is_enabled()) else OcrService()
 
+            # Use high-res version for extraction if available (from YouTube scan download)
+            extraction_video_path = original_video_path if original_video_path else self._video_info.path
+
             use_case = ExtractScoreUseCase(self._video_service, effective_ocr,
                                            self._file_service, self._config)
 
             pages = use_case.execute(
-                self._video_info.path,
+                extraction_video_path,
                 output_dir=score_dir,
                 no_ocr=no_ocr,
                 start_time=start_time,
                 debug=debug,
-                duration=duration,
+                end_offset=end_offset,
                 on_log=self._emit_log,
                 on_progress=lambda pct, d: self._emit_progress("extracting", pct, d),
                 is_cancelled=lambda: self._cancel_flag,
@@ -428,7 +431,7 @@ class GuiApi:
     #  YouTube Download
     # ═════════════════════════════════════════════════════════════════════
 
-    def download_youtube(self, url: str, fmt: str = "bestvideo[height<=1080]",
+    def download_youtube(self, url: str, fmt: str = "bestvideo[height<=1080][fps<=30]",
                          scan_fmt: str = "best[height<=640]") -> None:
         if self.is_busy():
             raise RuntimeError("Extraction or PDF generation already in progress")
@@ -444,7 +447,7 @@ class GuiApi:
         )
         self._download_thread.start()
 
-    def _run_youtube_download(self, url: str, fmt: str = "bestvideo[height<=1080]",
+    def _run_youtube_download(self, url: str, fmt: str = "bestvideo[height<=1080][fps<=30]",
                               scan_fmt: str = "best[height<=640]"):
         try:
             def on_progress(pct, detail):

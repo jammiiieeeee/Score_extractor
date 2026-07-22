@@ -31,7 +31,7 @@ FAIL = 0
 SKIP = 0
 
 
-def test(name: str, skip: bool = False):
+def run_test(name: str, skip: bool = False):
     """Decorator that runs a test function and counts pass/fail/skip."""
     def decorator(fn):
         global PASS, FAIL, SKIP
@@ -77,7 +77,7 @@ def make_test_image_ndarray(width: int = 800, height: int = 600, page_num: int =
 
 # ── Tests ───────────────────────────────────────────────────────────────
 
-def test_all():
+def run_all_tests():
     api = GuiApi()
     log_messages = []
     progress_events = []
@@ -238,7 +238,7 @@ def test_all():
         out_dir = tempfile.mkdtemp()
         import shutil
         try:
-            api.start_extraction(test_video, no_ocr=True, duration=5.0,
+            api.start_extraction(test_video, no_ocr=True, end_offset=5.0,
                                 output_folder=out_dir, score_name="test_score")
             timeout = 60.0
             start = time.time()
@@ -260,7 +260,7 @@ def test_all():
         out_dir = tempfile.mkdtemp()
         import shutil
         try:
-            api.start_extraction(test_video, no_ocr=True, duration=999.0,
+            api.start_extraction(test_video, no_ocr=True, end_offset=999.0,
                                 output_folder=out_dir, score_name="test_cancel")
             time.sleep(1.0)
             api.cancel_extraction()
@@ -513,7 +513,7 @@ def test_all():
     print(f"{'='*60}\n")
 
     for name, fn in tests:
-        test(name)(fn)()
+        run_test(name)(fn)()
 
     print(f"\n{'='*60}")
     total = PASS + FAIL + SKIP
@@ -552,5 +552,5 @@ def _find_test_video() -> Optional[str]:
 
 
 if __name__ == "__main__":
-    success = test_all()
+    success = run_all_tests()
     sys.exit(0 if success else 1)

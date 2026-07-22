@@ -55,7 +55,7 @@ class DownloadService:
     def download(
         self,
         url: str,
-        fmt: str = "bestvideo[height<=1080]",
+        fmt: str = "bestvideo[height<=1080][fps<=30]",
         scan_fmt: str = "",
         on_progress: Optional[Callable[[float, str], None]] = None,
         on_log: Optional[Callable[[str], None]] = None,
@@ -93,6 +93,12 @@ class DownloadService:
         has_ffmpeg = self._ffmpeg_works(ffmpeg_path)
         if on_log and ffmpeg_path and not has_ffmpeg:
             on_log("  ffmpeg found but blocked by policy, will skip format merging")
+
+        # bestvideo requires ffmpeg for merging — fall back to best (combined) when unavailable
+        if not has_ffmpeg and fmt.startswith("bestvideo"):
+            fmt = fmt.replace("bestvideo", "best")
+            if on_log:
+                on_log("  ffmpeg unavailable, using combined format instead of bestvideo")
 
         ydl_opts = {
             'format': fmt,

@@ -214,7 +214,7 @@ class TestExtractionWorkflow:
         cb = CallbackCollector(api)
 
         api.start_extraction(
-            test_video, no_ocr=True, duration=5.0,
+            test_video, no_ocr=True, end_offset=5.0,
             output_folder=str(work_dir), score_name="test_extract"
         )
 
@@ -240,7 +240,7 @@ class TestExtractionWorkflow:
         api.init_ocr()
 
         api.start_extraction(
-            test_video, no_ocr=False, duration=5.0,
+            test_video, no_ocr=False, end_offset=5.0,
             output_folder=str(work_dir), score_name="test_ocr_extract"
         )
 
@@ -252,7 +252,7 @@ class TestExtractionWorkflow:
         cb = CallbackCollector(api)
 
         api.start_extraction(
-            test_video, no_ocr=True, duration=9999.0,
+            test_video, no_ocr=True, end_offset=9999.0,
             output_folder=str(work_dir), score_name="test_cancel"
         )
 
@@ -270,14 +270,14 @@ class TestExtractionWorkflow:
 
     def test_extraction_rejects_while_busy(self, api, test_video, work_dir):
         api.start_extraction(
-            test_video, no_ocr=True, duration=9999.0,
+            test_video, no_ocr=True, end_offset=9999.0,
             output_folder=str(work_dir), score_name="test_busy"
         )
         time.sleep(1.0)
 
         with pytest.raises(RuntimeError, match="already in progress"):
             api.start_extraction(
-                test_video, no_ocr=True, duration=5.0,
+                test_video, no_ocr=True, end_offset=5.0,
                 output_folder=str(work_dir), score_name="test_busy2"
             )
 
@@ -286,7 +286,7 @@ class TestExtractionWorkflow:
 
     def test_extraction_requires_output_and_name(self, api, test_video):
         with pytest.raises(RuntimeError, match="output_folder and score_name are required"):
-            api.start_extraction(test_video, no_ocr=True, duration=5.0)
+            api.start_extraction(test_video, no_ocr=True, end_offset=5.0)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -537,14 +537,14 @@ class TestErrorHandlingWorkflow:
         api._debug_mode = True
 
         api.start_extraction(
-            test_video, no_ocr=True, duration=9999.0,
+            test_video, no_ocr=True, end_offset=9999.0,
             output_folder=str(work_dir), score_name="test_err_busy"
         )
         time.sleep(1.0)
 
         with pytest.raises(RuntimeError):
             api.start_extraction(
-                test_video, no_ocr=True, duration=5.0,
+                test_video, no_ocr=True, end_offset=5.0,
                 output_folder=str(work_dir), score_name="test_err_busy2"
             )
 
@@ -577,7 +577,7 @@ class TestEndToEndWorkflow:
 
         # 4. Extract (short duration for speed)
         api.start_extraction(
-            test_video, no_ocr=True, duration=5.0,
+            test_video, no_ocr=True, end_offset=5.0,
             output_folder=str(work_dir), score_name="e2e_test"
         )
 
@@ -620,7 +620,7 @@ class TestEndToEndWorkflow:
 
         api.update_config({"default_crop_ratio": 0.30})
         api.start_extraction(
-            test_video, no_ocr=True, duration=5.0,
+            test_video, no_ocr=True, end_offset=5.0,
             output_folder=str(work_dir), score_name="crop_test"
         )
         wait_for(lambda: not api.is_busy(), timeout=120.0)

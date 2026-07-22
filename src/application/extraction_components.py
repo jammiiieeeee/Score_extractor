@@ -163,10 +163,12 @@ class FrameStepper:
         self.last_trigger_idx = a_frame.index
         return a_frame, b_frame
 
-    def check_duration_limit(self, timestamp: float, duration: float) -> bool:
-        if duration > 0 and timestamp >= duration:
-            self.on_log(f"  Duration limit reached ({duration:.1f}s).")
-            return True
+    def check_end_offset(self, timestamp: float, end_offset: float, video_duration: float) -> bool:
+        if end_offset > 0 and video_duration > 0:
+            end_time = video_duration - end_offset
+            if timestamp >= end_time:
+                self.on_log(f"  End offset reached ({end_offset:.1f}s from end, at {end_time:.1f}s).")
+                return True
         return False
 
     def set_unique_pages_ref(self, pages: list):
@@ -174,9 +176,9 @@ class FrameStepper:
         self._unique_pages_ref = pages
 
     def tail_scan(self, ocr_service: IOcrService, unique_pages: list, current_idx: int,
-                  duration: float, debug: bool = False, log_file: Optional[TextIO] = None) -> None:
+                  end_offset: float, debug: bool = False, log_file: Optional[TextIO] = None) -> None:
         """Check last 20 seconds for 'Thank you' end-credits."""
-        if duration > 0 or self.is_cancelled():
+        if end_offset > 0 or self.is_cancelled():
             return
         try:
             total_frames = self.video.get_total_frames()

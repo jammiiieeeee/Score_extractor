@@ -1064,10 +1064,10 @@ class ExtractTab(QWidget):
         self.yt_url_edit.setPlaceholderText("Paste YouTube video URL")
 
         self.quality_combo = QComboBox()
-        self.quality_combo.addItem("Best (≤1080p)", "bestvideo[height<=1080]")
-        self.quality_combo.addItem("720p", "bestvideo[height<=720]")
-        self.quality_combo.addItem("480p", "bestvideo[height<=480]")
-        self.quality_combo.addItem("360p", "best[height<=360]")
+        self.quality_combo.addItem("Best (≤1080p)", "bestvideo[height<=1080][fps<=30]")
+        self.quality_combo.addItem("720p", "bestvideo[height<=720][fps<=30]")
+        self.quality_combo.addItem("480p", "bestvideo[height<=480][fps<=30]")
+        self.quality_combo.addItem("360p", "best[height<=360][fps<=30]")
         self.quality_combo.addItem("Best available", "best")
         saved_qi = self._api.get_config().get("yt_quality_index", 0)
         self.quality_combo.setCurrentIndex(min(saved_qi, self.quality_combo.count() - 1))
@@ -1572,7 +1572,9 @@ class ExtractTab(QWidget):
         self._api.update_config({"default_crop_ratio": self.crop_spin.value()})
 
         start_time = self.seek_bar.get_start()
-        duration = self.seek_bar.get_end()
+        end_time = self.seek_bar.get_end()
+        video_duration = self._video_duration if hasattr(self, '_video_duration') else 0.0
+        end_offset = max(0.0, video_duration - end_time) if video_duration > 0 else 0.0
         no_ocr = (self._api.get_config().get("ocr_confidence_threshold", 40) == 0)
 
         self._busy = True
@@ -1587,7 +1589,7 @@ class ExtractTab(QWidget):
             video_path=video_path,
             no_ocr=no_ocr,
             start_time=start_time,
-            duration=duration,
+            end_offset=end_offset,
             output_folder=self._parent_dir,
             score_name=project,
         )
