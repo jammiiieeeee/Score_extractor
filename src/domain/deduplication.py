@@ -97,13 +97,8 @@ class Deduplicator:
                 else:
                     return False
 
-        # Pre-process: Identify and mask the playback bar in both frames
-        # (We use a simple diff-based masking for similarity checks)
-        mask_a = self._apply_bar_mask(frame_a, frame_b)
-        mask_b = self._apply_bar_mask(frame_b, frame_a)
-
-        # Step 1: Global Pixel Similarity (on masked images)
-        sim_score = self._get_global_similarity(mask_a, mask_b)
+        # Step 1: Global Pixel Similarity (compare merged frames directly)
+        sim_score = self._get_global_similarity(frame_a, frame_b)
         
         if sim_score > 0.995:
             return True
@@ -111,29 +106,15 @@ class Deduplicator:
             return False
             
         # Step 2: Row-wise Similarity
-        is_row_dup = self._check_row_similarity(mask_a, mask_b)
+        is_row_dup = self._check_row_similarity(frame_a, frame_b)
         return is_row_dup
 
-    def _apply_bar_mask(self, img: np.ndarray, other_img: np.ndarray) -> np.ndarray:
-        diff = cv2.absdiff(img, other_img)
-        gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-        vertical_sum = np.sum(gray_diff, axis=0)
-        
-        search_range = int(img.shape[1] * 0.5)
-        if len(vertical_sum) > search_range:
-            bar_x = np.argmax(vertical_sum[:search_range])
-            
-            masked = img.copy()
-            x_start = max(0, bar_x - 15)
-            x_end = min(img.shape[1], bar_x + 15)
-            masked[:, x_start:x_end] = 0
-            return masked
-        return img
-
     def _get_global_similarity(self, img1: np.ndarray, img2: np.ndarray) -> float:
-        # Resize to 256x256 grayscale for fast comparison
-        g1 = cv2.cvtColor(cv2.resize(img1, (256, 256)), cv2.COLOR_BGR2GRAY)
-        g2 = cv2.cvtColor(cv2.resize(img2, (256, 256)), cv2.COLOR_BGR2GRAY)
+        h = img1.shape[0]
+        max_row = int(h * self.config.duplicate_top_ratio)
+        # Crop to top region, resize to 256x256 grayscale for fast comparison
+        g1 = cv2.cvtColor(cv2.resize(img1[:max_row, :], (256, 256)), cv2.COLOR_BGR2GRAY)
+        g2 = cv2.cvtColor(cv2.resize(img2[:max_row, :], (256, 256)), cv2.COLOR_BGR2GRAY)
         
         # Calculate correlation coefficient
         res = cv2.matchTemplate(g1, g2, cv2.TM_CCOEFF_NORMED)

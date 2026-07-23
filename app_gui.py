@@ -738,7 +738,7 @@ class ConfigTab(QWidget):
         self.ocr_conf = self._spin_int(0, 100, 40)
 
         self.ocr_enabled = QCheckBox("Enable OCR")
-        self.ocr_enabled.setChecked(True)
+        self.ocr_enabled.setChecked(False)
 
         form.addRow("Crop ratio:", self.crop_ratio)
         form.addRow("Page change sensitivity:", self.sensitivity)
@@ -809,6 +809,7 @@ class ConfigTab(QWidget):
                 widget.valueChanged.connect(self._on_change)
             elif isinstance(widget, QSpinBox):
                 widget.valueChanged.connect(self._on_change)
+        self.ocr_enabled.toggled.connect(self._on_change)
         self.debug_cb.toggled.connect(self._on_debug_toggled)
 
         scroll.setWidget(inner)

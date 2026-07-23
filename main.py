@@ -51,7 +51,7 @@ def main():
     parser.add_argument("--score-name", help="Score name (default: video filename stem)")
     parser.add_argument("-c", "--config", default="config.json", help="Path to config.json")
     parser.add_argument("-d", "--debug", action="store_true", help="Enable debug mode")
-    parser.add_argument("--no-ocr", action="store_true", help="Skip OCR step")
+    parser.add_argument("--ocr", action="store_true", help="Enable OCR for deduplication (off by default)")
     parser.add_argument("--start-time", type=float, default=2.0, help="Jump to this time in seconds and capture the first page immediately (default: 2.0)")
     parser.add_argument("--end-offset", type=float, default=0.0, help="Stop processing N seconds before video end (0 = off)")
     parser.add_argument("--crop-ratio", type=float, help="Override crop ratio for PDF output")
@@ -131,7 +131,7 @@ def main():
 
         video_service = VideoService()
         ocr_service = None
-        if not args.no_ocr:
+        if args.ocr:
             from src.infrastructure.ocr_service import OcrService
             ocr_service = OcrService()
         pdf_service = PdfService()
@@ -155,7 +155,7 @@ def main():
             pages = extract_use_case.execute(
                 video_path,
                 output_dir=output_dir,
-                no_ocr=args.no_ocr,
+                no_ocr=not args.ocr,
                 start_time=args.start_time,
                 debug=args.debug,
                 end_offset=args.end_offset,
