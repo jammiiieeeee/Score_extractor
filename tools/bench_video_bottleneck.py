@@ -7,12 +7,16 @@ across multiple capture backends.  Run from project root:
     python -m tools.bench_video_bottleneck --video path/to/video.mp4
 
 Use --all-backends to test all supported OpenCV backends.
+Use --preview to include GUI preview pipeline (FFmpeg subprocess + QImage/QPixmap).
 Use --html to write an HTML report.
 """
 
 import argparse
+import glob as _glob
 import gc
 import os
+import shutil
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -82,6 +86,9 @@ class BackendResult:
     resize_ms: List[float] = field(default_factory=list)
     ssim_ms: List[float] = field(default_factory=list)
     absdiff_ms: List[float] = field(default_factory=list)
+
+    ffmpeg_seek_ms: List[float] = field(default_factory=list)
+    gui_pipeline_ms: List[float] = field(default_factory=list)
 
     error: Optional[str] = None
 
@@ -253,11 +260,86 @@ def bench_processing(path: str, api_pref: int) -> dict:
     return results
 
 
+def _find_ffmpeg() -> Optional[str]:
+    path = shutil.which("ffmpeg")
+    if path:
+        return path
+    pattern = r"C:\Users\*\AppData\Local\Microsoft\WinGet\Packages\*ffmpeg*\bin\ffmpeg.exe"
+    matches = _glob.glob(pattern)
+    return matches[0] if matches else None
+
+
+def bench_ffmpeg_subprocess(path: str, width: int, height: int,
+                            total_frames: int, fps: float,
+                            samples: int = 20) -> List[float]:
+    """Benchmark FFmpeg subprocess seek (PreviewSeeker code path)."""
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        return []
+    timestamps = np.linspace(0.5, max(0.5, total_frames / fps - 0.5), samples).tolist()
+    times = []
+    for ts in timestamps:
+        cmd = [
+            ffmpeg, "-hide_banner", "-loglevel", "error",
+            "-hwaccel", "auto",
+            "-ss", f"{ts:.3f}",
+            "-i", path,
+            "-frames:v", "1",
+            "-f", "rawvideo", "-pix_fmt", "rgb24",
+            "pipe:1",
+        ]
+        t0 = time.perf_counter()
+        try:
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+            t1 = time.perf_counter()
+            if proc.returncode == 0 and len(proc.stdout) > 9:
+                times.append((t1 - t0) * 1000)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+    return times
+
+
+def bench_gui_pipeline(path: str, total_frames: int, fps: float,
+                       samples: int = 20) -> List[float]:
+    """Benchmark full GUI preview pipeline: OpenCV seek + BGR->RGB + QImage + QPixmap + scaled."""
+    try:
+        from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtGui import QImage, QPixmap
+    except ImportError:
+        return []
+
+    app = QApplication.instance() or QApplication([])
+    timestamps = np.linspace(0.5, max(0.5, total_frames / fps - 0.5), samples).tolist()
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        return []
+
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    times = []
+
+    for ts in timestamps:
+        t0 = time.perf_counter()
+        cap.set(cv2.CAP_PROP_POS_MSEC, ts * 1000)
+        ret, frame = cap.read()
+        if not ret:
+            continue
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        qt_img = QImage(rgb.data, w, h, w * 3, QImage.Format.Format_RGB888)
+        pixmap = QPixmap.fromImage(qt_img.copy())
+        _ = pixmap.scaled(400, 250)
+        t1 = time.perf_counter()
+        times.append((t1 - t0) * 1000)
+
+    cap.release()
+    return times
+
+
 # ---------------------------------------------------------------------------
 # main runner
 # ---------------------------------------------------------------------------
 
-def run_all(path: str, all_backends: bool) -> List[BackendResult]:
+def run_all(path: str, all_backends: bool, preview: bool = False) -> List[BackendResult]:
     if not os.path.isfile(path):
         print(f"ERROR: file not found: {path}")
         sys.exit(1)
@@ -322,6 +404,23 @@ def run_all(path: str, all_backends: bool) -> List[BackendResult]:
             if res.absdiff_ms:
                 print(f"  absdiff+sum:  {np.mean(res.absdiff_ms):7.2f} ± {np.std(res.absdiff_ms):.2f} ms")
 
+            # 7. preview pipeline (only for first backend to avoid duplicate work)
+            if preview and name == backends[0][0]:
+                ff = bench_ffmpeg_subprocess(path, res.info and int(res.info.split('x')[0]) or 0,
+                                              0, total, fps)
+                res.ffmpeg_seek_ms = ff
+                if ff:
+                    print(f"  ffmpeg seek:  {np.mean(ff):7.2f} ± {np.std(ff):.2f} ms  (n={len(ff)})")
+                else:
+                    print(f"  ffmpeg seek:  not available (ffmpeg not found)")
+
+                gui = bench_gui_pipeline(path, total, fps)
+                res.gui_pipeline_ms = gui
+                if gui:
+                    print(f"  gui pipeline: {np.mean(gui):7.2f} ± {np.std(gui):.2f} ms  (n={len(gui)})")
+                else:
+                    print(f"  gui pipeline: not available (PyQt6 not found)")
+
         except RuntimeError as e:
             res.error = str(e)
             print(f"  ERROR: {e}")
@@ -340,13 +439,13 @@ def print_summary(results: List[BackendResult]):
     print(f"\n{'='*60}")
     print("SUMMARY")
     print(f"{'='*60}")
-    header = f"{'Backend':<16} {'Open':>8} {'SeqRead':>8} {'SeekRd':>8} {'Grab':>8} {'FullRd':>8} {'Resize':>8} {'SSIM':>8} {'Diff':>8}"
+    header = f"{'Backend':<16} {'Open':>8} {'SeqRead':>8} {'SeekRd':>8} {'Grab':>8} {'FullRd':>8} {'Resize':>8} {'SSIM':>8} {'Diff':>8} {'FFmpeg':>8} {'GUI':>8}"
     print(header)
     print("-" * len(header))
     for r in results:
         def _m(v):
             return f"{np.mean(v):.1f}" if v else "-"
-        print(f"{r.name:<16} {_m([r.open_ms]):>8} {_m(r.seq_read_ms):>8} {_m(r.seek_read_ms):>8} {_m(r.grab_ms):>8} {_m(r.full_read_ms):>8} {_m(r.resize_ms):>8} {_m(r.ssim_ms):>8} {_m(r.absdiff_ms):>8}")
+        print(f"{r.name:<16} {_m([r.open_ms]):>8} {_m(r.seq_read_ms):>8} {_m(r.seek_read_ms):>8} {_m(r.grab_ms):>8} {_m(r.full_read_ms):>8} {_m(r.resize_ms):>8} {_m(r.ssim_ms):>8} {_m(r.absdiff_ms):>8} {_m(r.ffmpeg_seek_ms):>8} {_m(r.gui_pipeline_ms):>8}")
 
 
 def write_html(path: str, results: List[BackendResult]):
@@ -369,6 +468,8 @@ def write_html(path: str, results: List[BackendResult]):
             {_s(r.resize_ms)}
             {_s(r.ssim_ms)}
             {_s(r.absdiff_ms)}
+            {_s(r.ffmpeg_seek_ms)}
+            {_s(r.gui_pipeline_ms)}
             <td>{r.info}</td>
         </tr>"""
 
@@ -388,7 +489,7 @@ tr:nth-child(even) {{ background: #fafafa; }}
 <p>Generated: {datetime.datetime.now():%Y-%m-%d %H:%M:%S}</p>
 <table>
 <thead><tr>
-<th>Backend</th><th>Open (ms)</th><th>Seq Read (ms)</th><th>Seek+Read (ms)</th><th>Grab (ms)</th><th>Full Read (ms)</th><th>Resize (ms)</th><th>SSIM (ms)</th><th>AbsDiff (ms)</th><th>Info</th>
+<th>Backend</th><th>Open (ms)</th><th>Seq Read (ms)</th><th>Seek+Read (ms)</th><th>Grab (ms)</th><th>Full Read (ms)</th><th>Resize (ms)</th><th>SSIM (ms)</th><th>AbsDiff (ms)</th><th>FFmpeg Subprocess (ms)</th><th>GUI Pipeline (ms)</th><th>Info</th>
 </tr></thead>
 <tbody>{rows}</tbody>
 </table>
@@ -405,10 +506,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Benchmark video pipeline bottlenecks")
     parser.add_argument("--video", "-v", required=True, help="Path to video file")
     parser.add_argument("--all-backends", "-a", action="store_true", help="Test all capture backends")
+    parser.add_argument("--preview", "-p", action="store_true", help="Include GUI preview pipeline (FFmpeg subprocess + QImage/QPixmap)")
     parser.add_argument("--html", help="Write HTML report to this path (e.g. report.html)")
     args = parser.parse_args()
 
-    results = run_all(args.video, args.all_backends)
+    results = run_all(args.video, args.all_backends, preview=args.preview)
 
     print_summary(results)
 
