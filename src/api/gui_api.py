@@ -380,8 +380,9 @@ class GuiApi:
                     self.init_ocr()
                 effective_ocr = self._ocr_service if (self._ocr_service and self._ocr_service.is_enabled()) else OcrService()
 
-            # Use high-res version for extraction if available (from YouTube scan download)
-            extraction_video_path = original_video_path if original_video_path else self._video_info.path
+            # Always use the low-res scan video for extraction (SSIM, bar detection, A/B merge)
+            # The original_video_path is only used by PageCommitter for OCR/debug full-res reads
+            extraction_video_path = self._video_info.path
 
             use_case = ExtractScoreUseCase(self._video_service, effective_ocr,
                                            self._file_service, self._config)

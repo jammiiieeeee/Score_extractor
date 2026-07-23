@@ -913,7 +913,7 @@ class ConfigTab(QWidget):
 # ── Extract Tab ──────────────────────────────────────────────────────
 
 class PreviewSeeker(QObject):
-    """Background frame reader using FFmpeg subprocess for fast seeking."""
+    """Background frame reader using FFmpeg subprocess (or OpenCV fallback) for seeking."""
     frame_ready = pyqtSignal(object)  # QImage, safe cross-thread
     seek_requested = pyqtSignal(float, float)
 
@@ -926,6 +926,7 @@ class PreviewSeeker(QObject):
         self._height = 0
         self._seek_seq = 0
         self._ffmpeg = self._find_ffmpeg()
+        self._use_ffmpeg = self._ffmpeg is not None
         self.seek_requested.connect(self._do_seek)
 
     def open(self, path: str):
@@ -943,13 +944,13 @@ class PreviewSeeker(QObject):
         self._path = None
 
     @staticmethod
-    def _find_ffmpeg() -> str:
+    def _find_ffmpeg() -> Optional[str]:
         path = shutil.which("ffmpeg")
         if path:
             return path
         pattern = r"C:\Users\*\AppData\Local\Microsoft\WinGet\Packages\*ffmpeg*\bin\ffmpeg.exe"
         matches = _glob.glob(pattern)
-        return matches[0] if matches else "ffmpeg"
+        return matches[0] if matches else None
 
     def _read_frame_ffmpeg(self, ts: float) -> Optional[np.ndarray]:
         if not self._path:
@@ -983,6 +984,15 @@ class PreviewSeeker(QObject):
             return None
         return np.frombuffer(data[:out_w * out_h * 3], dtype=np.uint8).reshape(out_h, out_w, 3)
 
+    def _read_frame_opencv(self, ts: float) -> Optional[np.ndarray]:
+        if self._cap is None or not self._cap.isOpened():
+            return None
+        self._cap.set(cv2.CAP_PROP_POS_MSEC, ts * 1000)
+        ret, frame = self._cap.read()
+        if not ret or frame is None:
+            return None
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
     def _do_seek(self, ts: float, fps_hint: float):
         if self._path is None:
             return
@@ -990,7 +1000,10 @@ class PreviewSeeker(QObject):
         seq = self._seek_seq
         t0 = time.time()
         try:
-            rgb = self._read_frame_ffmpeg(ts)
+            if self._use_ffmpeg:
+                rgb = self._read_frame_ffmpeg(ts)
+            else:
+                rgb = self._read_frame_opencv(ts)
             elapsed = (time.time() - t0) * 1000
             if rgb is None:
                 print(f"[PreviewSeeker] frame miss ts={ts:.2f}ms={elapsed:.0f}")
@@ -1001,7 +1014,8 @@ class PreviewSeeker(QObject):
             h, w = rgb.shape[:2]
             qt_img = QImage(rgb.data, w, h, w * 3, QImage.Format.Format_RGB888)
             self.frame_ready.emit(qt_img.copy())
-            print(f"[PreviewSeeker] frame ok ts={ts:.2f}ms={elapsed:.0f}")
+            backend = "ffmpeg" if self._use_ffmpeg else "opencv"
+            print(f"[PreviewSeeker] frame ok ts={ts:.2f}ms={elapsed:.0f} [{backend}]")
         except RuntimeError:
             pass
 
