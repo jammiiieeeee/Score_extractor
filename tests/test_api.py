@@ -1,12 +1,24 @@
 """
-Comprehensive test script for the GuiApi (all 28 methods).
+**DEPRECATED** — This file is superseded by tests/test_gui_api.py.
 
-Run: python tests/test_api.py
+The custom test runner below is incompatible with pytest. It is kept only
+for backwards compatibility.  New tests should be added to:
 
-Tests that don't require external resources (video file, OCR) always run.
-Video-dependent tests are skipped if no test video is available.
-OCR-dependent tests are skipped if paddleocr is not installed.
+  - tests/test_gui_api.py      — migrated GuiApi method tests (pytest)
+  - tests/test_cli.py           — CLI argument parsing tests
+  - tests/test_integration_e2e.py — full end-to-end integration tests
+  - tests/test_gui_workflow.py  — GUI workflow integration tests
+
+To run the modern test suite:
+  pytest tests/ -v --timeout=120
 """
+
+import warnings
+warnings.warn(
+    "tests/test_api.py is deprecated. Use tests/test_gui_api.py instead.",
+    DeprecationWarning,
+    stacklevel=1,
+)
 
 import os
 import sys

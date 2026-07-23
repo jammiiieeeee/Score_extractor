@@ -57,6 +57,7 @@ class FrameStepper:
         self.current_idx = 0
         self._n_frames = 0
         self._t_loop = time.time()
+        self._unique_pages_ref: list = []
 
     def _get_roi(self, img: np.ndarray):
         h, w = img.shape[:2]

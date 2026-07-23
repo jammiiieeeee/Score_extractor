@@ -3,6 +3,8 @@ import time
 import json
 import os
 import sys
+import contextlib
+import io
 import cv2
 import numpy as np
 from dataclasses import dataclass, asdict
@@ -92,6 +94,7 @@ class GuiApi:
         self._on_completed: Optional[Callable] = None
         self._on_cancelled: Optional[Callable] = None
         self._on_download_completed: Optional[Callable] = None
+        self._ocr_init_lock = threading.Lock()
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -270,25 +273,17 @@ class GuiApi:
         if self._ocr_service is None:
             self._ocr_service = OcrService()
 
-        old_stdout = sys.stdout
+        with self._ocr_init_lock:
+            capture = io.StringIO()
+            with contextlib.redirect_stdout(capture):
+                result = self._ocr_service.initialize()
 
-        gui_self = self
+            for line in capture.getvalue().splitlines():
+                line = line.strip()
+                if line:
+                    self._emit_log(line)
 
-        class CapturePrint:
-            def write(self, text):
-                text = text.strip()
-                if text:
-                    gui_self._emit_log(text)
-            def flush(self):
-                pass
-
-        sys.stdout = CapturePrint()
-        try:
-            result = self._ocr_service.initialize()
-        finally:
-            sys.stdout = old_stdout
-
-        return result
+            return result
 
     def ocr_status(self) -> bool:
         if self._ocr_service is None:

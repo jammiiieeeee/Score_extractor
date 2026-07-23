@@ -9,3 +9,6 @@ pathlib
 PyQt6
 yt-dlp
 matplotlib
+pytest
+pytest-cov
+pytest-timeout

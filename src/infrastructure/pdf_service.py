@@ -1,4 +1,5 @@
 import os
+import tempfile
 from pathlib import Path
 from typing import List
 import numpy as np
@@ -35,27 +36,37 @@ class PdfService(IPdfService):
         c.drawCentredString(width / 2, height - margin, title)
         y_offset -= 40
 
-        for idx, img in enumerate(images):
-            # Crop to PDF output region
-            img_h = img.shape[0]
-            y_start = int(img_h * config.crop_top_offset)
-            y_end = int(img_h * (config.crop_top_offset + config.default_crop_ratio))
-            cropped_img = img[y_start:y_end, :]
+        temp_files = []
+        try:
+            for idx, img in enumerate(images):
+                # Crop to PDF output region
+                img_h = img.shape[0]
+                y_start = int(img_h * config.crop_top_offset)
+                y_end = int(img_h * (config.crop_top_offset + config.default_crop_ratio))
+                cropped_img = img[y_start:y_end, :]
 
-            temp_img_path = f"temp_strip_{idx}.png"
-            success, buf = cv2.imencode('.png', cropped_img)
-            if success:
-                buf.tofile(temp_img_path)
+                temp_fd, temp_img_path = tempfile.mkstemp(suffix='.png', prefix=f'strip_{idx}_')
+                os.close(temp_fd)
+                temp_files.append(temp_img_path)
+                success, buf = cv2.imencode('.png', cropped_img)
+                if success:
+                    buf.tofile(temp_img_path)
 
-            strip_aspect = cropped_img.shape[1] / cropped_img.shape[0]
-            draw_width = usable_width
-            draw_height = draw_width / strip_aspect
+                strip_aspect = cropped_img.shape[1] / cropped_img.shape[0]
+                draw_width = usable_width
+                draw_height = draw_width / strip_aspect
 
-            if y_offset - draw_height < margin:
-                c.showPage()
-                y_offset = height - margin
+                if y_offset - draw_height < margin:
+                    c.showPage()
+                    y_offset = height - margin
 
-            c.drawImage(temp_img_path, margin, y_offset - draw_height, width=draw_width, height=draw_height)
-            y_offset -= draw_height
+                c.drawImage(temp_img_path, margin, y_offset - draw_height, width=draw_width, height=draw_height)
+                y_offset -= draw_height
 
-        c.save()
+            c.save()
+        finally:
+            for p in temp_files:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
