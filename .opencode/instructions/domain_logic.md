@@ -107,7 +107,7 @@ class Frame:
 ## Interfaces
 
 `src/domain/interfaces.py` defines:
-- `IVideoService`: `open_video()`, `read_frame_at()`, `seek_relative()`, `close()`, `get_original_size()`
+- `IVideoService`: `open_video()`, `read_frame_at()`, `read_next_frame()`, `skip_frames()`, `read_full_frame_at()`, `merge_frames()`, `get_original_size()`, `get_fps()`, `get_total_frames()`, `close()`
 - `IOcrService`: `initialize()`, `is_enabled()`, `get_leftmost_number()`
 - `IPdfService`: `create_pdf()`
 - `IFileService`: `prepare_output_dir()`, `load_page_images()`

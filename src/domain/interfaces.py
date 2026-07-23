@@ -24,12 +24,12 @@ class IVideoService(ABC):
 
     @abstractmethod
     def read_frame_at(self, frame_idx: int):
-        """Returns (frame_360p, timestamp). Frame is resized to ~360p."""
+        """Returns (frame, timestamp) at the video's native resolution."""
         pass
 
     @abstractmethod
     def read_next_frame(self):
-        """Reads the next frame sequentially (no seek). Returns (frame_360p, timestamp, frame_idx) or (None, None, None)."""
+        """Reads the next frame sequentially (no seek). Returns (frame, timestamp, frame_idx) or (None, None, None)."""
         pass
 
     @abstractmethod

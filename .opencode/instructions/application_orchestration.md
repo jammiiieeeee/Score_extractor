@@ -28,7 +28,7 @@ Orchestrates the full extraction pipeline. Constructor takes:
 - `no_ocr: bool = False`
 - `start_time: float = -1.0`
 - `debug: bool = False`
-- `duration: float = 0.0`
+- `end_offset: float = 0.0` — stop processing N seconds before video end (0 = off)
 - `on_log`, `on_progress`, `on_page_detected`, `is_cancelled` — callbacks
 - `original_video_path: Optional[str]` — for YouTube dual-download workflow
 
@@ -54,8 +54,8 @@ Key methods:
 ### `PageCommitter` (`src/application/extraction_components.py`)
 
 Handles the commit pipeline for each detected page pair:
-1. Dynamic Bar Erase (merge A+B frames via `video_service.merge_frames()`)
-2. Upscale merged to original resolution
+1. Read full-res A/B frames from original video (scan-res fallback when unavailable)
+2. Dynamic Bar Erase (merge full-res A+B via `video_service.merge_frames()`)
 3. Bar profile validation (peak count + left spike margin)
 4. OCR number extraction from merged full-res frames
 5. Deduplication (OCR → Global → Row)
@@ -91,11 +91,12 @@ main.py / gui_api.py
   └─ ExtractScoreUseCase.execute()
        ├─ FrameStepper.initialize(start_time)  →  optional first pair
        ├─ Loop: FrameStepper.step()
-       │    ├─ SSIM detection on top ROI
-       │    └─ FrameStepper.capture_a_b()  →  (A, B)
+       │    ├─ SSIM detection on top ROI (scan video)
+       │    └─ FrameStepper.capture_a_b()  →  (A, B) from scan video
        ├─ PageCommitter.commit()
-       │    ├─ video_service.merge_frames(A, B)  →  merged + bar info
-       │    ├─ Bar profile validation (2-4 peaks, left spike)
+       │    ├─ Read full-res A/B from original video (if available)
+       │    ├─ video_service.merge_frames(full_res_A, full_res_B)  →  merged + bar info
+       │    ├─ Bar profile validation (on scan-res A/B)
        │    ├─ OCR number extraction
        │    ├─ Deduplicator.is_duplicate(existing, merged)
        │    └─ file_service.save_page_image()
@@ -124,8 +125,9 @@ app_gui.py
        └─ DownloadService.download()  →  dual-download:
             ├─ High-res video for PDF (original_path)
             └─ Low-res scan for extraction (scan_path)
-       ├─ open_video(scan_path)  →  extraction uses low-res
-       └─ _original_video_path = high-res path  →  PageCommitter reads full-res frames
+       ├─ open_video(scan_path)  →  SSIM + bar detection use low-res
+       └─ _original_video_path = high-res path
+            →  PageCommitter reads full-res frames for merge (not just OCR/debug)
 ```
 
 ## Error Handling

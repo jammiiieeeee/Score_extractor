@@ -249,6 +249,19 @@ class PageCommitter:
         self._original_cap = None
         self._original_fps = None
 
+        # If original (full-res) video is available, query its real dimensions
+        # so the merge upscale targets the original resolution, not the scan video's
+        if original_video_path:
+            import cv2
+            probe = cv2.VideoCapture(original_video_path)
+            if probe.isOpened():
+                self.orig_w = int(probe.get(cv2.CAP_PROP_FRAME_WIDTH))
+                self.orig_h = int(probe.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                self._original_fps = probe.get(cv2.CAP_PROP_FPS)
+                self._original_cap = probe
+            else:
+                probe.release()
+
     def _read_full_frame_from_original(self, frame_idx: int, timestamp: float):
         """Read a frame from the original (full-res) video using timestamp for accurate seek."""
         import cv2
@@ -286,28 +299,16 @@ class PageCommitter:
     ) -> None:
         page_num = attempt_num
 
-        # Merge frames (always applied, including start-time)
-        debug_path = str(output_dir / "debug" / f"bar_profile_page_{page_num:03d}.txt") if debug else None
-        merged_img, bar_x, bar_width = self.video.merge_frames(
-            frame_a.image, frame_b.image, self.config.b_overlay_width_ratio,
-            self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
-            self.config.bar_padding_px, debug_path
-        )
-        log(f"  Bar right edge at x={bar_x}, width={bar_width}px for page {page_num}")
-
-        # Upscale merged to original resolution
-        full_img = cv2.resize(merged_img, (self.orig_w, self.orig_h),
-                              interpolation=cv2.INTER_LINEAR)
-
-        # Read full-res A/B once, use for both debug and OCR
+        # Read full-res A/B frames from original video when available,
+        # so the merge operates on full-resolution data instead of scan-res
         full_a = full_b = None
-        if self.ocr_service.is_enabled() or debug:
-            if self._original_video_path:
-                full_a = self._read_full_frame_from_original(frame_a.index, frame_a.timestamp)
-                full_b = self._read_full_frame_from_original(frame_b.index, frame_b.timestamp)
-            else:
-                full_a, _ = self.video.read_full_frame_at(frame_a.index)
-                full_b, _ = self.video.read_full_frame_at(frame_b.index)
+        if self._original_video_path:
+            full_a = self._read_full_frame_from_original(frame_a.index, frame_a.timestamp)
+            full_b = self._read_full_frame_from_original(frame_b.index, frame_b.timestamp)
+        elif self.ocr_service.is_enabled() or debug:
+            full_a, _ = self.video.read_full_frame_at(frame_a.index)
+            full_b, _ = self.video.read_full_frame_at(frame_b.index)
+
         if debug:
             if full_a is not None:
                 success, buf = cv2.imencode('.png', full_a)
@@ -317,6 +318,17 @@ class PageCommitter:
                 success, buf = cv2.imencode('.png', full_b)
                 if success:
                     buf.tofile(str(output_dir / "debug" / f"page_{page_num:03d}_B.png"))
+
+        # Merge frames — use full-res when available, scan-res as fallback
+        merge_a = full_a if full_a is not None else frame_a.image
+        merge_b = full_b if full_b is not None else frame_b.image
+        debug_path = str(output_dir / "debug" / f"bar_profile_page_{page_num:03d}.txt") if debug else None
+        full_img, bar_x, bar_width = self.video.merge_frames(
+            merge_a, merge_b, self.config.b_overlay_width_ratio,
+            self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
+            self.config.bar_padding_px, debug_path
+        )
+        log(f"  Bar right edge at x={bar_x}, width={bar_width}px for page {page_num}")
 
         # Deduplication check
         is_dup = False

@@ -189,3 +189,104 @@ class TestPageCommitterCommit:
         committer.commit(a, b, pages, out_dir, 1, False, lambda msg: None, None, is_first=True)
         saved_files = list((out_dir / "photos").glob("page_*_merged.png"))
         assert len(saved_files) == 1
+
+
+def _create_test_video(path, width, height, fps=30.0, n_frames=120):
+    """Create a .mp4 test video with enough frames for seek operations."""
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(str(path), fourcc, fps, (width, height))
+    img = np.full((height, width, 3), (128, 128, 128), dtype=np.uint8)
+    for _ in range(n_frames):
+        out.write(img)
+    out.release()
+
+
+@pytest.mark.unit
+class TestPageCommitterOriginalResolution:
+    """Verify PageCommitter uses the original (full-res) video dimensions
+    for the merge upscale target, not the scan video's dimensions."""
+
+    def test_upscale_uses_original_video_dims(self, tmp_path):
+        """When original_video_path is provided, the committed frame should
+        match the original video's resolution, not the scan video's."""
+        scan_w, scan_h = 640, 360
+        orig_w, orig_h = 1920, 1080
+
+        scan_video = tmp_path / "scan.mp4"
+        orig_video = tmp_path / "original.mp4"
+        _create_test_video(scan_video, scan_w, scan_h)
+        _create_test_video(orig_video, orig_w, orig_h)
+
+        cfg = ScoreConfig()
+        fps = 30.0
+        scan_frames = [make_solid_image(scan_w, scan_h) for _ in range(120)]
+        video_svc = StubVideoService(scan_frames, fps=fps)
+        ocr_svc = StubOcrService(enabled=False)
+        file_svc = StubFileService(tmp_path)
+        dedup = Deduplicator(cfg, ocr_svc)
+
+        # Simulates the bug path: scan dims passed as orig_w/h,
+        # but original_video_path points to the full-res video
+        committer = PageCommitter(
+            video_svc, file_svc, ocr_svc, cfg, dedup,
+            orig_w=scan_w, orig_h=scan_h,
+            original_video_path=str(orig_video),
+        )
+
+        # After init, orig_w/h should be overridden to original video dims
+        assert committer.orig_w == orig_w
+        assert committer.orig_h == orig_h
+
+        # Commit a page and verify the stored frame has original resolution
+        a = Frame(make_solid_image(scan_w, scan_h, (50, 50, 50)), 1.0, 30)
+        b = Frame(make_solid_image(scan_w, scan_h, (100, 100, 100)), 2.0, 60)
+        pages = []
+        out_dir = tmp_path / "score"
+        out_dir.mkdir(exist_ok=True)
+        (out_dir / "photos").mkdir(exist_ok=True)
+        (out_dir / "debug").mkdir(exist_ok=True)
+
+        committer.commit(a, b, pages, out_dir, 1, False, lambda msg: None, None, is_first=True)
+
+        assert len(pages) == 1
+        h, w = pages[0].image.shape[:2]
+        assert w == orig_w, f"Expected width {orig_w}, got {w}"
+        assert h == orig_h, f"Expected height {orig_h}, got {h}"
+
+        committer.release()
+
+    def test_no_original_video_keeps_scan_dims(self, tmp_path):
+        """When original_video_path is None, orig_w/h stay as passed (scan dims)."""
+        scan_w, scan_h = 640, 360
+
+        cfg = ScoreConfig()
+        fps = 30.0
+        scan_frames = [make_solid_image(scan_w, scan_h) for _ in range(10)]
+        video_svc = StubVideoService(scan_frames, fps=fps)
+        ocr_svc = StubOcrService(enabled=False)
+        file_svc = StubFileService(tmp_path)
+        dedup = Deduplicator(cfg, ocr_svc)
+
+        committer = PageCommitter(
+            video_svc, file_svc, ocr_svc, cfg, dedup,
+            orig_w=scan_w, orig_h=scan_h,
+            original_video_path=None,
+        )
+
+        assert committer.orig_w == scan_w
+        assert committer.orig_h == scan_h
+
+        a = Frame(make_solid_image(scan_w, scan_h, (50, 50, 50)), 1.0, 30)
+        b = Frame(make_solid_image(scan_w, scan_h, (100, 100, 100)), 2.0, 60)
+        pages = []
+        out_dir = tmp_path / "score"
+        out_dir.mkdir(exist_ok=True)
+        (out_dir / "photos").mkdir(exist_ok=True)
+        (out_dir / "debug").mkdir(exist_ok=True)
+
+        committer.commit(a, b, pages, out_dir, 1, False, lambda msg: None, None, is_first=True)
+
+        assert len(pages) == 1
+        h, w = pages[0].image.shape[:2]
+        assert w == scan_w
+        assert h == scan_h
