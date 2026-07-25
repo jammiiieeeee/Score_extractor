@@ -926,7 +926,7 @@ class PreviewSeeker(QObject):
         self._height = 0
         self._seek_seq = 0
         self._ffmpeg = self._find_ffmpeg()
-        self._use_ffmpeg = self._ffmpeg is not None
+        self._use_ffmpeg = False
         self.seek_requested.connect(self._do_seek)
 
     def open(self, path: str):
