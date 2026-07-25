@@ -881,7 +881,6 @@ class ConfigTab(QWidget):
             self.sensitivity.setValue(cfg.get("change_detection_threshold", 0.96))
             self.min_interval.setValue(cfg.get("min_screenshot_interval", 3.0))
             ocr_conf = cfg.get("ocr_confidence_threshold", 40)
-            self.ocr_enabled.setChecked(ocr_conf > 0)
             self.ocr_conf.setValue(ocr_conf if ocr_conf > 0 else 40)
             self.adv_frame_check.setValue(cfg.get("frame_check_interval", 0.8))
             self.adv_top_ratio.setValue(cfg.get("top_analysis_ratio", 0.34))
