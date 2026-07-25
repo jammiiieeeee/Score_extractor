@@ -449,7 +449,7 @@ class BarProfilePlotter:
             sorted_peaks = sorted(peaks[:2], key=lambda p: p[0])
             colors = ['orange', 'purple']
             labels = ['Bar in A (old)', 'Bar in B (new)']
-            for pi, (col, val) in enumerate(peaks[:2]):
+            for pi, (col, val) in enumerate(sorted_peaks):
                 ax.axvline(x=col, color=colors[pi], linestyle='--', alpha=0.7)
                 ax.annotate(f'{labels[pi]} (col {col})', xy=(col, val),
                             xytext=(5, 5), textcoords='offset points', fontsize=8,
