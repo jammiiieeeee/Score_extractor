@@ -1521,7 +1521,8 @@ class ExtractTab(QWidget):
     def _on_crop_spin_changed(self, val: float):
         self.crop_widget.set_ratio(val)
         if self._has_existing_score:
-            self._api.reapply_crop(val)
+            offset = self.adv_crop_offset.value()
+            self._api.reapply_crop(offset, val)
             first = self._api.get_first_page_image()
             if first is not None:
                 self.crop_widget.set_frame(self._img_to_pixmap(first))

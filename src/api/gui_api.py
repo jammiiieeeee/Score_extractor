@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional, Callable, List
 
 from src.domain.value_objects.config import ScoreConfig
-from src.domain.models import Frame
+from src.domain.models import Frame, PageManifestEntry
 from src.domain.page_store import PageStore
 from src.infrastructure.video_service import VideoService
 from src.infrastructure.ocr_service import OcrService
@@ -387,7 +387,7 @@ class GuiApi:
             use_case = ExtractScoreUseCase(self._video_service, effective_ocr,
                                            self._file_service, self._config)
 
-            pages = use_case.execute(
+            pages, manifest_entries = use_case.execute(
                 extraction_video_path,
                 output_dir=score_dir,
                 no_ocr=no_ocr,
@@ -401,6 +401,11 @@ class GuiApi:
             )
 
             self._pages.set_pages(pages)
+
+            if manifest_entries:
+                manifest_path = score_dir / "page_manifest.json"
+                with open(str(manifest_path), 'w', encoding='utf-8') as f:
+                    json.dump([e.to_dict() for e in manifest_entries], f, indent=2)
 
             if not self._cancel_flag:
                 self._state.phase = "done"
@@ -623,8 +628,8 @@ class GuiApi:
     #  Re-extraction helpers
     # ═════════════════════════════════════════════════════════════════════
 
-    def reapply_crop(self, ratio: float) -> None:
-        self._pages.reapply_crop(ratio)
+    def reapply_crop(self, offset: float, ratio: float) -> None:
+        self._pages.reapply_crop(offset, ratio)
 
     def has_loaded_score(self) -> bool:
         return self._pages.has_originals() and self._loaded_score_path is not None

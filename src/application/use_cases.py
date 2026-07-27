@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, TextIO
 
 from src.domain.value_objects.config import ScoreConfig
-from src.domain.models import Frame
+from src.domain.models import Frame, PageManifestEntry
 from src.domain.interfaces import IVideoService, IOcrService, IPdfService, IFileService
 from src.domain.deduplication import Deduplicator
 from src.application.extraction_components import FrameStepper, PageCommitter, BarProfilePlotter
@@ -36,7 +36,7 @@ class ExtractScoreUseCase:
         on_page_detected: Optional[Callable[[int, np.ndarray], None]] = None,
         is_cancelled: Callable[[], bool] = lambda: False,
         original_video_path: Optional[str] = None,
-    ) -> List[Frame]:
+    ) -> tuple[List[Frame], List[PageManifestEntry]]:
         self.video_service.open_video(video_path)
         orig_w, orig_h = self.video_service.get_original_size()
 
@@ -85,6 +85,7 @@ class ExtractScoreUseCase:
         )
 
         unique_pages: List[Frame] = []
+        manifest_entries: List[PageManifestEntry] = []
         stepper.set_unique_pages_ref(unique_pages)
 
         log(f"Processing video: {video_path}")
@@ -99,10 +100,12 @@ class ExtractScoreUseCase:
             a_frame, b_frame = start_pair
             attempt_num += 1
             log(f"Start-time capture at {a_frame.timestamp:.1f}s...")
-            committer.commit(
+            entry = committer.commit(
                 a_frame, b_frame, unique_pages, output_dir, attempt_num,
                 debug, log, on_page_detected, is_first=True, plotter=plotter,
             )
+            if entry is not None:
+                manifest_entries.append(entry)
 
         log(f"Starting extraction from ~{stepper.current_idx / stepper.fps:.1f}s...")
 
@@ -120,10 +123,12 @@ class ExtractScoreUseCase:
                 log(f"  Change detected at ~{current_frame.timestamp:.1f}s, scanning for precise trigger...")
                 a_frame, b_frame = stepper.capture_a_b(current_frame)
                 attempt_num += 1
-                committer.commit(
+                entry = committer.commit(
                     a_frame, b_frame, unique_pages, output_dir, attempt_num,
                     debug, log, on_page_detected, is_first=False, plotter=plotter,
                 )
+                if entry is not None:
+                    manifest_entries.append(entry)
 
         # Tail scan for end-credits
         stepper.tail_scan(effective_ocr, unique_pages, stepper.current_idx, end_offset, debug, log_file)
@@ -134,7 +139,7 @@ class ExtractScoreUseCase:
         if log_file:
             log_file.close()
 
-        return unique_pages
+        return unique_pages, manifest_entries
 
 
 class GeneratePdfUseCase:

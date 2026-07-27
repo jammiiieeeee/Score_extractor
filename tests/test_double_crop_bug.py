@@ -157,8 +157,8 @@ class TestReapplyCropStillWorks:
         store = PageStore()
         store.set_originals([Frame(img, 0.0, 0)])
 
-        # reapply_crop crops to 900px (removes top 10%)
-        store.reapply_crop(0.1)
+        # reapply_crop: offset=0.0, ratio=0.9 → crops to 900px
+        store.reapply_crop(0.0, 0.9)
         assert store[0].image.shape[0] == 900, "reapply_crop: 900px"
 
         # PdfService crops again to 90px (900 * 0.1)

@@ -51,9 +51,10 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         (out / "photos").mkdir()
-        result = uc.execute("fake.mp4", out, no_ocr=True)
-        assert isinstance(result, list)
-        assert len(result) >= 0
+        pages, manifest = uc.execute("fake.mp4", out, no_ocr=True)
+        assert isinstance(pages, list)
+        assert isinstance(manifest, list)
+        assert len(pages) >= 0
 
     def test_extraction_with_ocr_disabled(self, tmp_path):
         frames, fps = self._make_frames(5)
@@ -61,8 +62,9 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         (out / "photos").mkdir()
-        result = uc.execute("fake.mp4", out, no_ocr=True)
-        assert isinstance(result, list)
+        pages, manifest = uc.execute("fake.mp4", out, no_ocr=True)
+        assert isinstance(pages, list)
+        assert isinstance(manifest, list)
 
     def test_extraction_with_ocr_fallback(self, tmp_path):
         frames, fps = self._make_frames(5)
@@ -71,8 +73,9 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         (out / "photos").mkdir()
-        result = uc.execute("fake.mp4", out, no_ocr=False)
-        assert isinstance(result, list)
+        pages, manifest = uc.execute("fake.mp4", out, no_ocr=False)
+        assert isinstance(pages, list)
+        assert isinstance(manifest, list)
 
     def test_extraction_cancelled(self, tmp_path):
         frames, fps = self._make_frames(10)
@@ -84,8 +87,9 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         (out / "photos").mkdir()
-        result = uc.execute("fake.mp4", out, no_ocr=True, is_cancelled=cancel)
-        assert isinstance(result, list)
+        pages, manifest = uc.execute("fake.mp4", out, no_ocr=True, is_cancelled=cancel)
+        assert isinstance(pages, list)
+        assert isinstance(manifest, list)
 
     def test_extraction_with_start_time(self, tmp_path):
         frames, fps = self._make_frames(100)
@@ -93,8 +97,9 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         (out / "photos").mkdir()
-        result = uc.execute("fake.mp4", out, no_ocr=True, start_time=1.0)
-        assert isinstance(result, list)
+        pages, manifest = uc.execute("fake.mp4", out, no_ocr=True, start_time=1.0)
+        assert isinstance(pages, list)
+        assert isinstance(manifest, list)
 
     def test_extraction_with_end_offset(self, tmp_path):
         frames, fps = self._make_frames(100)
@@ -102,8 +107,9 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         (out / "photos").mkdir()
-        result = uc.execute("fake.mp4", out, no_ocr=True, end_offset=5.0)
-        assert isinstance(result, list)
+        pages, manifest = uc.execute("fake.mp4", out, no_ocr=True, end_offset=5.0)
+        assert isinstance(pages, list)
+        assert isinstance(manifest, list)
 
     def test_callbacks_called(self, tmp_path):
         frames, fps = self._make_frames(5)

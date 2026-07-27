@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, TextIO
 
 from src.domain.value_objects.config import ScoreConfig
-from src.domain.models import Frame
+from src.domain.models import Frame, PageManifestEntry
 from src.domain.interfaces import IVideoService, IOcrService, IFileService
 from src.domain.deduplication import Deduplicator
 
@@ -296,7 +296,7 @@ class PageCommitter:
         on_page_detected: Optional[Callable[[int, np.ndarray], None]] = None,
         is_first: bool = False,
         plotter: Optional['BarProfilePlotter'] = None,
-    ) -> None:
+    ) -> Optional[PageManifestEntry]:
         page_num = attempt_num
 
         # Read full-res A/B frames from original video when available,
@@ -328,7 +328,8 @@ class PageCommitter:
             self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
             self.config.bar_padding_px, debug_path
         )
-        log(f"  Bar right edge at x={bar_x}, width={bar_width}px for page {page_num}")
+        merge_x = max(0, bar_x - bar_width + self.config.bar_padding_px) if bar_x > 0 else 0
+        log(f"  Bar right edge at x={bar_x}, width={bar_width}px, merge_x={merge_x} for page {page_num}")
 
         # Deduplication check
         is_dup = False
@@ -380,6 +381,17 @@ class PageCommitter:
                 self.deduplicator, peaks=bar_peaks, has_clean=has_clean_profile,
                 has_left_spike=has_left_spike
             )
+
+        return PageManifestEntry(
+            page=attempt_num,
+            timestamp=frame_a.timestamp,
+            frame_index=frame_a.index,
+            bar_x=bar_x,
+            bar_width=bar_width,
+            merge_x=merge_x,
+            is_duplicate=is_dup,
+            ocr_number=str(merged_number) if merged_number is not None else None,
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
