@@ -50,9 +50,6 @@ class TestScoreConfigDefaults:
     def test_default_crop_ratio(self):
         assert ScoreConfig().default_crop_ratio == 0.32
 
-    def test_crop_top_offset(self):
-        assert ScoreConfig().crop_top_offset == 0.0
-
     def test_bar_min_diff_threshold(self):
         assert ScoreConfig().bar_min_diff_threshold == 500.0
 

@@ -39,8 +39,8 @@ class PdfService(IPdfService):
         for idx, img in enumerate(images):
             # Crop to PDF output region
             img_h = img.shape[0]
-            y_start = int(img_h * config.crop_top_offset)
-            y_end = int(img_h * (config.crop_top_offset + config.default_crop_ratio))
+            y_start = 0
+            y_end = int(img_h * config.default_crop_ratio)
             cropped_img = img[y_start:y_end, :]
 
             success, buf = cv2.imencode('.png', cropped_img)

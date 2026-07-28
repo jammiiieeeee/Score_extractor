@@ -180,7 +180,7 @@ class GuiApi:
             "b_overlay_width_ratio", "duplicate_top_ratio",
             "pixel_similarity_threshold", "row_similarity_threshold",
             "row_coverage_threshold", "ocr_horizontal_ratio",
-            "default_crop_ratio", "crop_top_offset",
+            "default_crop_ratio",
             "bar_left_margin",
         }
         valid_float_any = {
@@ -272,18 +272,10 @@ class GuiApi:
 
     def init_ocr(self) -> bool:
         if self._ocr_service is None:
-            self._ocr_service = OcrService()
+            self._ocr_service = OcrService(on_log=self._emit_log)
 
         with self._ocr_init_lock:
-            capture = io.StringIO()
-            with contextlib.redirect_stdout(capture):
-                result = self._ocr_service.initialize()
-
-            for line in capture.getvalue().splitlines():
-                line = line.strip()
-                if line:
-                    self._emit_log(line)
-
+            result = self._ocr_service.initialize()
             return result
 
     def ocr_status(self) -> bool:
@@ -384,6 +376,8 @@ class GuiApi:
             # Always use the low-res scan video for extraction (SSIM, bar detection, A/B merge)
             # The original_video_path is only used by PageCommitter for OCR/debug full-res reads
             extraction_video_path = self._video_info.path
+
+            self._emit_log("Extracting pages from video...")
 
             use_case = ExtractScoreUseCase(self._video_service, effective_ocr,
                                            self._file_service, self._config)
@@ -556,7 +550,6 @@ class GuiApi:
             self.save_metadata(str(score_dir), {
                 "score_name": final_title,
                 "crop_ratio": self._config.default_crop_ratio,
-                "crop_top_offset": self._config.crop_top_offset,
                 "page_count": len(self._pages),
                 "extraction_date": time.strftime("%Y-%m-%dT%H:%M:%S"),
             })
@@ -625,8 +618,6 @@ class GuiApi:
         self._loaded_score_metadata = self._read_metadata(score_dir)
         meta_crop = self._loaded_score_metadata.get("crop_ratio", 0.35)
         self._config.default_crop_ratio = meta_crop
-        meta_offset = self._loaded_score_metadata.get("crop_top_offset", 0.0)
-        self._config.crop_top_offset = meta_offset
         self._emit_log(f"Loaded {len(self._pages)} pages from {path}")
         return len(self._pages)
 
@@ -642,8 +633,8 @@ class GuiApi:
     #  Re-extraction helpers
     # ═════════════════════════════════════════════════════════════════════
 
-    def reapply_crop(self, offset: float, ratio: float) -> None:
-        self._pages.reapply_crop(offset, ratio)
+    def reapply_crop(self, ratio: float) -> None:
+        self._pages.reapply_crop(ratio)
 
     def has_loaded_score(self) -> bool:
         return self._pages.has_originals() and self._loaded_score_path is not None

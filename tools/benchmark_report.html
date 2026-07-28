@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Video Bottleneck Report</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 2rem; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: right; }
+th { background: #f5f5f5; }
+td:first-child, th:first-child { text-align: left; font-weight: bold; }
+tr:nth-child(even) { background: #fafafa; }
+</style></head>
+<body>
+<h1>Video Bottleneck Report</h1>
+<p>Generated: 2026-07-23 17:26:55</p>
+<table>
+<thead><tr>
+<th>Backend</th><th>Open (ms)</th><th>Seq Read (ms)</th><th>Seek+Read (ms)</th><th>Grab (ms)</th><th>Full Read (ms)</th><th>Resize (ms)</th><th>SSIM (ms)</th><th>AbsDiff (ms)</th><th>FFmpeg Subprocess (ms)</th><th>GUI Pipeline (ms)</th><th>Info</th>
+</tr></thead>
+<tbody>
+        <tr>
+            <td>CAP_ANY</td>
+            <td>33.71</td>
+            <td>0.75 &plusmn; 0.96</td>
+            <td>46.69 &plusmn; 7.59</td>
+            <td>0.41 &plusmn; 1.10</td>
+            <td>0.96 &plusmn; 1.22</td>
+            <td>0.00 &plusmn; 0.00</td>
+            <td>5.69 &plusmn; 0.18</td>
+            <td>0.69 &plusmn; 0.36</td>
+            <td>-</td>
+            <td>25.31 &plusmn; 8.06</td>
+            <td>640x360  30.00 fps  9535 frames</td>
+        </tr></tbody>
+</table>
+</body></html>

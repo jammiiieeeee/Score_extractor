@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clean Architecture - Piano Score Extractor</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            color: #2c3e50;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 3px solid #3498db;
+            margin-bottom: 40px;
+        }
+        .lesson-title {
+            font-size: 2.5em;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            font-size: 1.2em;
+            color: #7f8c8d;
+            font-weight: 300;
+        }
+        .architecture-diagram {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin: 30px 0;
+            text-align: center;
+        }
+        .layer {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+        .api-layer {
+            background-color: #3498db;
+            color: white;
+        }
+        .app-layer {
+            background-color: #2ecc71;
+            color: white;
+        }
+        .domain-layer {
+            background-color: #e74c3c;
+            color: white;
+        }
+        .infra-layer {
+            background-color: #f39c12;
+            color: white;
+        }
+        .arrow {
+            font-size: 2em;
+            color: #7f8c8d;
+            margin: 10px 0;
+        }
+        .content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin: 30px 0;
+        }
+        .code-example {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.95em;
+            line-height: 1.5;
+            margin: 20px 0;
+            overflow-x: auto;
+        }
+        .keyword { color: #e74c3c; font-weight: bold; }
+        .class-name { color: #3498db; }
+        .comment { color: #7f8c8d; font-style: italic; }
+        .method { color: #2ecc71; }
+        .property { color: #f39c12; }
+        .takeaway {
+            background: #e8f4f8;
+            padding: 20px;
+            border-left: 4px solid #3498db;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .warning {
+            background: #fdecea;
+            padding: 20px;
+            border-left: 4px solid #e74c3c;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .project-structure {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9em;
+            margin: 20px 0;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="lesson-title">Clean Architecture</h1>
+        <p class="subtitle">A Beginner's Guide Using Real-World Code</p>
+    </div>
+
+    <div class="content">
+        <h2>What is Clean Architecture?</h2>
+        <p>Clean Architecture is a software design philosophy that separates concerns into concentric layers. The core principle is: <strong>dependencies only point inward</strong>.</p>
+        
+        <div class="takeaway">
+            <strong>Key Principle:</strong> The outer layers depend on inner layers, but the inner layers never depend on outer layers. This makes your code testable, maintainable, and flexible.
+        </div>
+    </div>
+
+    <div class="architecture-diagram">
+        <h3>The Four Layers (From Outside → Inside)</h3>
+        <div class="layer api-layer">
+            <strong>1. API Layer</strong> (Outermost)<br>
+            Entry points: GUI, CLI, Web endpoints
+        </div>
+        <div class="arrow">↓</div>
+        <div class="layer app-layer">
+            <strong>2. Application Layer</strong><br>
+            Use Cases: Business operations/workflows
+        </div>
+        <div class="arrow">↓</div>
+        <div class="layer domain-layer">
+            <strong>3. Domain Layer</strong> (Core)<br>
+            Business Rules: Models, Interfaces, Value Objects
+        </div>
+        <div class="arrow">↑</div>
+        <div class="layer infra-layer">
+            <strong>4. Infrastructure Layer</strong><br>
+            Implementations: Databases, APIs, External Services
+        </div>
+    </div>
+
+    <div class="content">
+        <h2>Project Structure</h2>
+        <p>Let's look at how this project implements Clean Architecture:</p>
+        
+        <div class="project-structure">
+src/
+├── api/                    # API Layer
+│   └── gui_api.py          # PyQt6 GUI entry point
+├── application/            # Application Layer
+│   ├── use_cases.py        # Main extraction workflow
+│   └── extraction_components.py  # Helper components
+├── domain/                 # Domain Layer (Core)
+│   ├── models.py           # Business objects
+│   ├── interfaces.py       # Abstract contracts
+│   └── deduplication.py    # Business logic
+└── infrastructure/         # Infrastructure Layer
+    ├── video_service.py    # OpenCV implementation
+    ├── ocr_service.py      # PaddleOCR implementation
+    └── pdf_service.py      # ReportLab implementation
+        </div>
+    </div>
+
+    <div class="content">
+        <h2>Layer 1: Domain Layer (The Heart)</h2>
+        <p>The domain layer contains your core business logic. It has <strong>zero dependencies</strong> on external frameworks.</p>
+        
+        <div class="code-example">
+<span class="comment"># src/domain/models.py</span>
+<span class="keyword">from</span> dataclasses <span class="keyword">import</span> dataclass
+<span class="keyword">from</span> typing <span class="keyword">import</span> Optional
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="keyword">@dataclass</span>
+<span class="keyword">class</span> <span class="class-name">Frame</span>:
+    <span class="property">image</span>: np.ndarray
+    <span class="property">timestamp</span>: float
+    <span class="property">index</span>: int
+    <span class="property">path</span>: Optional[str] = None
+        </div>
+        
+        <div class="takeaway">
+            <strong>Why?</strong> The Frame model is a pure data structure. It doesn't know about video files, OCR, or PDFs. It just represents what a "frame" is in our business context.
+        </div>
+    </div>
+
+    <div class="content">
+        <h2>Layer 2: Interfaces (Contracts)</h2>
+        <p>Interfaces define <strong>what</strong> needs to happen, not <strong>how</strong>. They live in the domain layer but are implemented in infrastructure.</p>
+        
+        <div class="code-example">
+<span class="comment"># src/domain/interfaces.py</span>
+<span class="keyword">from</span> abc <span class="keyword">import</span> ABC, <span class="method">abstractmethod</span>
+
+<span class="keyword">class</span> <span class="class-name">IVideoService</span>(ABC):
+    <span class="keyword">@abstractmethod</span>
+    <span class="keyword">def</span> <span class="method">open_video</span>(self, video_path: str) -> None:
+        <span class="keyword">pass</span>
+    
+    <span class="keyword">@abstractmethod</span>
+    <span class="keyword">def</span> <span class="method">read_frames</span>(self):
+        <span class="keyword">pass</span>
+    
+    <span class="keyword">@abstractmethod</span>
+    <span class="keyword">def</span> <span class="method">close</span>(self) -> None:
+        <span class="keyword">pass</span>
+
+<span class="keyword">class</span> <span class="class-name">IOcrService</span>(ABC):
+    <span class="keyword">@abstractmethod</span>
+    <span class="keyword">def</span> <span class="method">initialize</span>(self) -> bool:
+        <span class="keyword">pass</span>
+    
+    <span class="keyword">@abstractmethod</span>
+    <span class="keyword">def</span> <span class="method">get_leftmost_number</span>(self, image, vertical_range, ...):
+        <span class="keyword">pass</span>
+        </div>
+        
+        <div class="warning">
+            <strong>Crucial Rule:</strong> Interfaces are in the domain layer, but they describe services that the domain needs. The domain doesn't know how these services are implemented!
+        </div>
+    </div>
+
+    <div class="content">
+        <h2>Layer 3: Application Layer (Orchestration)</h2>
+        <p>Use cases orchestrate the workflow. They use domain objects and interfaces, but don't know about specific implementations.</p>
+        
+        <div class="code-example">
+<span class="comment"># src/application/use_cases.py</span>
+<span class="keyword">class</span> <span class="class-name">ExtractScoreUseCase</span>:
+    <span class="keyword">def</span> <span class="method">__init__</span>(
+        self,
+        <span class="property">video_service</span>: IVideoService,  <span class="comment"># Interface, not implementation!</span>
+        <span class="property">ocr_service</span>: IOcrService,      <span class="comment"># Interface, not implementation!</span>
+        <span class="property">file_service</span>: IFileService,
+        <span class="property">config</span>: ScoreConfig
+    ):
+        self.video_service = video_service
+        self.ocr_service = ocr_service
+        self.file_service = file_service
+        self.config = config
+    
+    <span class="keyword">def</span> <span class="method">execute</span>(self, video_path: str, ...):
+        <span class="comment"># The workflow - doesn't know about OpenCV or PaddleOCR!</span>
+        self.video_service.open_video(video_path)
+        <span class="comment"># ... extraction logic ...</span>
+        self.video_service.close()
+        </div>
+        
+        <div class="takeaway">
+            <strong>Dependency Injection:</strong> The use case receives interfaces (not concrete classes). This means we can swap implementations without changing the business logic!
+        </div>
+    </div>
+
+    <div class="content">
+        <h2>Layer 4: Infrastructure Layer (Implementations)</h2>
+        <p>Infrastructure contains the actual implementations of interfaces. This is where external libraries live.</p>
+        
+        <div class="code-example">
+<span class="comment"># src/infrastructure/video_service.py</span>
+<span class="keyword">import</span> cv2  <span class="comment"># External library!</span>
+<span class="keyword">from</span> src.domain.interfaces <span class="keyword">import</span> IVideoService
+
+<span class="keyword">class</span> <span class="class-name">VideoService</span>(IVideoService):
+    <span class="keyword">def</span> <span class="method">__init__</span>(self):
+        self.<span class="property">cap</span> = None  <span class="comment"># OpenCV-specific state</span>
+    
+    <span class="keyword">def</span> <span class="method">open_video</span>(self, video_path: str) -> None:
+        self.cap = cv2.VideoCapture(video_path)  <span class="comment"># OpenCV implementation</span>
+        <span class="keyword">if not</span> self.cap.isOpened():
+            <span class="keyword">raise</span> ValueError(<span class="comment">f"Could not open video: {video_path}"</span>)
+    
+    <span class="keyword">def</span> <span class="method">read_frames</span>(self):
+        <span class="keyword">while True</span>:
+            ret, frame = self.cap.read()
+            <span class="keyword">if not</span> ret:
+                <span class="keyword">break</span>
+            <span class="keyword">yield</span> frame, timestamp, frame_idx
+        </div>
+        
+        <div class="takeaway">
+            <strong>Isolation:</strong> All OpenCV code is in one file. If we wanted to switch to FFmpeg, we'd only change this file—the rest of the system stays the same!
+        </div>
+    </div>
+
+    <div class="content">
+        <h2>Real Benefits in This Project</h2>
+        
+        <h3>1. Testability</h3>
+        <p>We can test business logic without video files or OCR engines:</p>
+        <div class="code-example">
+<span class="comment"># Mock the interfaces for testing</span>
+<span class="keyword">class</span> <span class="class-name">MockVideoService</span>(IVideoService):
+    <span class="keyword">def</span> <span class="method">open_video</span>(self, video_path):
+        <span class="keyword">pass</span>  <span class="comment"># Do nothing</span>
+    
+    <span class="keyword">def</span> <span class="method">read_frames</span>(self):
+        <span class="keyword">yield</span> mock_frame, 0.0, 0  <span class="comment"># Return test data</span>
+
+<span class="comment"># Now test the use case with fake data!</span>
+use_case = ExtractScoreUseCase(
+    video_service=MockVideoService(),
+    ocr_service=MockOcrService(),
+    ...
+)
+        </div>
+        
+        <h3>2. Swappable Components</h3>
+        <p>Need to change OCR engines? Just create a new implementation:</p>
+        <div class="code-example">
+<span class="comment"># Current: PaddleOCR</span>
+<span class="keyword">from</span> src.infrastructure.ocr_service <span class="keyword">import</span> OcrService
+
+<span class="comment"># Future: Tesseract (just change this one line!)</span>
+<span class="keyword">from</span> src.infrastructure.tesseract_ocr <span class="keyword">import</span> TesseractOcrService
+        </div>
+        
+        <h3>3. Clear Boundaries</h3>
+        <p>Everyone knows where to find code:</p>
+        <ul>
+            <li><strong>Business rules?</strong> → Domain layer</li>
+            <li><strong>New workflow?</strong> → Application layer</li>
+            <li><strong>External service?</strong> → Infrastructure layer</li>
+            <li><strong>User interface?</strong> → API layer</li>
+        </ul>
+    </div>
+
+    <div class="content">
+        <h2>The Dependency Rule</h2>
+        <div class="architecture-diagram">
+            <div class="layer api-layer">API Layer depends on → Application Layer</div>
+            <div class="arrow">↓</div>
+            <div class="layer app-layer">Application Layer depends on → Domain Layer</div>
+            <div class="arrow">↓</div>
+            <div class="layer domain-layer">Domain Layer depends on → Nothing (except standard libraries)</div>
+            <div class="arrow">↑</div>
+            <div class="layer infra-layer">Infrastructure Layer implements → Domain Interfaces</div>
+        </div>
+        
+        <div class="warning">
+            <strong>Violation Example:</strong> If your Domain layer imports OpenCV or PaddleOCR, you've broken the rule! Those belong in Infrastructure.
+        </div>
+    </div>
+
+    <div class="content">
+        <h2>Summary: Key Takeaways</h2>
+        
+        <div class="takeaway">
+            <strong>For Beginners:</strong>
+            <ol>
+                <li><strong>Start with the Domain:</strong> Define your business objects and rules first</li>
+                <li><strong>Use Interfaces:</strong> Create contracts before implementations</li>
+                <li><strong>Inject Dependencies:</strong> Pass implementations in, don't hardcode them</li>
+                <li><strong>Keep Outer Layers Thin:</strong> They should mostly delegate to inner layers</li>
+                <li><strong>Test from Inside Out:</strong> Domain → Application → Infrastructure → API</li>
+            </ol>
+        </div>
+        
+        <p>This architecture scales from small projects to large systems. The Piano Score Extractor demonstrates Clean Architecture at a manageable size—perfect for learning!</p>
+    </div>
+
+    <div class="footer">
+        <p>Piano Score Video-to-PDF Extractor | Clean Architecture Tutorial</p>
+        <p>Reference: <a href="https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html">Robert C. Martin's Clean Architecture</a></p>
+    </div>
+</body>
+</html>
+        

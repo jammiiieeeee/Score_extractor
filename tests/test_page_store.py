@@ -252,21 +252,21 @@ class TestPageStoreReapplyCrop:
         store.set_originals(originals)
         store.add(_frame(99))
 
-        store.reapply_crop(0.0, 0.5)
+        store.reapply_crop(0.5)
         assert len(store) == 2
         assert store[0].image.shape[0] == 300
 
     def test_reapply_crop_with_no_originals_noop(self):
         store = PageStore()
         store.add(_frame(10))
-        store.reapply_crop(0.0, 0.5)
+        store.reapply_crop(0.5)
         assert len(store) == 1
 
     def test_reapply_crop_preserves_metadata(self):
         store = PageStore()
         f = _frame(100, ts=5.5, idx=42, h=400)
         store.set_originals([f])
-        store.reapply_crop(0.0, 0.25)
+        store.reapply_crop(0.25)
         assert store[0].timestamp == 5.5
         assert store[0].index == 42
         assert store[0].image.shape[0] == 100

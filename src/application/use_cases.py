@@ -47,7 +47,7 @@ class ExtractScoreUseCase:
             effective_ocr = _NoopOcrService()
         else:
             if not self.ocr_service.initialize():
-                on_log("[Warning] OCR initialization failed, continuing without OCR.")
+                on_log("[WARN] OCR initialization failed, continuing without OCR.")
                 from src.domain.interfaces import _NoopOcrService
                 effective_ocr = _NoopOcrService()
             else:
@@ -143,13 +143,15 @@ class ExtractScoreUseCase:
 
 
 class GeneratePdfUseCase:
-    def __init__(self, pdf_service: IPdfService, config: ScoreConfig):
+    def __init__(self, pdf_service: IPdfService, config: ScoreConfig,
+                 on_log: Callable[[str], None] = print):
         self.pdf_service = pdf_service
         self.config = config
+        self._log = on_log
 
     def execute(self, frames: List[Frame], output_path: str):
         if not frames:
-            print("No pages detected. PDF not generated.")
+            self._log("[WARN] No pages detected. PDF not generated.")
             return
 
         images = [f.image for f in frames]
@@ -157,6 +159,6 @@ class GeneratePdfUseCase:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
 
-        print(f"Generating PDF with {len(frames)} pages...")
+        self._log(f"Generating PDF with {len(frames)} pages...")
         self.pdf_service.create_pdf(images, output, self.config, title_hint=final_title)
-        print(f"PDF generated: {output_path}")
+        self._log(f"PDF generated: {output_path}")

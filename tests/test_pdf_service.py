@@ -50,7 +50,7 @@ class TestCreatePdf:
         assert out.stat().st_size > 0
 
     def test_crops_images_using_config(self, pdf_svc, tmp_path):
-        custom_config = ScoreConfig(crop_top_offset=0.1, default_crop_ratio=0.5)
+        custom_config = ScoreConfig(default_crop_ratio=0.5)
         img = make_solid_image(800, 1000)
         out = tmp_path / "cropped.pdf"
         pdf_svc.create_pdf([img], out, custom_config, title_hint="Cropped")

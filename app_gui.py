@@ -825,22 +825,19 @@ class ConfigTab(QWidget):
              "How far across the page (from the left) OCR text is extracted.\n"
              "Useful for scores where the title/header sits on the left side.\n"
              "Safe range: 0.20–0.50. Set to 1.0 for full-width OCR."),
-            ("Crop top offset:", self._spin_float(0.0, 1.0, 0.01, 0.0),
-             "Shifts the crop region downward by this fraction of the frame height.\n"
-             "Useful when the score content doesn't start at the very top.\n"
-             "Safe range: 0.0–0.10. Usually leave at 0.0."),
-            ("Blank content std threshold:", self._spin_float(0.0, 50.0, 0.5, 3.0),
-             "Pixel standard deviation below which a frame is considered blank\n"
-             "(white/black screen, no content). Blank frames are skipped.\n"
-             "Safe range: 1.0–8.0. Raise to 10+ if real content is being rejected."),
+
+("Blank content std threshold:", self._spin_float(0.0, 50.0, 0.5, 3.0),
+              "Pixel standard deviation below which a frame is considered blank\n"
+              "(white/black screen, no content). Blank frames are skipped.\n"
+              "Safe range: 1.0–8.0. Raise to 10+ if real content is being rejected."),
             ("Bar min diff threshold:", self._spin_float(0.0, 50000.0, 100.0, 500.0),
-             "Minimum pixel intensity difference required to detect the black\n"
-             "bar overlay on the B-frame. Higher = less sensitive to the bar.\n"
-             "Safe range: 200–2000. Raise if the bar isn't being detected."),
+              "Minimum pixel intensity difference required to detect the black\n"
+              "bar overlay on the B-frame. Higher = less sensitive to the bar.\n"
+              "Safe range: 200–2000. Raise if the bar isn't being detected."),
             ("Bar overlay offset (px):", self._spin_int(-200, 200, -15),
-             "Pixel offset applied to the bar detection position.\n"
-             "Negative = shift left, positive = shift right.\n"
-             "Safe range: -50 to +50. Fine-tune when the bar position is slightly off."),
+              "Pixel offset applied to the bar detection position.\n"
+              "Negative = shift left, positive = shift right.\n"
+              "Safe range: -50 to +50. Fine-tune when the bar position is slightly off."),
         ]
 
         for r, (label_text, spinbox, tip) in enumerate(adv_fields):
@@ -863,10 +860,9 @@ class ConfigTab(QWidget):
         self.adv_row_sim = adv_fields[7][1]
         self.adv_row_cov = adv_fields[8][1]
         self.adv_ocr_horiz = adv_fields[9][1]
-        self.adv_crop_offset = adv_fields[10][1]
-        self.adv_blank_std = adv_fields[11][1]
-        self.adv_bar_diff = adv_fields[12][1]
-        self.adv_bar_pad = adv_fields[13][1]
+        self.adv_blank_std = adv_fields[10][1]
+        self.adv_bar_diff = adv_fields[11][1]
+        self.adv_bar_pad = adv_fields[12][1]
 
         # Debug mode checkbox
         r = len(adv_fields)
@@ -915,7 +911,7 @@ class ConfigTab(QWidget):
             self.crop_ratio, self.sensitivity, self.min_interval, self.ocr_conf,
             self.adv_frame_check, self.adv_top_ratio, self.adv_a_delay, self.adv_b_delay,
             self.adv_overlay, self.adv_dup_top, self.adv_pixel_sim, self.adv_row_sim,
-            self.adv_row_cov, self.adv_ocr_horiz, self.adv_crop_offset, self.adv_blank_std,
+            self.adv_row_cov, self.adv_ocr_horiz, self.adv_blank_std,
             self.adv_bar_diff,
             self.adv_bar_pad,
         ]
@@ -938,7 +934,6 @@ class ConfigTab(QWidget):
                 "row_similarity_threshold": self.adv_row_sim.value(),
                 "row_coverage_threshold": self.adv_row_cov.value(),
                 "ocr_horizontal_ratio": self.adv_ocr_horiz.value(),
-                "crop_top_offset": self.adv_crop_offset.value(),
                 "blank_content_std_threshold": self.adv_blank_std.value(),
                 "bar_min_diff_threshold": self.adv_bar_diff.value(),
                 "bar_padding_px": self.adv_bar_pad.value(),
@@ -969,7 +964,6 @@ class ConfigTab(QWidget):
             self.adv_row_sim.setValue(cfg.get("row_similarity_threshold", 0.98))
             self.adv_row_cov.setValue(cfg.get("row_coverage_threshold", 0.94))
             self.adv_ocr_horiz.setValue(cfg.get("ocr_horizontal_ratio", 0.30))
-            self.adv_crop_offset.setValue(cfg.get("crop_top_offset", 0.0))
             self.adv_blank_std.setValue(cfg.get("blank_content_std_threshold", 3.0))
             self.adv_bar_diff.setValue(cfg.get("bar_min_diff_threshold", 500.0))
             self.adv_bar_pad.setValue(cfg.get("bar_padding_px", -15))
@@ -1109,6 +1103,7 @@ class ExtractTab(QWidget):
         self._loaded_original_ratio: Optional[float] = None
         self._project_dir: str = ""
         self._has_existing_score = False
+        self._reextract_mode = False
 
         # Background preview seeker thread
         self._preview_thread = QThread(self)
@@ -1278,6 +1273,11 @@ class ExtractTab(QWidget):
         # ── Action bar ──
         action_row = QHBoxLayout()
         action_row.addStretch()
+        self.reextract_btn = QPushButton("Re-extract")
+        self.reextract_btn.setObjectName("secondary")
+        self.reextract_btn.setFixedWidth(110)
+        self.reextract_btn.setVisible(False)
+        self.reextract_btn.clicked.connect(self._on_reextract)
         self.action_btn = QPushButton("Start Extraction")
         self.action_btn.setEnabled(False)
         self.action_btn.setFixedWidth(200)
@@ -1285,6 +1285,7 @@ class ExtractTab(QWidget):
         self.cancel_btn.setObjectName("danger")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.setFixedWidth(90)
+        action_row.addWidget(self.reextract_btn)
         action_row.addWidget(self.action_btn)
         action_row.addWidget(self.cancel_btn)
         layout.addLayout(action_row)
@@ -1435,6 +1436,7 @@ class ExtractTab(QWidget):
     def _switch_to_new_project(self):
         self._api.clear_pages()
         self._has_existing_score = False
+        self._reextract_mode = False
         self._loaded_original_ratio = None
         self._completed_pdf_path = None
         self._project_dir = ""
@@ -1607,8 +1609,7 @@ class ExtractTab(QWidget):
     def _on_crop_spin_changed(self, val: float):
         self.crop_widget.set_ratio(val)
         if self._has_existing_score:
-            offset = self.adv_crop_offset.value()
-            self._api.reapply_crop(offset, val)
+            self._api.reapply_crop(val)
             first = self._api.get_first_page_image()
             if first is not None:
                 self.crop_widget.set_frame(self._img_to_pixmap(first))
@@ -1623,6 +1624,12 @@ class ExtractTab(QWidget):
         except ValueError as e:
             QMessageBox.warning(self, "Error", str(e))
 
+    def _on_reextract(self):
+        self._reextract_mode = True
+        self._set_video_controls_enabled(True)
+        self._update_state()
+        self._log("Re-extract mode enabled — select a video and adjust settings")
+
     # ── State management ──
 
     def _update_state(self):
@@ -1633,18 +1640,27 @@ class ExtractTab(QWidget):
 
         if self._busy:
             pass  # button text set by _on_action
+        elif self._reextract_mode:
+            self.action_btn.setText("Start Extraction")
+            self.action_btn.setEnabled(can_act and has_video)
+            self.reextract_btn.setVisible(False)
+            self.status_label.setText(
+                f"Re-extract mode — new extraction will replace {self._api.get_page_count()} existing pages")
         elif self._has_existing_score and has_pages:
             self.action_btn.setText("Regenerate PDF")
             self.action_btn.setEnabled(can_act)
+            self.reextract_btn.setVisible(True)
             self.status_label.setText(
-                f"Loaded {self._api.get_page_count()} pages — adjust crop ratio and regenerate")
+                f"Loaded {self._api.get_page_count()} pages — adjust crop ratio and regenerate, or re-extract")
         elif has_project and has_video:
             self.action_btn.setText("Start Extraction")
             self.action_btn.setEnabled(can_act)
+            self.reextract_btn.setVisible(False)
             self.status_label.setText("Ready — click Start Extraction to begin")
         else:
             self.action_btn.setText("Start Extraction")
             self.action_btn.setEnabled(False)
+            self.reextract_btn.setVisible(False)
             if not has_video:
                 self.status_label.setText("Select a video source above to begin")
             elif not has_project:
@@ -1659,10 +1675,10 @@ class ExtractTab(QWidget):
             return
         if self._completed_pdf_path:
             self._open_pdf()
-        elif self._has_existing_score and self._api.get_page_count() > 0:
-            self._regenerate_pdf()
-        else:
+        elif self._reextract_mode or not (self._has_existing_score and self._api.get_page_count() > 0):
             self._start_extraction()
+        else:
+            self._regenerate_pdf()
 
     def _start_extraction(self):
         video_path = self._video_path
@@ -1674,6 +1690,27 @@ class ExtractTab(QWidget):
         if not project:
             QMessageBox.warning(self, "Error", "Please enter a project name.")
             return
+
+        project_dir = self.get_project_dir()
+        photos_dir = Path(project_dir) / "photos"
+        if photos_dir.is_dir():
+            existing = sorted(photos_dir.glob("page_*_merged.png"))
+            if existing:
+                reply = QMessageBox.question(
+                    self,
+                    "Overwrite Existing Project",
+                    f"Project \"{project}\" already exists with {len(existing)} pages.\n\n"
+                    f"Extraction will overwrite the existing pages. Continue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
+
+        # Clear old pages before re-extraction
+        if photos_dir.is_dir():
+            for f in photos_dir.glob("page_*_merged.png"):
+                f.unlink(missing_ok=True)
 
         main_win = self.window()
         if hasattr(main_win, 'config_tab'):
@@ -1802,6 +1839,7 @@ class ExtractTab(QWidget):
 
     def _reset_ui(self):
         self._busy = False
+        self._reextract_mode = False
         self.cancel_btn.setEnabled(False)
         self.action_btn.setText("Start Extraction")
         self.download_btn.setEnabled(True)

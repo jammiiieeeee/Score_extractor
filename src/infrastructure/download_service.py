@@ -85,9 +85,6 @@ class DownloadService:
             if scan_files:
                 scan_path = str(scan_files[0])
 
-        if on_log:
-            on_log(f"  Cached video found: {main_path}")
-
         return DownloadResult(video_path=main_path, video_title=video_id, scan_path=scan_path)
 
     def download(
@@ -221,8 +218,8 @@ class DownloadService:
                         on_log(f"  Download path: {scan_path}")
 
         if on_log:
-            on_log(f"Title: {video_title}")
-            on_log(f"Downloaded to: {video_path}")
+            on_log(f"  Title: {video_title}")
+            on_log(f"  Saved to: {video_path}")
 
         if is_cancelled and is_cancelled():
             raise Exception("Download cancelled by user")

@@ -73,7 +73,6 @@ Guard rails applied to each A/B capture pair before deduplication:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `default_crop_ratio` | float | 0.32 | Height of each PDF strip |
-| `crop_top_offset` | float | 0.0 | Starting Y offset for crop |
 
 ### Bar Detection
 | Field | Type | Default | Description |

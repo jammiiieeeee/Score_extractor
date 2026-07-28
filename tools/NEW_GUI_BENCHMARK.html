@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Video Bottleneck Report</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 2rem; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: right; }
+th { background: #f5f5f5; }
+td:first-child, th:first-child { text-align: left; font-weight: bold; }
+tr:nth-child(even) { background: #fafafa; }
+.group-sep { border-left: 3px solid #999; }
+</style></head>
+<body>
+<h1>Video Bottleneck Report</h1>
+<p>Generated: 2026-07-24 09:46:50</p>
+<table>
+<thead><tr>
+<th>Backend</th><th>Open</th><th>Seq Read</th><th>Seek+Read</th><th>Grab</th>
+<th>Full Read</th><th>Resize</th><th>SSIM</th><th>AbsDiff</th>
+<th class="group-sep">FFmpeg Sub</th><th>GUI Pipeline</th>
+<th class="group-sep">Preview Single</th><th>Burst P50</th><th>Burst P95</th><th>Burst P99</th><th>Stale</th>
+<th class="group-sep">Cold Start</th><th>Qt Render</th>
+<th>Info</th>
+</tr></thead>
+<tbody>
+        <tr>
+            <td>CAP_ANY</td>
+            <td>24.36</td>
+            <td>0.48 &plusmn; 0.67</td>
+            <td>21.74 &plusmn; 3.22</td>
+            <td>0.19 &plusmn; 0.40</td>
+            <td>0.63 &plusmn; 0.69</td>
+            <td>0.00 &plusmn; 0.00</td>
+            <td>3.28 &plusmn; 0.10</td>
+            <td>0.48 &plusmn; 0.22</td>
+            <td>-</td>
+            <td>13.37 &plusmn; 3.33</td>
+            <td>12.45 &plusmn; 3.31</td>
+            <td>99.99</td>
+            <td>229.51</td>
+            <td>240.28</td>
+            <td>0/20 (0%)</td>
+            <td>10.38</td>
+            <td>0.17 &plusmn; 0.05</td>
+            <td>640x360  30.00 fps  9535 frames</td>
+        </tr>
+        <tr>
+            <td>CAP_FFMPEG</td>
+            <td>7.83</td>
+            <td>0.39 &plusmn; 0.77</td>
+            <td>21.55 &plusmn; 3.43</td>
+            <td>0.18 &plusmn; 0.41</td>
+            <td>0.54 &plusmn; 0.71</td>
+            <td>0.00 &plusmn; 0.00</td>
+            <td>3.32 &plusmn; 0.05</td>
+            <td>0.32 &plusmn; 0.04</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>640x360  30.00 fps  9535 frames</td>
+        </tr>
+        <tr>
+            <td>CAP_GSTREAMER</td>
+            <td>0.00</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td></td>
+        </tr></tbody>
+</table>
+</body></html>

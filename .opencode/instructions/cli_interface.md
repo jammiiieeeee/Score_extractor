@@ -34,7 +34,7 @@ python main.py input_video.mp4 --output-dir ./output --score-name "Sonata"
 ```
 1. Opens video, initializes OCR (unless `--no-ocr`)
 2. Runs `ExtractScoreUseCase.execute()`
-3. Explicitly crops each page using `config.crop_top_offset` and `config.default_crop_ratio`
+3. Explicitly crops each page using `config.default_crop_ratio`
 4. Calls `PdfService.create_pdf()` with pre-cropped images
 5. Debug artifacts saved to `<output_dir>/debug/` if `--debug`
 

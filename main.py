@@ -22,7 +22,7 @@ def load_config(config_path: str) -> ScoreConfig:
                 data = json.load(f)
                 return ScoreConfig(**data)
         except Exception as e:
-            print(f"Warning: Failed to load config, using defaults. {e}")
+            print(f"[WARN] Failed to load config, using defaults. {e}")
     return ScoreConfig()
 
 
@@ -69,12 +69,12 @@ def main():
     if args.from_dir:
         score_dir = Path(args.from_dir)
         if not score_dir.is_dir():
-            print(f"Error: Directory not found: {args.from_dir}")
+            print(f"[ERROR] Directory not found: {args.from_dir}")
             sys.exit(1)
 
         images = FileService().load_page_images(score_dir)
         if not images:
-            print(f"Error: No page images found in {score_dir}/photos/")
+            print(f"[ERROR] No page images found in {score_dir}/photos/")
             sys.exit(1)
 
         print(f"Loaded {len(images)} page images from {args.from_dir}")
@@ -126,7 +126,7 @@ def main():
             if not args.score_name:
                 args.score_name = result.video_title
         elif not video_path or not os.path.exists(video_path):
-            print(f"Error: File not found: {video_path}")
+            print(f"[ERROR] File not found: {video_path}")
             sys.exit(1)
 
         video_service = VideoService()
@@ -159,7 +159,7 @@ def main():
                 start_time=args.start_time,
                 debug=args.debug,
                 end_offset=args.end_offset,
-                on_progress=lambda pct, msg: print(f"\r  [{pct:5.1f}%] {msg}", end="", flush=True) if pct > 0 else None,
+                on_progress=lambda pct, msg: print(f"\r  [{pct:5.1f}%] {msg}", end="", flush=True),
             )
             print(f"\nExtraction complete: {len(pages)} pages found")
 
@@ -169,8 +169,8 @@ def main():
                 for page in pages:
                     img = page.image
                     img_h = img.shape[0]
-                    y_start = int(img_h * config.crop_top_offset)
-                    y_end = int(img_h * (config.crop_top_offset + config.default_crop_ratio))
+                    y_start = 0
+                    y_end = int(img_h * config.default_crop_ratio)
                     cropped_images.append(img[y_start:y_end, :])
                 pdf_service.create_pdf(
                     cropped_images,
@@ -186,7 +186,7 @@ def main():
         except Exception as e:
             import traceback
             traceback.print_exc()
-            print(f"\n[Error] {e}")
+            print(f"\n[ERROR] {e}")
             sys.exit(1)
         finally:
             video_service.close()

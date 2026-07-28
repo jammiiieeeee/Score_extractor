@@ -84,7 +84,7 @@ class FrameStepper:
                 self.last_trigger_idx = start_idx
                 return Frame(a_img.copy(), a_ts, start_idx), Frame(b_img.copy(), b_ts, b_idx)
             else:
-                self.on_log("Warning: Could not seek to start time, starting from beginning.")
+                self.on_log("  [WARN] Could not seek to start time, starting from beginning.")
 
         img, ts = self.video.read_frame_at(0)
         if img is None:
@@ -355,11 +355,11 @@ class PageCommitter:
             if not is_dup and not has_clean_profile:
                 is_dup = True
                 guard_rail_passed = False
-                log(f"  Page {page_num}: No clean bar profile, treated as duplicate")
+                log(f"  [SKIP] Page {page_num}: No clean bar profile, treated as duplicate")
             if not is_dup and not has_left_spike:
                 is_dup = True
                 guard_rail_passed = False
-                log(f"  Page {page_num}: Left spike outside margin, treated as duplicate")
+                log(f"  [SKIP] Page {page_num}: Left spike outside margin, treated as duplicate")
 
         for existing in unique_pages:
             if self.deduplicator.is_duplicate(existing.image, full_img, b_number=merged_number):

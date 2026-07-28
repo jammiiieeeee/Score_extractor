@@ -21,16 +21,14 @@ def dummy_image():
 
 class TestInitialize:
 
-    @patch("src.infrastructure.ocr_service.OcrService.__init__", lambda self: None)
     def test_returns_false_when_paddleocr_not_importable(self):
         with patch.dict("sys.modules", {"paddleocr": None}):
-            svc = OcrService.__new__(OcrService)
+            svc = OcrService()
             svc.ocr = None
             svc.enabled = False
             result = svc.initialize()
             assert result is False
 
-    @patch("src.infrastructure.ocr_service.OcrService.__init__", lambda self: None)
     def test_returns_true_on_successful_init(self):
         mock_paddle = MagicMock()
         mock_ocr_instance = MagicMock()
@@ -38,20 +36,19 @@ class TestInitialize:
         mock_paddle.PaddleOCR.return_value = mock_ocr_instance
 
         with patch.dict("sys.modules", {"paddleocr": mock_paddle}):
-            svc = OcrService.__new__(OcrService)
+            svc = OcrService()
             svc.ocr = None
             svc.enabled = False
             result = svc.initialize()
             assert result is True
             assert svc.enabled is True
 
-    @patch("src.infrastructure.ocr_service.OcrService.__init__", lambda self: None)
     def test_returns_false_when_all_attempts_fail(self):
         mock_paddle = MagicMock()
         mock_paddle.PaddleOCR.side_effect = Exception("init failed")
 
         with patch.dict("sys.modules", {"paddleocr": mock_paddle}):
-            svc = OcrService.__new__(OcrService)
+            svc = OcrService()
             svc.ocr = None
             svc.enabled = False
             result = svc.initialize()

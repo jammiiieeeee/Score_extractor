@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Extraction Process</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            color: #2c3e50;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 3px solid #3498db;
+            margin-bottom: 40px;
+        }
+        .phase {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin: 30px 0;
+            border-left: 6px solid;
+        }
+        .phase-1 { border-color: #3498db; }
+        .phase-2 { border-color: #27ae60; }
+        .phase-3 { border-color: #e74c3c; }
+        .phase-4 { border-color: #f39c12; }
+        .phase-5 { border-color: #9b59b6; }
+        
+        .phase-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .code-block {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9em;
+            margin: 15px 0;
+            overflow-x: auto;
+        }
+        .keyword { color: #e74c3c; }
+        .function { color: #2ecc71; }
+        .comment { color: #7f8c8d; font-style: italic; }
+        .string { color: #f39c12; }
+        
+        .diagram {
+            text-align: center;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin: 30px 0;
+        }
+        .step {
+            display: inline-block;
+            padding: 15px 25px;
+            margin: 5px;
+            border-radius: 8px;
+            font-weight: bold;
+            min-width: 120px;
+        }
+        .arrow {
+            font-size: 1.5em;
+            color: #7f8c8d;
+            vertical-align: middle;
+        }
+        .takeaway {
+            background: #eafaf1;
+            padding: 20px;
+            border-left: 4px solid #27ae60;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .warning {
+            background: #fdecea;
+            padding: 20px;
+            border-left: 4px solid #e74c3c;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .visual {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .frame-box {
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            min-width: 150px;
+        }
+        .frame-a { background: #ebf5fb; border: 2px solid #3498db; }
+        .frame-b { background: #eafaf1; border: 2px solid #27ae60; }
+        .frame-merged { background: #fef9e7; border: 2px solid #f39c12; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>The Extraction Process</h1>
+        <p>How Piano Score Videos Become PDF Pages</p>
+    </div>
+
+    <div class="diagram">
+        <h3>The 6-Phase Pipeline</h3>
+        <div class="step" style="background: #3498db; color: white;">1. Scan</div>
+        <span class="arrow">→</span>
+        <div class="step" style="background: #27ae60; color: white;">2. Detect</div>
+        <span class="arrow">→</span>
+        <div class="step" style="background: #e74c3c; color: white;">3. Capture</div>
+        <span class="arrow">→</span>
+        <div class="step" style="background: #f39c12; color: white;">4. Merge</div>
+        <span class="arrow">→</span>
+        <div class="step" style="background: #9b59b6; color: white;">5. Guard</div>
+        <span class="arrow">→</span>
+        <div class="step" style="background: #1abc9c; color: white;">6. Dedup</div>
+    </div>
+
+    <div class="phase phase-1">
+        <div class="phase-title">Phase 1: Frame Scanning (FrameStepper)</div>
+        
+        <p>The program reads video frames sequentially, skipping ahead at configurable intervals to speed up scanning.</p>
+        
+        <div class="code-block">
+<span class="comment"># src/application/extraction_components.py</span>
+
+<span class="keyword">class</span> <span class="function">FrameStepper</span>:
+    <span class="keyword">def</span> <span class="function">__init__</span>(self, video_service, config):
+        <span class="comment"># Calculate how many frames to skip between checks</span>
+        self.seek_step = max(1, int(config.frame_check_interval * fps))
+    
+    <span class="keyword">def</span> <span class="function">step</span>(self):
+        <span class="comment"># Skip frames for speed</span>
+        <span class="keyword">if</span> self.seek_step > 1:
+            self.video.skip_frames(self.seek_step - 1)
+        
+        <span class="comment"># Read next frame</span>
+        frame_img, timestamp, current_idx = self.video.read_next_frame()
+        <span class="keyword">return</span> Frame(frame_img, timestamp, current_idx)
+        </div>
+        
+        <div class="takeaway">
+            <strong>Key Insight:</strong> We don't check every frame! With <code>frame_check_interval=0.8</code>, we skip ~24 frames on a 30fps video, making it 25x faster.
+        </div>
+    </div>
+
+    <div class="phase phase-2">
+        <div class="phase-title">Phase 2: Page Change Detection (SSIM)</div>
+        
+        <p>Uses Structural Similarity Index (SSIM) to detect when the top portion of the frame changes significantly.</p>
+        
+        <div class="code-block">
+<span class="comment"># Compare TOP portion of frame (where page numbers appear)</span>
+<span class="keyword">def</span> <span class="function">_get_roi</span>(self, img):
+    h, w = img.shape[:2]
+    y_end = int(h * self.config.top_analysis_ratio)  <span class="comment"># Top 34%</span>
+    roi = img[0:y_end, :]
+    small = cv2.resize(roi, (320, ...))
+    <span class="keyword">return</span> cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+
+<span class="comment"># SSIM: 1.0 = identical, 0.0 = completely different</span>
+ssim_score = ssim(
+    self._get_roi(self.last_stable_frame.image),
+    self._get_roi(current_frame.image)
+)
+
+<span class="comment"># Trigger if below threshold (default: 0.96)</span>
+<span class="keyword">if</span> ssim_score < self.config.change_detection_threshold:
+    <span class="comment"># PAGE CHANGE DETECTED!</span>
+        </div>
+        
+        <div class="visual">
+            <div class="frame-box frame-a">
+                <strong>Frame N</strong><br>
+                Page 5 visible<br>
+                SSIM = 1.0
+            </div>
+            <span class="arrow">→</span>
+            <div class="frame-box frame-b">
+                <strong>Frame N+24</strong><br>
+                Page 6 visible<br>
+                SSIM = 0.89
+            </div>
+        </div>
+        
+        <div class="takeaway">
+            <strong>Why top 34%?</strong> Piano scores have page numbers at the top. When the page changes, the top changes first. The bottom (music notes) might look similar between pages.
+        </div>
+    </div>
+
+    <div class="phase phase-3">
+        <div class="phase-title">Phase 3: A/B Frame Capture</div>
+        
+        <p>Once a change is detected, we capture TWO frames with a time delay to get the clearest view.</p>
+        
+        <div class="code-block">
+<span class="keyword">def</span> <span class="function">capture_a_b</span>(self, trigger_frame):
+    <span class="comment"># A-frame: captured AFTER a small delay (0.3s)</span>
+    <span class="comment"># This lets the page transition complete</span>
+    a_frame = trigger_frame
+    delay_frames = int(self.config.a_capture_delay * self.fps)
+    <span class="keyword">if</span> delay_frames > 0:
+        cap_idx = a_frame.index + delay_frames
+        a_img, a_ts = self.video.read_frame_at(cap_idx)
+        a_frame = Frame(a_img, a_ts, cap_idx)
+    
+    <span class="comment"># B-frame: captured 3 seconds later (stability delay)</span>
+    <span class="comment"># This ensures we have a clean, stable view</span>
+    b_idx = a_frame.index + self.stability_frames
+    b_img, b_ts = self.video.read_frame_at(b_idx)
+    b_frame = Frame(b_img, b_ts, b_idx)
+    
+    <span class="keyword">return</span> a_frame, b_frame
+        </div>
+        
+        <div class="visual">
+            <div class="frame-box frame-a">
+                <strong>A-Frame</strong><br>
+                Time: 5.3s<br>
+                Page transition complete
+            </div>
+            <span class="arrow">+ 3 seconds</span>
+            <div class="frame-box frame-b">
+                <strong>B-Frame</strong><br>
+                Time: 8.3s<br>
+                Stable, clean view
+            </div>
+        </div>
+        
+        <div class="warning">
+            <strong>Why two frames?</strong> Videos often have transitions, animations, or the playback bar moving. The A-frame catches the page change, the B-frame ensures stability.
+        </div>
+    </div>
+
+    <div class="phase phase-4">
+        <div class="phase-title">Phase 4: Dynamic Bar Erase & Merge</div>
+        
+        <p>The playback bar (progress indicator) moves across the screen. We detect it and merge A+B to remove it.</p>
+        
+        <div class="code-block">
+<span class="comment"># Detect the playback bar by comparing A and B frames</span>
+<span class="keyword">def</span> <span class="function">merge_frames</span>(self, frame_a, frame_b, ...):
+    <span class="comment"># Find where the bar is (column with maximum difference)</span>
+    diff = np.abs(a_top - b_top)
+    col_sums = np.sum(diff, axis=0)
+    bar_x = np.argmax(col_sums)
+    
+    <span class="comment"># Overlay left portion of B onto A</span>
+    <span class="comment"># This replaces the old bar position with clean content</span>
+    overlay_width = int(frame_b.shape[1] * overlay_width_ratio)
+    merged = frame_a.copy()
+    merged[:, :overlay_width] = frame_b[:, :overlay_width]
+    
+    <span class="keyword">return</span> merged, bar_x, bar_width
+        </div>
+        
+        <div class="visual">
+            <div class="frame-box frame-a">
+                <strong>Frame A</strong><br>
+                Bar at x=100
+            </div>
+            <span class="arrow">+</span>
+            <div class="frame-box frame-b">
+                <strong>Frame B</strong><br>
+                Bar at x=400
+            </div>
+            <span class="arrow">=</span>
+            <div class="frame-box frame-merged">
+                <strong>Merged</strong><br>
+                No bar!
+            </div>
+        </div>
+        
+        <div class="takeaway">
+            <strong>Dynamic Bar Erase:</strong> The bar position changes every frame. By comparing A and B, we find exactly where the bar is and replace that region with clean content from the other frame.
+        </div>
+    </div>
+
+    <div class="phase phase-5">
+        <div class="phase-title">Phase 5: Spike Guard Rails (Validation)</div>
+        
+        <p>Before accepting a page, we validate the bar profile to ensure it's a legitimate page change.</p>
+        
+        <div class="code-block">
+<span class="comment"># src/domain/deduplication.py</span>
+
+<span class="keyword">def</span> <span class="function">_get_bar_profile_peaks</span>(self, frame_a, frame_b, crop_ratio):
+    <span class="comment"># Compute column-wise difference between A and B</span>
+    diff = np.abs(a_top - b_top)
+    col_sums = np.sum(diff, axis=0)
+    
+    <span class="comment"># Find peaks (spikes) in the difference profile</span>
+    peaks = []
+    <span class="keyword">for</span> i <span class="keyword">in</span> range(2, len(col_sums) - 2):
+        <span class="keyword">if</span> col_sums[i] > col_sums[i-1] <span class="keyword">and</span> col_sums[i] >= col_sums[i+1]:
+            peaks.append((i, col_sums[i]))
+    
+    <span class="keyword">return</span> peaks
+
+<span class="comment"># Guard Rail 1: Clean bar profile (2-4 peaks expected)</span>
+<span class="keyword">def</span> <span class="function">has_clean_bar_profile</span>(self, frame_a, frame_b, crop_ratio):
+    n = len(self._get_bar_profile_peaks(frame_a, frame_b, crop_ratio))
+    <span class="keyword">return</span> 2 <= n <= 4  <span class="comment"># Playbar has 2 edges + possible shadows</span>
+
+<span class="comment"># Guard Rail 2: Left spike within margin (left 20%)</span>
+<span class="keyword">def</span> <span class="function">has_left_spike_in_margin</span>(self, frame_a, frame_b, crop_ratio):
+    peaks = self._get_bar_profile_peaks(frame_a, frame_b, crop_ratio)
+    <span class="keyword">if</span> len(peaks) < 2:
+        <span class="keyword">return False</span>
+    
+    <span class="comment"># Find leftmost spike position</span>
+    left_col = sorted(peaks[:2], key=lambda p: p[0])[0][0]
+    margin_col = int(640 * self.config.bar_left_margin)  <span class="comment"># 20% of width</span>
+    
+    <span class="keyword">return</span> left_col < margin_col
+        </div>
+        
+        <div class="code-block">
+<span class="comment"># src/application/extraction_components.py</span>
+
+<span class="comment"># Apply guard rails (skip for first page)</span>
+has_clean_profile, has_left_spike, bar_peaks = self.deduplicator.check_bar_profile(
+    frame_a.image, frame_b.image, self.config.default_crop_ratio
+)
+
+<span class="keyword">if not</span> is_first:
+    <span class="keyword">if not</span> is_dup <span class="keyword">and not</span> has_clean_profile:
+        is_dup = True
+        log(<span class="string">f"Page {page_num}: No clean bar profile, treated as duplicate"</span>)
+    
+    <span class="keyword">if not</span> is_dup <span class="keyword">and not</span> has_left_spike:
+        is_dup = True
+        log(<span class="string">f"Page {page_num}: Left spike outside margin, treated as duplicate"</span>)
+        </div>
+        
+        <div class="visual">
+            <div class="frame-box" style="background: #eafaf1; border: 2px solid #27ae60;">
+                <strong>✓ Valid</strong><br>
+                2-4 peaks<br>
+                Left spike in margin
+            </div>
+            <div class="frame-box" style="background: #fdedec; border: 2px solid #e74c3c;">
+                <strong>✗ Rejected</strong><br>
+                0 peaks or 5+ peaks<br>
+                Left spike too far right
+            </div>
+        </div>
+        
+        <div class="takeaway">
+            <strong>Why Guard Rails?</strong>
+            <ul>
+                <li><strong>Clean profile:</strong> Playbar creates 2 sharp edges (left/right). Too many peaks = noise</li>
+                <li><strong>Left spike margin:</strong> Playbar always starts from left edge. If left spike is far right = false trigger</li>
+            </ul>
+            These prevent false positives from scene transitions, lighting changes, or camera movements.
+        </div>
+    </div>
+
+    <div class="phase phase-5">
+        <div class="phase-title">Phase 5: Deduplication (3-Step Verification)</div>
+        
+        <p>Before saving, we check if this page is a duplicate of an existing one.</p>
+        
+        <div class="code-block">
+<span class="keyword">def</span> <span class="function">is_duplicate</span>(self, frame_a, frame_b, b_number):
+    <span class="comment"># Step 0: OCR Force-Duplicate (fastest)</span>
+    <span class="keyword">if</span> self.ocr_service.is_enabled():
+        num_a = self._get_cached_number(frame_a)
+        num_b = self._get_cached_number(frame_b)
+        <span class="keyword">if</span> num_a == num_b:  <span class="comment"># Same page number = duplicate</span>
+            <span class="keyword">return True</span>
+        <span class="keyword">if</span> num_a <span class="keyword">and</span> num_b:  <span class="comment"># Different numbers = NOT duplicate</span>
+            <span class="keyword">return False</span>
+    
+    <span class="comment"># Step 1: Global Pixel Similarity (fast)</span>
+    sim_score = self._get_global_similarity(mask_a, mask_b)
+    <span class="keyword">if</span> sim_score > 0.995:  <span class="comment"># Nearly identical = duplicate</span>
+        <span class="keyword">return True</span>
+    <span class="keyword">if</span> sim_score < 0.95:  <span class="comment"># Very different = NOT duplicate</span>
+        <span class="keyword">return False</span>
+    
+    <span class="comment"># Step 2: Row-wise Similarity (precise)</span>
+    <span class="keyword">return</span> self._check_row_similarity(mask_a, mask_b)
+        </div>
+        
+        <div class="takeaway">
+            <strong>Why 3 steps?</strong>
+            <ul>
+                <li><strong>OCR:</strong> Fastest, most reliable (if page numbers visible)</li>
+                <li><strong>Global similarity:</strong> Catches 95% of duplicates</li>
+                <li><strong>Row similarity:</strong> Final check for borderline cases</li>
+            </ul>
+        </div>
+    </div>
+
+    <div style="background: #2c3e50; color: white; padding: 30px; border-radius: 12px; margin-top: 40px;">
+        <h3 style="color: #f39c12; margin-top: 0;">Complete Flow Summary</h3>
+        <div style="font-size: 1.1em; line-height: 2;">
+            <p>1. <strong>Scan</strong> video frames (skip every 0.8s for speed)</p>
+            <p>2. <strong>Detect</strong> page change using SSIM on top 34%</p>
+            <p>3. <strong>Capture</strong> A-frame (0.3s delay) + B-frame (3s later)</p>
+            <p>4. <strong>Merge</strong> frames to erase playback bar</p>
+            <p>5. <strong>Guard Rails</strong> - Validate bar profile (2-4 peaks, left spike in margin)</p>
+            <p>6. <strong>Deduplicate</strong> using OCR → Global → Row checks</p>
+            <p>7. <strong>Save</strong> unique pages to disk</p>
+            <p>8. <strong>Generate</strong> PDF from collected pages</p>
+        </div>
+    </div>
+</body>
+</html>
+        

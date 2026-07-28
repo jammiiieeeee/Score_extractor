@@ -415,7 +415,7 @@ class TestScoreManagementWorkflow:
         originals = [Frame(img.copy(), float(i), i) for i, img in enumerate(synthetic_images)]
         api._pages.set_originals(originals)
 
-        api.reapply_crop(0.0, 0.15)
+        api.reapply_crop(0.15)
         assert api.get_page_count() == 5
         for f in api._pages:
             h = f.image.shape[0]

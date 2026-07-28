@@ -50,8 +50,8 @@ def make_marker_image(width=800, height=1000, marker_row=0):
 def crop_image(img, config):
     """Apply the same crop logic as PdfService.create_pdf — returns cropped image."""
     img_h = img.shape[0]
-    y_start = int(img_h * config.crop_top_offset)
-    y_end = int(img_h * (config.crop_top_offset + config.default_crop_ratio))
+    y_start = 0
+    y_end = int(img_h * config.default_crop_ratio)
     return img[y_start:y_end, :]
 
 
@@ -64,29 +64,17 @@ class TestPdfServiceCrops:
     def test_pdf_service_crops_to_ratio(self):
         """Crop logic produces correct height for given ratio."""
         img = make_tall_image(800, 1000)
-        config = ScoreConfig(default_crop_ratio=0.1, crop_top_offset=0.0)
+        config = ScoreConfig(default_crop_ratio=0.1)
 
         cropped = crop_image(img, config)
         assert cropped.shape[0] == 100, (
             f"Expected 100px. Got {cropped.shape[0]}px"
         )
 
-    def test_pdf_service_crops_with_offset(self):
-        """Crop with offset skips the top region."""
-        img = make_tall_image(800, 1000)
-        config = ScoreConfig(default_crop_ratio=0.1, crop_top_offset=0.2)
-
-        cropped = crop_image(img, config)
-        # offset 0.2, ratio 0.1 → y_start=200, y_end=300 → 100px
-        assert cropped.shape[0] == 100
-        # Red was at rows 0-100, we start at row 200, so no red
-        pixel = cropped[0, 0]
-        assert not (pixel[0] == 0 and pixel[1] == 0 and pixel[2] == 255), "Red strip should be cropped out"
-
     def test_pdf_service_preserves_content(self):
         """Crop preserves the correct region."""
         img = make_tall_image(800, 1000)
-        config = ScoreConfig(default_crop_ratio=0.5, crop_top_offset=0.0)
+        config = ScoreConfig(default_crop_ratio=0.5)
 
         cropped = crop_image(img, config)
         assert cropped.shape[0] == 500
@@ -96,7 +84,7 @@ class TestPdfServiceCrops:
     def test_various_ratios(self):
         """All ratios produce correct crop."""
         img = make_tall_image(800, 1000)
-        config = ScoreConfig(crop_top_offset=0.0)
+        config = ScoreConfig()
 
         for ratio in [0.05, 0.1, 0.2, 0.32, 0.5]:
             config.default_crop_ratio = ratio
@@ -109,7 +97,7 @@ class TestPdfServiceCrops:
     def test_create_pdf_runs_without_error(self):
         """PdfService.create_pdf completes without leaving temp files."""
         img = make_tall_image(800, 1000)
-        config = ScoreConfig(default_crop_ratio=0.3, crop_top_offset=0.0)
+        config = ScoreConfig(default_crop_ratio=0.3)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "test.pdf"
@@ -125,7 +113,7 @@ class TestRegenerateWithDifferentCrop:
     def test_regenerate_with_different_crop(self):
         """Extract once, regenerate PDF with different crop ratio."""
         img = make_tall_image(800, 1000)
-        config = ScoreConfig(default_crop_ratio=0.3, crop_top_offset=0.0)
+        config = ScoreConfig(default_crop_ratio=0.3)
 
         # Store uncropped image (simulating extraction)
         store = PageStore()
@@ -152,13 +140,13 @@ class TestReapplyCropStillWorks:
     def test_reapply_crop_then_pdf(self):
         """reapply_crop crops originals, then PdfService crops again."""
         img = make_tall_image(800, 1000)
-        config = ScoreConfig(default_crop_ratio=0.1, crop_top_offset=0.0)
+        config = ScoreConfig(default_crop_ratio=0.1)
 
         store = PageStore()
         store.set_originals([Frame(img, 0.0, 0)])
 
-        # reapply_crop: offset=0.0, ratio=0.9 → crops to 900px
-        store.reapply_crop(0.0, 0.9)
+        # reapply_crop: ratio=0.9 → crops to 900px
+        store.reapply_crop(0.9)
         assert store[0].image.shape[0] == 900, "reapply_crop: 900px"
 
         # PdfService crops again to 90px (900 * 0.1)

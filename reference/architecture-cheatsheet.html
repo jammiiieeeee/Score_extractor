@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clean Architecture Cheat Sheet</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.4;
+            color: #2c3e50;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 15px;
+            background-color: #f8f9fa;
+            font-size: 0.95em;
+        }
+        .cheatsheet {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .section {
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .api { background-color: #ebf5fb; border-left: 4px solid #3498db; }
+        .app { background-color: #eafaf1; border-left: 4px solid #27ae60; }
+        .domain { background-color: #fdedec; border-left: 4px solid #e74c3c; }
+        .infra { background-color: #fef9e7; border-left: 4px solid #f39c12; }
+        
+        h3 { margin-top: 0; font-size: 1.1em; }
+        .layer-name { font-weight: bold; font-size: 1.2em; }
+        
+        .diagram {
+            grid-column: span 2;
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .arrow { font-size: 1.5em; color: #7f8c8d; }
+        
+        .rules {
+            grid-column: span 2;
+            background: #2c3e50;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        
+        .rules h3 { color: #f39c12; }
+        
+        .quick-ref {
+            grid-column: span 2;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+        
+        .ref-item {
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .file { font-family: monospace; font-weight: bold; }
+        .purpose { font-size: 0.9em; color: #7f8c8d; }
+        
+        @media print {
+            body { padding: 10px; }
+            .cheatsheet { box-shadow: none; border: 1px solid #ddd; }
+        }
+    </style>
+</head>
+<body>
+    <div class="cheatsheet">
+        <div class="diagram">
+            <h2>Clean Architecture Layers</h2>
+            <div class="api">
+                <div class="layer-name">API Layer</div>
+                <div>Entry points: GUI, CLI, Web</div>
+            </div>
+            <div class="arrow">↓</div>
+            <div class="app">
+                <div class="layer-name">Application Layer</div>
+                <div>Use Cases: Business workflows</div>
+            </div>
+            <div class="arrow">↓</div>
+            <div class="domain">
+                <div class="layer-name">Domain Layer</div>
+                <div>Business Rules: Models, Interfaces</div>
+            </div>
+            <div class="arrow">↑</div>
+            <div class="infra">
+                <div class="layer-name">Infrastructure Layer</div>
+                <div>Implementations: External services</div>
+            </div>
+        </div>
+        
+        <div class="rules">
+            <h3>The 5 Rules of Clean Architecture</h3>
+            <ol>
+                <li><strong>Dependencies point inward</strong> - Outer layers depend on inner layers</li>
+                <li><strong>Domain has no dependencies</strong> - Only standard libraries allowed</li>
+                <li><strong>Use interfaces for abstraction</strong> - Define contracts in Domain layer</li>
+                <li><strong>Inject dependencies</strong> - Pass implementations, don't create them</li>
+                <li><strong>Keep layers thin</strong> - Outer layers mostly delegate to inner layers</li>
+            </ol>
+        </div>
+        
+        <div class="section api">
+            <h3>API Layer (src/api/)</h3>
+            <p><strong>Purpose:</strong> User interaction</p>
+            <p><strong>Contains:</strong></p>
+            <ul>
+                <li>GUI frameworks (PyQt6)</li>
+                <li>CLI argument parsing</li>
+                <li>HTTP endpoints</li>
+            </ul>
+            <p><strong>Depends on:</strong> Application layer</p>
+        </div>
+        
+        <div class="section app">
+            <h3>Application Layer (src/application/)</h3>
+            <p><strong>Purpose:</strong> Orchestrate workflows</p>
+            <p><strong>Contains:</strong></p>
+            <ul>
+                <li>Use cases (business operations)</li>
+                <li>Workflow coordination</li>
+                <li>Data transformation</li>
+            </ul>
+            <p><strong>Depends on:</strong> Domain layer</p>
+        </div>
+        
+        <div class="section domain">
+            <h3>Domain Layer (src/domain/)</h3>
+            <p><strong>Purpose:</strong> Business logic core</p>
+            <p><strong>Contains:</strong></p>
+            <ul>
+                <li>Models (Frame, ScoreConfig)</li>
+                <li>Interfaces (IVideoService)</li>
+                <li>Business rules (deduplication)</li>
+            </ul>
+            <p><strong>Depends on:</strong> Nothing (except stdlib)</p>
+        </div>
+        
+        <div class="section infra">
+            <h3>Infrastructure Layer (src/infrastructure/)</h3>
+            <p><strong>Purpose:</strong> External integrations</p>
+            <p><strong>Contains:</strong></p>
+            <ul>
+                <li>OpenCV (video)</li>
+                <li>PaddleOCR (text recognition)</li>
+                <li>ReportLab (PDF generation)</li>
+            </ul>
+            <p><strong>Depends on:</strong> Domain interfaces</p>
+        </div>
+        
+        <div class="quick-ref">
+            <div class="ref-item">
+                <div class="file">models.py</div>
+                <div class="purpose">Business objects</div>
+            </div>
+            <div class="ref-item">
+                <div class="file">interfaces.py</div>
+                <div class="purpose">Abstract contracts</div>
+            </div>
+            <div class="ref-item">
+                <div class="file">use_cases.py</div>
+                <div class="purpose">Workflows</div>
+            </div>
+            <div class="ref-item">
+                <div class="file">video_service.py</div>
+                <div class="purpose">OpenCV impl</div>
+            </div>
+            <div class="ref-item">
+                <div class="file">ocr_service.py</div>
+                <div class="purpose">OCR impl</div>
+            </div>
+            <div class="ref-item">
+                <div class="file">gui_api.py</div>
+                <div class="purpose">PyQt6 GUI</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+        

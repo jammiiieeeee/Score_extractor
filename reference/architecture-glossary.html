@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Software Architecture Glossary</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            color: #2c3e50;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .glossary {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .term {
+            font-weight: bold;
+            color: #2c3e50;
+            font-size: 1.1em;
+            margin-top: 20px;
+        }
+        .definition {
+            margin-left: 20px;
+            color: #34495e;
+        }
+        .example {
+            background: #f8f9fa;
+            padding: 10px 15px;
+            margin: 10px 0;
+            border-left: 3px solid #3498db;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9em;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Software Architecture Glossary</h1>
+        <p>Key terms for understanding Clean Architecture</p>
+    </div>
+    
+    <div class="glossary">
+        <div class="term">Abstraction</div>
+        <div class="definition">
+            A simplified representation of something complex. In code, interfaces are abstractions that hide implementation details.
+            <div class="example">IVideoService is an abstraction - it says "what" a video service does, not "how"</div>
+        </div>
+        
+        <div class="term">Interface</div>
+        <div class="definition">
+            A contract that defines methods a class must implement. Also called "Abstract Base Class" (ABC) in Python.
+            <div class="example">class IVideoService(ABC): defines open_video(), read_frames(), etc.</div>
+        </div>
+        
+        <div class="term">Dependency Injection (DI)</div>
+        <div class="definition">
+            Passing dependencies (objects a class needs) into it, rather than having the class create them itself.
+            <div class="example">ExtractScoreUseCase receives IVideoService in __init__, doesn't create VideoService directly</div>
+        </div>
+        
+        <div class="term">Use Case</div>
+        <div class="definition">
+            A specific business operation or workflow. Represents "what" the system does from a user's perspective.
+            <div class="example">ExtractScoreUseCase orchestrates the entire video-to-PDF workflow</div>
+        </div>
+        
+        <div class="term">Domain Model</div>
+        <div class="definition">
+            Objects that represent core business concepts and rules. Pure data structures with behavior.
+            <div class="example">Frame class represents a video frame in our business context</div>
+        </div>
+        
+        <div class="term">Infrastructure</div>
+        <div class="definition">
+            External services and libraries: databases, APIs, file systems, third-party code.
+            <div class="example">OpenCV (video), PaddleOCR (text recognition), ReportLab (PDF)</div>
+        </div>
+        
+        <div class="term">Separation of Concerns</div>
+        <div class="definition">
+            Each part of the system has a single, well-defined responsibility.
+            <div class="example">Domain handles business rules, Infrastructure handles external integrations</div>
+        </div>
+        
+        <div class="term">Inversion of Control (IoC)</div>
+        <div class="definition">
+            The framework calls your code, not the other way around. Dependencies are "inverted" - inner layers don't control outer layers.
+            <div class="example">Domain doesn't import Infrastructure; Infrastructure imports Domain interfaces</div>
+        </div>
+        
+        <div class="term">Mock</div>
+        <div class="definition">
+            A fake object used in testing to simulate real dependencies.
+            <div class="example">MockVideoService provides test data without needing real video files</div>
+        </div>
+        
+        <div class="term">SOLID Principles</div>
+        <div class="definition">
+            Five design principles for maintainable code. Clean Architecture implements all five:
+            <ul>
+                <li><strong>S</strong>ingle Responsibility</li>
+                <li><strong>O</strong>pen/Closed</li>
+                <li><strong>L</strong>iskov Substitution</li>
+                <li><strong>I</strong>nterface Segregation</li>
+                <li><strong>D</strong>ependency Inversion</li>
+            </ul>
+        </div>
+        
+        <div class="term">Tight Coupling</div>
+        <div class="definition">
+            Classes directly dependent on concrete implementations, making changes difficult.
+            <div class="example">BAD: class MyVideo: import cv2 (hard dependency)</div>
+        </div>
+        
+        <div class="term">Loose Coupling</div>
+        <div class="definition">
+            Classes depend on abstractions, allowing easy swapping of implementations.
+            <div class="example">GOOD: class MyVideo: def __init__(self, service: IVideoService)</div>
+        </div>
+    </div>
+</body>
+</html>
+        

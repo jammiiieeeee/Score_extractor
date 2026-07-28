@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Preview Burst-Seek Benchmark Report</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;margin:2rem;color:#222;background:#fafafa}
+h1{border-bottom:2px solid #333;padding-bottom:.3rem}
+h2{margin-top:2rem;color:#555}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.88rem;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+th,td{border:1px solid #ddd;padding:6px 10px;text-align:left}
+th{background:#f0f0f0;position:sticky;top:0}
+tr:hover{background:#f5f5f5}
+tr.warn{background:#fff3cd}
+tr.warn:hover{background:#ffeeba}
+td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:'SF Mono','Cascadia Code',monospace;font-size:.85rem}
+td.hot{color:#c0392b;font-weight:700}
+td.label{font-weight:600;white-space:nowrap}
+.all-good{color:#27ae60;font-weight:600;font-size:1.1rem}
+.err{color:#e74c3c;font-weight:600}
+.meta{color:#888;font-size:.85rem;margin-bottom:1.5rem}
+code{background:#eee;padding:1px 4px;border-radius:3px;font-size:.85em}
+ul{line-height:1.8}
+li{margin-bottom:.6rem}
+em{font-style:normal;color:#666}
+code{background:#eee;padding:1px 4px;border-radius:3px}
+</style>
+</head>
+<body>
+<h1>Preview Burst-Seek Benchmark Report</h1>
+<p class="meta">Generated: 2026-07-24 16:40:13 &mdash; 9 videos &mdash; target &lt; 100 ms burst p50</p>
+
+<h2>Benchmark Results</h2>
+<table>
+<thead><tr><th>Label</th><th>Codec</th><th>Resolution</th><th>FPS</th><th>Container</th><th>Size</th><th>Frames</th><th>Cold (ms)</th><th>Single mean (ms)</th><th>Burst p50</th><th>Burst p95</th><th>Burst p99</th><th>Burst max</th><th>Stale</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td class="label">H.264  640x360  30fps</td><td>h264</td><td>640x360</td><td class="num">30</td><td>.mp4</td><td class="num">12.7</td><td class="num">7914</td><td class="num">60.4</td><td class="num">72.9</td><td class="num ">57.3</td><td class="num ">57.3</td><td class="num">57.3</td><td class="num">57.3</td><td class="num">19/20</td><td></td></tr>
+<tr><td class="label">H.264  854x480  30fps</td><td>h264</td><td>854x480</td><td class="num">30</td><td>.mp4</td><td class="num">15.9</td><td class="num">7914</td><td class="num">53.4</td><td class="num">71.9</td><td class="num ">80.2</td><td class="num ">80.2</td><td class="num">80.2</td><td class="num">80.2</td><td class="num">19/20</td><td></td></tr>
+<tr class="warn"><td class="label">H.264 1280x720  60fps</td><td>h264</td><td>1280x720</td><td class="num">60</td><td>.mp4</td><td class="num">47.7</td><td class="num">15828</td><td class="num">87.2</td><td class="num">236.4</td><td class="num  hot">362.8</td><td class="num  hot">362.8</td><td class="num">362.8</td><td class="num">362.8</td><td class="num">19/20</td><td><span class=err>OVER 100ms</span></td></tr>
+<tr><td class="label">VP9    640x360  30fps</td><td>VP90</td><td>640x360</td><td class="num">30</td><td>.webm</td><td class="num">6.2</td><td class="num">7914</td><td class="num">33.7</td><td class="num">43.8</td><td class="num ">18.7</td><td class="num ">18.7</td><td class="num">18.7</td><td class="num">18.7</td><td class="num">19/20</td><td></td></tr>
+<tr class="warn"><td class="label">VP9   1280x720  60fps</td><td>VP90</td><td>1280x720</td><td class="num">60</td><td>.webm</td><td class="num">32.0</td><td class="num">15828</td><td class="num">114.8</td><td class="num">480.5</td><td class="num  hot">167.0</td><td class="num  hot">167.0</td><td class="num">167.0</td><td class="num">167.0</td><td class="num">19/20</td><td><span class=err>OVER 100ms</span></td></tr>
+<tr class="warn"><td class="label">VP9   1920x1080 60fps</td><td>VP90</td><td>1920x1080</td><td class="num">60</td><td>.webm</td><td class="num">49.4</td><td class="num">15828</td><td class="num">343.1</td><td class="num">574.6</td><td class="num  hot">1791.7</td><td class="num  hot">1791.7</td><td class="num">1791.7</td><td class="num">1791.7</td><td class="num">19/20</td><td><span class=err>OVER 100ms</span></td></tr>
+<tr class="warn"><td class="label">AV1    640x360  30fps</td><td>AV01</td><td>640x360</td><td class="num">30</td><td>.mp4</td><td class="num">5.2</td><td class="num">7914</td><td class="num">147.6</td><td class="num">417.8</td><td class="num  hot">411.1</td><td class="num  hot">411.1</td><td class="num">411.1</td><td class="num">411.1</td><td class="num">19/20</td><td><span class=err>OVER 100ms</span></td></tr>
+<tr class="warn"><td class="label">AV1   1280x720  60fps</td><td>AV01</td><td>1280x720</td><td class="num">60</td><td>.mp4</td><td class="num">17.3</td><td class="num">15828</td><td class="num">522.0</td><td class="num">2799.5</td><td class="num  hot">3850.7</td><td class="num  hot">3850.7</td><td class="num">3850.7</td><td class="num">3850.7</td><td class="num">19/20</td><td><span class=err>OVER 100ms</span></td></tr>
+<tr class="warn"><td class="label">AV1   1920x1080 60fps</td><td>AV01</td><td>1920x1080</td><td class="num">60</td><td>.mp4</td><td class="num">40.5</td><td class="num">19070</td><td class="num">1135.9</td><td class="num">4326.2</td><td class="num  hot">5306.6</td><td class="num  hot">5306.6</td><td class="num">5306.6</td><td class="num">5306.6</td><td class="num">19/20</td><td><span class=err>OVER 100ms</span></td></tr>
+</tbody>
+</table>
+
+<h2>Combinations Over 100 ms &mdash; Recommended Next Steps</h2>
+<ul>
+<li><strong>H.264 1280x720  60fps</strong> (h264 1280x720 @60fps) &mdash; burst p50 = <strong>363 ms</strong><br>
+<em>Root cause:</em> 1280x720 @60fps requires decoding ~55K pixels per frame at 60fps. cv2.resize + display overhead stacks up.<br><em>Recommended next steps:</em><br>(a) <strong>Limit preview decode resolution</strong> &mdash; cap at 640px width for the seek slider.<br>(b) <strong>Cap decode FPS</strong> &mdash; seek slider only needs one frame per seek, not 60fps decode.</li>
+
+<li><strong>VP9   1280x720  60fps</strong> (VP90 1280x720 @60fps) &mdash; burst p50 = <strong>167 ms</strong><br>
+<em>Root cause:</em> VP9 decode via libvpx is multi-threaded but still slower than H.264 at equivalent resolution. Higher resolutions amplify the cost.<br><em>Current mitigation:</em> Latest-wins coalescing only.<br><em>Recommended next steps:</em><br>(a) Same low-res preview decode pass as above.<br>(b) <strong>FFmpeg keyframe seek</strong> &mdash; VP9 has long keyframe intervals by default; FFmpeg can skip directly to keyframes.<br>(c) Consider forcing <code>-g 60</code> during VP9 encode to guarantee a keyframe every 2 seconds.</li>
+
+<li><strong>VP9   1920x1080 60fps</strong> (VP90 1920x1080 @60fps) &mdash; burst p50 = <strong>1792 ms</strong><br>
+<em>Root cause:</em> VP9 decode via libvpx is multi-threaded but still slower than H.264 at equivalent resolution. Higher resolutions amplify the cost.<br><em>Current mitigation:</em> Latest-wins coalescing only.<br><em>Recommended next steps:</em><br>(a) Same low-res preview decode pass as above.<br>(b) <strong>FFmpeg keyframe seek</strong> &mdash; VP9 has long keyframe intervals by default; FFmpeg can skip directly to keyframes.<br>(c) Consider forcing <code>-g 60</code> during VP9 encode to guarantee a keyframe every 2 seconds.</li>
+
+<li><strong>AV1    640x360  30fps</strong> (AV01 640x360 @30fps) &mdash; burst p50 = <strong>411 ms</strong><br>
+<em>Root cause:</em> AV1 intra-frame decode is extremely CPU-heavy. OpenCV's FFmpeg backend must fully decode each frame; there is no hardware AV1 decode on this system.<br><em>Current mitigation:</em> The latest-wins coalescing pattern prevents queue buildup but does not reduce per-frame decode cost.<br><em>Recommended next steps:</em><br>(a) <strong>Low-res preview decode</strong> &mdash; decode a 640px-wide copy for the seek slider thumbnail. This cuts pixel count by 75-98%.<br>(b) <strong>FFmpeg keyframe-only seek</strong> &mdash; use <code>ffmpeg -ss T -i file -frames:v 1</code> which skips to the nearest keyframe without decoding all intermediate frames.<br>(c) <strong>Pre-transcode sidecar</strong> &mdash; on first open, generate a low-res H.264 sidecar file for fast seeking; use the original only for extraction.</li>
+
+<li><strong>AV1   1280x720  60fps</strong> (AV01 1280x720 @60fps) &mdash; burst p50 = <strong>3851 ms</strong><br>
+<em>Root cause:</em> AV1 intra-frame decode is extremely CPU-heavy. OpenCV's FFmpeg backend must fully decode each frame; there is no hardware AV1 decode on this system.<br><em>Current mitigation:</em> The latest-wins coalescing pattern prevents queue buildup but does not reduce per-frame decode cost.<br><em>Recommended next steps:</em><br>(a) <strong>Low-res preview decode</strong> &mdash; decode a 640px-wide copy for the seek slider thumbnail. This cuts pixel count by 75-98%.<br>(b) <strong>FFmpeg keyframe-only seek</strong> &mdash; use <code>ffmpeg -ss T -i file -frames:v 1</code> which skips to the nearest keyframe without decoding all intermediate frames.<br>(c) <strong>Pre-transcode sidecar</strong> &mdash; on first open, generate a low-res H.264 sidecar file for fast seeking; use the original only for extraction.</li>
+
+<li><strong>AV1   1920x1080 60fps</strong> (AV01 1920x1080 @60fps) &mdash; burst p50 = <strong>5307 ms</strong><br>
+<em>Root cause:</em> AV1 intra-frame decode is extremely CPU-heavy. OpenCV's FFmpeg backend must fully decode each frame; there is no hardware AV1 decode on this system.<br><em>Current mitigation:</em> The latest-wins coalescing pattern prevents queue buildup but does not reduce per-frame decode cost.<br><em>Recommended next steps:</em><br>(a) <strong>Low-res preview decode</strong> &mdash; decode a 640px-wide copy for the seek slider thumbnail. This cuts pixel count by 75-98%.<br>(b) <strong>FFmpeg keyframe-only seek</strong> &mdash; use <code>ffmpeg -ss T -i file -frames:v 1</code> which skips to the nearest keyframe without decoding all intermediate frames.<br>(c) <strong>Pre-transcode sidecar</strong> &mdash; on first open, generate a low-res H.264 sidecar file for fast seeking; use the original only for extraction.</li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 1: GitHub CI/CD — From Zero to Automated Tests</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --fg: #1a1a1a;
+    --accent: #0969da;
+    --accent-light: #ddf4ff;
+    --border: #d0d7de;
+    --code-bg: #f6f8fa;
+    --success: #1a7f37;
+    --success-bg: #dafbe1;
+    --warning: #9a6700;
+    --warning-bg: #fff8c5;
+    --danger: #cf222e;
+    --danger-bg: #ffebe9;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.7;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.5rem; border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; }
+  h2 { font-size: 1.4rem; margin: 2rem 0 0.75rem; color: var(--accent); }
+  h3 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+  p { margin: 0.75rem 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    background: var(--code-bg);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    overflow-x: auto;
+    margin: 1rem 0;
+    font-size: 0.85em;
+    line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: var(--accent-light);
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .callout.success { border-color: var(--success); background: var(--success-bg); }
+  .callout.warning { border-color: var(--warning); background: var(--warning-bg); }
+  .callout.danger { border-color: var(--danger); background: var(--danger-bg); }
+  .callout strong { display: block; margin-bottom: 0.25rem; }
+  .diagram {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+    text-align: center;
+    font-family: monospace;
+    font-size: 0.9rem;
+    line-height: 1.8;
+  }
+  .diagram .arrow { color: var(--accent); font-weight: bold; }
+  .diagram .box {
+    display: inline-block;
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    padding: 0.3rem 0.8rem;
+    margin: 0.2rem;
+    background: var(--accent-light);
+  }
+  .quiz {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin: 1.5rem 0;
+  }
+  .quiz h4 { margin-bottom: 0.75rem; }
+  .quiz label { display: block; padding: 0.4rem 0; cursor: pointer; }
+  .quiz input[type="radio"] { margin-right: 0.5rem; }
+  .quiz .feedback { margin-top: 0.75rem; padding: 0.75rem; border-radius: 6px; display: none; }
+  .quiz .feedback.correct { background: var(--success-bg); color: var(--success); display: block; }
+  .quiz .feedback.wrong { background: var(--danger-bg); color: var(--danger); display: block; }
+  ul, ol { margin: 0.75rem 0 0.75rem 1.5rem; }
+  li { margin: 0.3rem 0; }
+  .file-tree { font-family: monospace; font-size: 0.85rem; line-height: 1.6; }
+  .file-tree .highlight { background: var(--accent-light); padding: 0.1em 0.3em; border-radius: 3px; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+  .next-steps { margin-top: 2rem; }
+  .next-steps a { display: inline-block; margin-right: 1rem; }
+</style>
+</head>
+<body>
+
+<h1>Lesson 1: GitHub CI/CD — From Zero to Automated Tests</h1>
+
+<p><strong>What you'll learn:</strong> How GitHub Actions runs your tests automatically every time you push code.</p>
+
+<p><strong>Tied to your project:</strong> Your <code>.github/workflows/test.yml</code> file — we'll break it down line by line.</p>
+
+<hr>
+
+<h2>1. What is CI/CD?</h2>
+
+<p><strong>CI</strong> = Continuous Integration. <strong>CD</strong> = Continuous Delivery/Deployment.</p>
+
+<p>Think of it as a robot that:</p>
+<ol>
+  <li>Watches your GitHub repo</li>
+  <li>When you push code, it spins up a fresh computer in the cloud</li>
+  <li>Installs your dependencies</li>
+  <li>Runs your tests</li>
+  <li>Tells you if anything broke</li>
+</ol>
+
+<div class="diagram">
+  <span class="box">You push code</span>
+  <span class="arrow"> → </span>
+  <span class="box">GitHub detects push</span>
+  <span class="arrow"> → </span>
+  <span class="box">Spins up Windows VM</span>
+  <br>
+  <span class="arrow"> → </span>
+  <span class="box">Installs Python + deps</span>
+  <span class="arrow"> → </span>
+  <span class="box">Runs pytest</span>
+  <span class="arrow"> → </span>
+  <span class="box">✅ Pass or ❌ Fail</span>
+</div>
+
+<div class="callout">
+  <strong>Why does this matter?</strong>
+  Without CI, you only know tests pass on <em>your</em> computer. With CI, you know they pass on a clean machine every time — no "works on my machine" excuses.
+</div>
+
+<hr>
+
+<h2>2. Anatomy of a GitHub Actions Workflow</h2>
+
+<p>Your workflow lives at <code>.github/workflows/test.yml</code>. Let's break it down:</p>
+
+<h3>Part A: When does it run?</h3>
+
+<pre><code>name: Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]</code></pre>
+
+<p>This says: "Run tests when someone pushes to <code>main</code> or <code>master</code>, or when a pull request targets those branches."</p>
+
+<div class="callout success">
+  <strong>Key concept: Triggers</strong>
+  <code>on:</code> defines <em>when</em> the workflow runs. Common triggers:
+  <ul>
+    <li><code>push</code> — code pushed to a branch</li>
+    <li><code>pull_request</code> — PR opened/updated</li>
+    <li><code>schedule</code> — cron job (e.g., daily at 2am)</li>
+    <li><code>workflow_dispatch</code> — manual button in GitHub UI</li>
+  </ul>
+</div>
+
+<h3>Part B: What machine does it run on?</h3>
+
+<pre><code>jobs:
+  test:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]</code></pre>
+
+<p><code>windows-latest</code> means a Windows Server VM. GitHub provides free runners:</p>
+<ul>
+  <li><code>ubuntu-latest</code> — Linux (fastest, most common)</li>
+  <li><code>windows-latest</code> — Windows Server</li>
+  <li><code>macos-latest</code> — macOS</li>
+</ul>
+
+<p>The <code>matrix</code> means: run the <em>entire job twice</em> — once with Python 3.10, once with 3.12. If either fails, the workflow fails.</p>
+
+<h3>Part C: What steps does it run?</h3>
+
+<pre><code>steps:
+  - uses: actions/checkout@v4
+
+  - name: Set up Python ${{ matrix.python-version }}
+    uses: actions/setup-python@v5
+    with:
+      python-version: ${{ matrix.python-version }}
+
+  - name: Install dependencies
+    run: |
+      python -m pip install --upgrade pip
+      python -m pip install -r requirements.txt
+
+  - name: Run fast tests
+    run: python -m pytest tests/ -m "not slow" --cov=src --cov-report=xml --timeout=120 -v</code></pre>
+
+<p>Each step does one thing:</p>
+
+<table>
+  <thead><tr><th>Step</th><th>What it does</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td><code>checkout@v4</code></td><td>Downloads your repo</td><td>The VM starts empty — needs your code</td></tr>
+    <tr><td><code>setup-python@v5</code></td><td>Installs Python</td><td>The VM doesn't have Python by default</td></tr>
+    <tr><td><code>pip install</code></td><td>Installs dependencies</td><td>Your code needs OpenCV, pytest, etc.</td></tr>
+    <tr><td><code>pytest</code></td><td>Runs your tests</td><td>The whole point!</td></tr>
+  </tbody>
+</table>
+
+<div class="callout warning">
+  <strong>The <code>${{ }}</code> syntax</strong>
+  This is GitHub Actions' template language. <code>${{ matrix.python-version }}</code> gets replaced with the current matrix value (e.g., "3.10" or "3.12"). Think of it like f-strings for YAML.
+</div>
+
+<hr>
+
+<h2>3. Your Workflow — Line by Line</h2>
+
+<p>Here's your actual <code>.github/workflows/test.yml</code> with annotations:</p>
+
+<pre><code>name: Tests                    # Name shown in GitHub UI
+
+on:                            # When to trigger
+  push:
+    branches: [main, master]   # On push to main/master
+  pull_request:
+    branches: [main, master]   # On PR targeting main/master
+
+jobs:
+  test:                        # Job name
+    runs-on: windows-latest    # Windows VM (your project is Windows-only)
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]  # Test on both versions
+
+    steps:
+      - uses: actions/checkout@v4         # Clone the repo
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5     # Install Python
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip packages          # Speed up repeated runs
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Cache PaddleOCR models      # Don't re-download 500MB models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Roaming\paddleocr
+            ~\.paddleocr
+          key: ${{ runner.os }}-paddleocr-models
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run fast tests              # Skip @slow tests in CI
+        run: python -m pytest tests/ -m "not slow" --cov=src --cov-report=xml --timeout=120 -v
+
+      - name: Upload coverage             # Save test coverage report
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml</code></pre>
+
+<hr>
+
+<h2>4. Key Concepts</h2>
+
+<h3>Caching</h3>
+
+<pre><code>- name: Cache pip packages
+  uses: actions/cache@v4
+  with:
+    path: ~\AppData\Local\pip\Cache
+    key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}</code></pre>
+
+<p>Without caching, every run downloads all dependencies from scratch (slow!). With caching, GitHub saves the pip folder and reuses it if <code>requirements.txt</code> hasn't changed.</p>
+
+<div class="diagram">
+  <strong>First run:</strong> Download 2GB of deps <span class="arrow">→</span> Save to cache<br>
+  <strong>Second run:</strong> Load from cache (10s) <span class="arrow">→</span> Run tests<br>
+  <strong>After dep change:</strong> Download new deps <span class="arrow">→</span> Update cache
+</div>
+
+<h3>Artifacts</h3>
+
+<pre><code>- name: Upload coverage
+  uses: actions/upload-artifact@v4
+  with:
+    name: coverage-report
+    path: coverage.xml</code></pre>
+
+<p>Artifacts are files保存ed after a workflow run. You can download them from the GitHub UI — useful for coverage reports, logs, or built binaries.</p>
+
+<h3>Conditionals</h3>
+
+<pre><code>if: matrix.python-version == '3.12'</code></pre>
+
+<p>This step only runs for Python 3.12 (not 3.10). Avoids uploading duplicate coverage reports.</p>
+
+<hr>
+
+<h2>5. The Test Marker System</h2>
+
+<p>Your <code>pytest.ini</code> defines markers:</p>
+
+<pre><code>[pytest]
+markers =
+    slow: tests requiring real video files or PaddleOCR
+    integration: tests needing real filesystem I/O
+    unit: pure logic tests with no I/O</code></pre>
+
+<p>In CI, you run <code>-m "not slow"</code> to skip the 9 slow tests (they take ~36s and need a real video). Fast tests run in ~45s.</p>
+
+<div class="callout">
+  <strong>Local vs CI</strong>
+  <ul>
+    <li><strong>Local:</strong> <code>pytest tests/</code> — runs everything (370 tests)</li>
+    <li><strong>CI:</strong> <code>pytest tests/ -m "not slow"</code> — runs fast subset (361 tests)</li>
+  </ul>
+</div>
+
+<hr>
+
+<h2>6. Quiz</h2>
+
+<div class="quiz" id="q1">
+  <h4>Q1: What does <code>runs-on: windows-latest</code> mean?</h4>
+  <label><input type="radio" name="q1" value="a"> The workflow runs on your local Windows machine</label>
+  <label><input type="radio" name="q1" value="b"> GitHub provides a Windows VM to run the tests</label>
+  <label><input type="radio" name="q1" value="c"> The workflow only works on Windows 10</label>
+  <div class="feedback" id="q1-feedback"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <h4>Q2: Why use <code>-m "not slow"</code> in CI?</h4>
+  <label><input type="radio" name="q2" value="a"> Slow tests are broken and should be deleted</label>
+  <label><input type="radio" name="q2" value="b"> CI machines are too slow to run them</label>
+  <label><input type="radio" name="q2" value="c"> To keep CI fast — slow tests run locally instead</label>
+  <div class="feedback" id="q2-feedback"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <h4>Q3: What does <code>actions/checkout@v4</code> do?</h4>
+  <label><input type="radio" name="q3" value="a"> Checks out your code from GitHub onto the VM</label>
+  <label><input type="radio" name="q3" value="b"> Checks if your code has syntax errors</label>
+  <label><input type="radio" name="q3" value="c"> Downloads Python dependencies</label>
+  <div class="feedback" id="q3-feedback"></div>
+</div>
+
+<hr>
+
+<h2>7. What's Next?</h2>
+
+<div class="next-steps">
+  <p><strong>To make your CI live:</strong></p>
+  <ol>
+    <li>Update your GitHub PAT with <code>workflow</code> scope, or push <code>.github/workflows/test.yml</code> via the GitHub web UI</li>
+    <li>Push to <code>main</code> or <code>master</code> — the workflow triggers automatically</li>
+    <li>Check the <strong>Actions</strong> tab on GitHub to see it run</li>
+  </ol>
+
+  <p><strong>To learn more:</strong></p>
+  <ul>
+    <li><a href="https://docs.github.com/en/actions">GitHub Actions docs</a> — official reference</li>
+    <li><a href="https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions">Workflow syntax</a> — every option explained</li>
+    <li><a href="https://github.com/features/actions">Actions marketplace</a> — pre-built actions you can use</li>
+  </ul>
+</div>
+
+<hr>
+
+<p><em>Ask follow-up questions anytime — I'm your teacher. Try the quizzes above to check your understanding!</em></p>
+
+<script>
+document.querySelectorAll('.quiz').forEach(quiz => {
+  const qId = quiz.id;
+  const feedback = quiz.querySelector('.feedback');
+  const answers = { q1: 'b', q2: 'c', q3: 'a' };
+  const explanations = {
+    q1: 'Correct! GitHub provides a fresh Windows VM in the cloud. Your local machine is not involved.',
+    q2: 'Correct! Slow tests (real video extraction, OCR) take ~36s. CI runs the fast subset (~45s) for quick feedback.',
+    q3: 'Correct! checkout@v4 downloads your repository onto the VM so the subsequent steps can access your code.'
+  };
+  quiz.querySelectorAll('input').forEach(input => {
+    input.addEventListener('change', () => {
+      if (input.value === answers[qId]) {
+        feedback.textContent = explanations[qId];
+        feedback.className = 'feedback correct';
+      } else {
+        feedback.textContent = 'Not quite — try again!';
+        feedback.className = 'feedback wrong';
+      }
+    });
+  });
+});
+</script>
+
+</body>
+</html>

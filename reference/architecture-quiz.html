@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clean Architecture Quiz</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            color: #2c3e50;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .quiz-container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .question {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 2px solid #ecf0f1;
+            border-radius: 8px;
+        }
+        .question-text {
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .option {
+            padding: 12px;
+            border: 2px solid #bdc3c7;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .option:hover {
+            border-color: #3498db;
+            background-color: #ebf5fb;
+        }
+        .option.selected {
+            border-color: #27ae60;
+            background-color: #eafaf1;
+        }
+        .option.correct {
+            border-color: #27ae60;
+            background-color: #eafaf1;
+            font-weight: bold;
+        }
+        .option.incorrect {
+            border-color: #e74c3c;
+            background-color: #fdedec;
+        }
+        .feedback {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 6px;
+            display: none;
+        }
+        .feedback.correct {
+            background-color: #eafaf1;
+            border-left: 4px solid #27ae60;
+        }
+        .feedback.incorrect {
+            background-color: #fdedec;
+            border-left: 4px solid #e74c3c;
+        }
+        .submit-btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-top: 20px;
+        }
+        .submit-btn:hover {
+            background-color: #2980b9;
+        }
+        .score {
+            text-align: center;
+            font-size: 1.5em;
+            margin: 20px 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="quiz-container">
+        <h1>Test Your Understanding</h1>
+        <p>Answer these questions about Clean Architecture</p>
+        
+        <div class="question" id="q1">
+            <div class="question-text">1. Which layer contains the business rules and domain models?</div>
+            <div class="options">
+                <div class="option" onclick="selectOption(this, 'q1')">API Layer</div>
+                <div class="option" onclick="selectOption(this, 'q1')">Application Layer</div>
+                <div class="option" onclick="selectOption(this, 'q1')">Domain Layer</div>
+                <div class="option" onclick="selectOption(this, 'q1')">Infrastructure Layer</div>
+            </div>
+            <div class="feedback" id="feedback-q1"></div>
+        </div>
+        
+        <div class="question" id="q2">
+            <div class="question-text">2. In Clean Architecture, dependencies should point:</div>
+            <div class="options">
+                <div class="option" onclick="selectOption(this, 'q2')">Outward (from inner to outer layers)</div>
+                <div class="option" onclick="selectOption(this, 'q2')">Inward (from outer to inner layers)</div>
+                <div class="option" onclick="selectOption(this, 'q2')">Sideways (between same-level layers)</div>
+                <div class="option" onclick="selectOption(this, 'q2')">Nowhere (no dependencies allowed)</div>
+            </div>
+            <div class="feedback" id="feedback-q2"></div>
+        </div>
+        
+        <div class="question" id="q3">
+            <div class="question-text">3. Where should OpenCV (video processing library) be placed?</div>
+            <div class="options">
+                <div class="option" onclick="selectOption(this, 'q3')">Domain Layer</div>
+                <div class="option" onclick="selectOption(this, 'q3')">Application Layer</div>
+                <div class="option" onclick="selectOption(this, 'q3')">Infrastructure Layer</div>
+                <div class="option" onclick="selectOption(this, 'q3')">API Layer</div>
+            </div>
+            <div class="feedback" id="feedback-q3"></div>
+        </div>
+        
+        <div class="question" id="q4">
+            <div class="question-text">4. What is the main benefit of using interfaces in the Domain layer?</div>
+            <div class="options">
+                <div class="option" onclick="selectOption(this, 'q4')">Faster execution</div>
+                <div class="option" onclick="selectOption(this, 'q4')">Easier testing and swapping implementations</div>
+                <div class="option" onclick="selectOption(this, 'q4')">Less code to write</div>
+                <div class="option" onclick="selectOption(this, 'q4')">Better performance</div>
+            </div>
+            <div class="feedback" id="feedback-q4"></div>
+        </div>
+        
+        <div class="question" id="q5">
+            <div class="question-text">5. How does ExtractScoreUseCase get its video service?</div>
+            <div class="options">
+                <div class="option" onclick="selectOption(this, 'q5')">It creates VideoService directly</div>
+                <div class="option" onclick="selectOption(this, 'q5')">It imports from infrastructure</div>
+                <div class="option" onclick="selectOption(this, 'q5')">It receives it via dependency injection</div>
+                <div class="option" onclick="selectOption(this, 'q5')">It uses a global variable</div>
+            </div>
+            <div class="feedback" id="feedback-q5"></div>
+        </div>
+        
+        <button class="submit-btn" onclick="checkAnswers()">Check Answers</button>
+        
+        <div class="score" id="score" style="display: none;"></div>
+    </div>
+    
+    <script>
+        const answers = {
+            'q1': 'Domain Layer',
+            'q2': 'Inward (from outer to inner layers)',
+            'q3': 'Infrastructure Layer',
+            'q4': 'Easier testing and swapping implementations',
+            'q5': 'It receives it via dependency injection'
+        };
+        
+        const explanations = {
+            'q1': 'The Domain layer is the core and contains business rules, models, and interfaces.',
+            'q2': 'The Dependency Rule states dependencies point inward. Outer layers depend on inner layers, not vice versa.',
+            'q3': 'External libraries like OpenCV belong in Infrastructure, implementing Domain interfaces.',
+            'q4': 'Interfaces allow swapping implementations without changing business logic, making testing easier.',
+            'q5': 'Dependency Injection means passing dependencies into the constructor, not creating them inside.'
+        };
+        
+        let selectedOptions = {};
+        
+        function selectOption(element, questionId) {
+            // Remove selection from other options in this question
+            const question = document.getElementById(questionId);
+            question.querySelectorAll('.option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+            
+            // Select this option
+            element.classList.add('selected');
+            selectedOptions[questionId] = element.textContent;
+        }
+        
+        function checkAnswers() {
+            let score = 0;
+            const totalQuestions = Object.keys(answers).length;
+            
+            for (const [questionId, correctAnswer] of Object.entries(answers)) {
+                const question = document.getElementById(questionId);
+                const feedback = document.getElementById(`feedback-${questionId}`);
+                const selected = selectedOptions[questionId];
+                
+                // Reset styles
+                question.querySelectorAll('.option').forEach(opt => {
+                    opt.classList.remove('correct', 'incorrect');
+                });
+                
+                // Check answer
+                if (selected === correctAnswer) {
+                    score++;
+                    feedback.textContent = '✓ Correct! ' + explanations[questionId];
+                    feedback.className = 'feedback correct';
+                    
+                    // Mark correct option
+                    question.querySelectorAll('.option').forEach(opt => {
+                        if (opt.textContent === correctAnswer) {
+                            opt.classList.add('correct');
+                        }
+                    });
+                } else {
+                    feedback.textContent = '✗ Incorrect. ' + explanations[questionId];
+                    feedback.className = 'feedback incorrect';
+                    
+                    // Mark selected as incorrect, correct as correct
+                    question.querySelectorAll('.option').forEach(opt => {
+                        if (opt.textContent === selected) {
+                            opt.classList.add('incorrect');
+                        } else if (opt.textContent === correctAnswer) {
+                            opt.classList.add('correct');
+                        }
+                    });
+                }
+                
+                feedback.style.display = 'block';
+            }
+            
+            // Show score
+            const scoreElement = document.getElementById('score');
+            scoreElement.textContent = `Score: ${score}/${totalQuestions} (${Math.round(score/totalQuestions*100)}%)`;
+            scoreElement.style.display = 'block';
+            
+            if (score === totalQuestions) {
+                scoreElement.style.backgroundColor = '#eafaf1';
+                scoreElement.style.color = '#27ae60';
+            } else if (score >= totalQuestions * 0.7) {
+                scoreElement.style.backgroundColor = '#fef9e7';
+                scoreElement.style.color = '#f39c12';
+            } else {
+                scoreElement.style.backgroundColor = '#fdedec';
+                scoreElement.style.color = '#e74c3c';
+            }
+        }
+    </script>
+</body>
+</html>
+        

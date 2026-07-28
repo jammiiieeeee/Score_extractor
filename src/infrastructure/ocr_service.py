@@ -2,15 +2,16 @@ import os
 import re
 import cv2
 import numpy as np
-from typing import Optional, List, Tuple
+from typing import Callable, Optional, List, Tuple
 
 from src.domain.interfaces import IOcrService
 
 
 class OcrService(IOcrService):
-    def __init__(self):
+    def __init__(self, on_log: Callable[[str], None] = print):
         self.ocr = None
         self.enabled = False
+        self._log = on_log
 
     def initialize(self) -> bool:
         # Set Paddle compatibility flags BEFORE importing PaddleOCR
@@ -24,10 +25,10 @@ class OcrService(IOcrService):
         try:
             from paddleocr import PaddleOCR
         except ImportError:
-            print("Error: 'paddleocr' library not found. Please install requirements.")
+            self._log("[ERROR] paddleocr library not found. Please install requirements.")
             return False
 
-        print("Initializing OCR engine...")
+        self._log("Initializing OCR engine...")
 
         # Test image with a number to verify detection + recognition
         test_img = np.zeros((200, 200, 3), dtype=np.uint8)
@@ -42,17 +43,17 @@ class OcrService(IOcrService):
 
         for i, init_func in enumerate(initialization_attempts):
             try:
-                print(f"  Attempt {i+1}...")
+                self._log(f"  Attempt {i+1}...")
                 self.ocr = init_func()
                 res = self.ocr.ocr(test_img)
                 if res:
-                    print(f"  SUCCESS (Attempt {i+1})")
+                    self._log(f"  SUCCESS (Attempt {i+1})")
                     self.enabled = True
                     return True
             except Exception as e:
-                print(f"  Attempt {i+1} FAILED - {e}")
+                self._log(f"  [WARN] Attempt {i+1} FAILED - {e}")
 
-        print("All PaddleOCR initialization attempts failed!")
+        self._log("[ERROR] All PaddleOCR initialization attempts failed!")
         self.enabled = False
         return False
 
@@ -153,5 +154,5 @@ class OcrService(IOcrService):
             return candidates[0][1]
 
         except Exception as e:
-            print(f"OCR internal error: {e}")
+            self._log(f"[ERROR] OCR internal error: {e}")
             return None

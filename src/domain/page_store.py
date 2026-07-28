@@ -121,10 +121,10 @@ class PageStore:
         self._original_pages = list(frames)
         self._original_png_cache = [self.encode_png(f.image) for f in frames]
 
-    def reapply_crop(self, offset: float, ratio: float) -> None:
-        """Re-crop originals with a new offset and ratio, replacing working pages.
+    def reapply_crop(self, ratio: float) -> None:
+        """Re-crop originals with a new ratio, replacing working pages.
 
-        Uses the same model as PdfService: crop from offset to offset+ratio.
+        Crops from top (0) to ratio of image height.
         """
         if not self._original_pages:
             return
@@ -132,9 +132,8 @@ class PageStore:
         self._png_cache.clear()
         for frame in self._original_pages:
             h = frame.image.shape[0]
-            y_start = int(h * offset)
-            y_end = int(h * (offset + ratio))
-            cropped = frame.image[y_start:y_end, :].copy()
+            y_end = int(h * ratio)
+            cropped = frame.image[0:y_end, :].copy()
             new_frame = Frame(cropped, frame.timestamp, frame.index)
             self._pages.append(new_frame)
             self._png_cache.append(self.encode_png(cropped))

@@ -23,16 +23,16 @@ def on_progress(phase, pct, detail):
     print(f"\r  [{phase}] {pct:5.1f}%  {detail}", end="", flush=True)
 
 def on_log(msg):
-    print(f"\n  [log] {msg}")
+    print(f"\n  {msg}")
 
 def on_error(msg):
     print(f"\n  [ERROR] {msg}")
 
 def on_completed(count):
-    print(f"\n  [completed] {count} pages")
+    print(f"\n  Extraction complete: {count} pages")
 
 def on_download_completed(path):
-    print(f"\n  [download done] {path}")
+    print(f"\n  Download complete: {path}")
 
 api._on_progress = on_progress
 api._on_log = on_log

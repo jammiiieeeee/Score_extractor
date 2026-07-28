@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architecture Analogies</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            color: #2c3e50;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .analogy-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin: 25px 0;
+            border-left: 6px solid;
+        }
+        .domain { border-color: #e74c3c; }
+        .application { border-color: #27ae60; }
+        .infrastructure { border-color: #f39c12; }
+        .api { border-color: #3498db; }
+        
+        .analogy-title {
+            font-size: 1.4em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .layer-name {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .analogy {
+            font-size: 1.2em;
+            font-style: italic;
+            color: #2c3e50;
+            margin: 15px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .mapping {
+            margin: 15px 0;
+        }
+        .mapping-item {
+            display: flex;
+            margin: 8px 0;
+        }
+        .real-world {
+            font-weight: bold;
+            width: 120px;
+            color: #7f8c8d;
+        }
+        .code-part {
+            color: #2c3e50;
+        }
+        .key-insight {
+            background: #eafaf1;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border-left: 4px solid #27ae60;
+        }
+        .flow {
+            text-align: center;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin: 30px 0;
+        }
+        .flow-step {
+            display: inline-block;
+            padding: 15px 25px;
+            margin: 5px;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .flow-arrow {
+            font-size: 1.5em;
+            color: #7f8c8d;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+    <h1 style="text-align: center; margin-bottom: 30px;">Clean Architecture as a Restaurant</h1>
+    
+    <div class="flow">
+        <h3>The Restaurant Analogy</h3>
+        <div class="flow-step" style="background: #3498db; color: white;">Customer orders</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step" style="background: #3498db; color: white;">Waiter takes order</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step" style="background: #27ae60; color: white;">Kitchen manager coordinates</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step" style="background: #f39c12; color: white;">Chef cooks</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step" style="background: #e74c3c; color: white;">Dish served</div>
+    </div>
+    
+    <div class="analogy-card api">
+        <div class="layer-name">API Layer</div>
+        <div class="analogy-title">The Waiter / Host</div>
+        
+        <div class="analogy">
+            "Takes orders from customers, brings food back, handles payments."
+        </div>
+        
+        <div class="mapping">
+            <div class="mapping-item">
+                <span class="real-world">Waiter:</span>
+                <span class="code-part">PyQt6 GUI, CLI, Web endpoints</span>
+            </div>
+            <div class="mapping-item">
+                <span class="real-world">Order pad:</span>
+                <span class="code-part">User input validation</span>
+            </div>
+            <div class="mapping-item">
+                <span class="real-world">Serving food:</span>
+                <span class="code-part">Displaying results to user</span>
+            </div>
+        </div>
+        
+        <div class="key-insight">
+            <strong>Key Point:</strong> The waiter doesn't cook! They just communicate between customer and kitchen. They know <em>how to take an order</em>, not <em>how to make the dish</em>.
+        </div>
+    </div>
+    
+    <div class="analogy-card application">
+        <div class="layer-name">Application Layer</div>
+        <div class="analogy-title">The Kitchen Manager / Head Chef</div>
+        
+        <div class="analogy">
+            "Receives the order, knows the workflow, coordinates the stations, but doesn't actually cook."
+        </div>
+        
+        <div class="mapping">
+            <div class="mapping-item">
+                <span class="real-world">Manager:</span>
+                <span class="code-part">Use cases (ExtractScoreUseCase)</span>
+            </div>
+            <div class="mapping-item">
+                <span class="real-world">Workflow:</span>
+                <span class="code-part">"First prep, then cook, then plate"</span>
+            </div>
+            <div class="mapping-item">
+                <span class="real-world">Delegation:</span>
+                <span class="code-part">Calls video_service.open_video(), not cv2.VideoCapture()</span>
+            </div>
+        </div>
+        
+        <div class="key-insight">
+            <strong>Key Point:</strong> The manager knows the <em>recipe steps</em> but doesn't touch the knives. They say "prep station, do your job" — they don't know if it's a gas or electric stove.
+        </div>
+    </div>
+    
+    <div class="analogy-card infrastructure">
+        <div class="layer-name">Infrastructure Layer</div>
+        <div class="analogy-title">The Kitchen Equipment & Line Cooks</div>
+        
+        <div class="analogy">
+            "The actual stoves, ovens, knives, and cooks who do the work."
+        </div>
+        
+        <div class="mapping">
+            <div class="mapping-item">
+                <span class="real-world">Gas stove:</span>
+                <span class="code-part">OpenCV (video processing)</span>
+            </div>
+            <div class="mapping-item">
+                <span class="real-world">Knife set:</span>
+                <span class="code-part">PaddleOCR (text recognition)</span>
+            </div>
+            <div class="mapping-item">
+                <span class="real-world">Plating station:</span>
+                <span class="code-part">ReportLab (PDF generation)</span>
+            </div>
+            <div class="mapping-item">
+                <span class="real-world">Line cooks:</span>
+                <span class="code-part">Concrete service implementations</span>
+            </div>
+        </div>
+        
+        <div class="key-insight">
+            <strong>Key Point:</strong> If the gas stove breaks, you swap in an electric one — the manager doesn't care, as long as it cooks. The interface is "stove that heats," not "GasBrand XYZ-2000."
+        </div>
+    </div>
+    
+    <div class="analogy-card domain">
+        <div class="layer-name">Domain Layer</div>
+        <div class="analogy-title">The Restaurant's Business Rules</div>
+        
+        <div class="analogy">
+            "What IS a dish? What IS a customer? What are the rules? No equipment, no staff — just pure concepts."
+        </div>
+        
+        <div class="mapping">
+            <div class="mapping-item">
+                <span class="real-world">Menu items:</span>
+                <span class="code-part">Frame, ScoreConfig (models)</span>
+            </div>
+            <div class="mapping-item">
+                <span class="real-world">Recipe rules:</span>
+                <span class="code-part">Business logic (deduplication)</span>
+            </div>
+            <div class="mapping-item">
+                <span class="real-world">"Cooking station":</span>
+                <span class="code-part">IVideoService (interface)</span>
+            </div>
+            <div class="mapping-item">
+                <span class="real-world">"Must have protein":</span>
+                <span class="code-part">Domain constraints</span>
+            </div>
+        </div>
+        
+        <div class="key-insight">
+            <strong>Key Point:</strong> The menu says "Grilled Salmon" — it doesn't say which brand of grill or which chef cooks it. It's the <em>concept</em> of the dish, not the implementation.
+        </div>
+    </div>
+    
+    <div style="background: #2c3e50; color: white; padding: 25px; border-radius: 12px; margin-top: 30px;">
+        <h3 style="color: #f39c12; margin-top: 0;">The Golden Rule</h3>
+        <p style="font-size: 1.1em;">
+            <strong>The Domain layer (business rules) never imports from Infrastructure (equipment).</strong>
+        </p>
+        <p>
+            Just like a menu doesn't say "Grilled on a Weber Genesis II" — it just says "Grilled Salmon."
+        </p>
+        <p>
+            If your Domain layer imports <code>cv2</code> or <code>paddleocr</code>, you've broken the rule!
+        </p>
+    </div>
+</body>
+</html>
+        
