@@ -22,6 +22,9 @@ class PageManifestEntry:
     merge_x: int = 0
     is_duplicate: bool = False
     ocr_number: Optional[str] = None
+    ssim_score: Optional[float] = None
+    guard_rail_passed: bool = True
+    attempt_duration_ms: float = 0.0
 
     def to_dict(self) -> dict:
         return asdict(self)

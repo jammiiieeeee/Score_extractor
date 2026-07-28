@@ -1,4 +1,5 @@
 import cv2
+import re
 import numpy as np
 from pathlib import Path
 from typing import List, Optional
@@ -9,11 +10,20 @@ class FileService(IFileService):
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _sanitize_path_name(name: str) -> str:
+        """Remove characters invalid for Windows folder names."""
+        name = re.sub(r'[<>:"/\\|?*]', '', name)
+        name = name.strip('. ')
+        name = re.sub(r'\s+', ' ', name)
+        return name[:100] if name else "untitled"
+
     def prepare_output_dir(self, output_folder: str, score_name: str) -> Path:
+        score_name = self._sanitize_path_name(score_name)
         score_dir = Path(output_folder) / score_name
         (score_dir / "photos").mkdir(parents=True, exist_ok=True)
         (score_dir / "video").mkdir(parents=True, exist_ok=True)
-        (score_dir / "debug").mkdir(parents=True, exist_ok=True)
+        (score_dir / "diagnostics").mkdir(parents=True, exist_ok=True)
         return score_dir
 
     def save_page_image(self, score_dir: Path, page_num: int, image: np.ndarray) -> Path:

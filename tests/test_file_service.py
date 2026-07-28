@@ -25,7 +25,7 @@ class TestPrepareOutputDir:
         score_dir = fs.prepare_output_dir(out, "my_score")
         assert (score_dir / "photos").is_dir()
         assert (score_dir / "video").is_dir()
-        assert (score_dir / "debug").is_dir()
+        assert (score_dir / "diagnostics").is_dir()
 
     def test_idempotent(self, fs, tmp_path):
         out = str(tmp_path / "output")
@@ -38,6 +38,22 @@ class TestPrepareOutputDir:
         out = str(tmp_path / "output")
         score_dir = fs.prepare_output_dir(out, "test_name")
         assert score_dir.name == "test_name"
+
+    def test_sanitizes_invalid_chars(self, fs, tmp_path):
+        out = str(tmp_path / "output")
+        score_dir = fs.prepare_output_dir(out, 'Test<>:"/\\|?*Name')
+        assert score_dir.name == "TestName"
+
+    def test_sanitizes_trailing_spaces(self, fs, tmp_path):
+        out = str(tmp_path / "output")
+        score_dir = fs.prepare_output_dir(out, "  My Score  ")
+        assert score_dir.name == "My Score"
+
+    def test_truncates_long_names(self, fs, tmp_path):
+        out = str(tmp_path / "output")
+        long_name = "A" * 300
+        score_dir = fs.prepare_output_dir(out, long_name)
+        assert len(score_dir.name) == 100
 
 
 class TestSavePageImage:

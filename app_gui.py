@@ -1236,11 +1236,19 @@ class ExtractTab(QWidget):
 
     # ── Public accessors ──
 
+    @staticmethod
+    def _sanitize(name: str) -> str:
+        import re
+        name = re.sub(r'[<>:"/\\|?*]', '', name)
+        name = name.strip('. ')
+        name = re.sub(r'\s+', ' ', name)
+        return name[:100] if name else "untitled"
+
     def get_project_dir(self) -> str:
         project = self.project_edit.text().strip()
         if not project:
             return ""
-        return str(Path(self._parent_dir) / project)
+        return str(Path(self._parent_dir) / self._sanitize(project))
 
     def get_output_path(self) -> str:
         project_dir = self.get_project_dir()
@@ -1249,6 +1257,7 @@ class ExtractTab(QWidget):
         pdf_name = self.pdf_name_edit.text().strip()
         if not pdf_name:
             pdf_name = Path(project_dir).name
+        pdf_name = self._sanitize(pdf_name)
         if not pdf_name.endswith(".pdf"):
             pdf_name += ".pdf"
         return str(Path(project_dir) / pdf_name)
@@ -1777,7 +1786,7 @@ class PianoKeyDivider(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Score Extractor")
+        # self.setWindowTitle("Score Extractor")
         self.setMinimumSize(960, 760)
         self.resize(1100, 780)
         self.setStyleSheet(STYLESHEET.replace("__CHECK_PLACEHOLDER__", CHECK_INDICATOR_PATH).replace("__CHEVRON_PLACEHOLDER__", CHEVRON_PATH))
@@ -1794,18 +1803,18 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(12, 12, 12, 12)
 
-        header = QLabel("Score Extractor")
-        header.setObjectName("title")
-        header.setStyleSheet(f"""
-            font-size: 26px; font-weight: 700;
-            color: {INK}; padding: 4px 0 4px 0;
-        """)
-        main_layout.addWidget(header)
+        # header = QLabel("Score Extractor")
+        # header.setObjectName("title")
+        # header.setStyleSheet(f"""
+        #     font-size: 26px; font-weight: 700;
+        #     color: {INK}; padding: 4px 0 4px 0;
+        # """)
+        # main_layout.addWidget(header)
 
         # Piano-key motif divider
-        piano_div = PianoKeyDivider()
-        piano_div.setFixedHeight(28)
-        main_layout.addWidget(piano_div)
+        # piano_div = PianoKeyDivider()
+        # piano_div.setFixedHeight(28)
+        # main_layout.addWidget(piano_div)
 
         # Tabs
         self.tabs = QTabWidget()
@@ -1881,7 +1890,7 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    app.setApplicationName("Score Extractor")
+    # app.setApplicationName("Score Extractor")
 
     global CHECK_INDICATOR_PATH
     global CHEVRON_PATH

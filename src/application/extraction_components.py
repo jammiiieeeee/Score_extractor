@@ -296,8 +296,10 @@ class PageCommitter:
         on_page_detected: Optional[Callable[[int, np.ndarray], None]] = None,
         is_first: bool = False,
         plotter: Optional['BarProfilePlotter'] = None,
+        ssim_score: Optional[float] = None,
     ) -> Optional[PageManifestEntry]:
         page_num = attempt_num
+        t_commit_start = time.time()
 
         # Read full-res A/B frames from original video when available,
         # so the merge operates on full-resolution data instead of scan-res
@@ -313,20 +315,19 @@ class PageCommitter:
             if full_a is not None:
                 success, buf = cv2.imencode('.png', full_a)
                 if success:
-                    buf.tofile(str(output_dir / "debug" / f"page_{page_num:03d}_A.png"))
+                    buf.tofile(str(output_dir / "diagnostics" / f"page_{page_num:03d}_A.png"))
             if full_b is not None:
                 success, buf = cv2.imencode('.png', full_b)
                 if success:
-                    buf.tofile(str(output_dir / "debug" / f"page_{page_num:03d}_B.png"))
+                    buf.tofile(str(output_dir / "diagnostics" / f"page_{page_num:03d}_B.png"))
 
         # Merge frames — use full-res when available, scan-res as fallback
         merge_a = full_a if full_a is not None else frame_a.image
         merge_b = full_b if full_b is not None else frame_b.image
-        debug_path = str(output_dir / "debug" / f"bar_profile_page_{page_num:03d}.txt") if debug else None
         full_img, bar_x, bar_width = self.video.merge_frames(
             merge_a, merge_b, self.config.b_overlay_width_ratio,
             self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
-            self.config.bar_padding_px, debug_path
+            self.config.bar_padding_px, None
         )
         merge_x = max(0, bar_x - bar_width + self.config.bar_padding_px) if bar_x > 0 else 0
         log(f"  Bar right edge at x={bar_x}, width={bar_width}px, merge_x={merge_x} for page {page_num}")
@@ -349,12 +350,15 @@ class PageCommitter:
         has_clean_profile, has_left_spike, bar_peaks = self.deduplicator.check_bar_profile(
             frame_a.image, frame_b.image, self.config.default_crop_ratio
         )
+        guard_rail_passed = True
         if not is_first:
             if not is_dup and not has_clean_profile:
                 is_dup = True
+                guard_rail_passed = False
                 log(f"  Page {page_num}: No clean bar profile, treated as duplicate")
             if not is_dup and not has_left_spike:
                 is_dup = True
+                guard_rail_passed = False
                 log(f"  Page {page_num}: Left spike outside margin, treated as duplicate")
 
         for existing in unique_pages:
@@ -372,8 +376,8 @@ class PageCommitter:
         else:
             log(f"  Duplicate page skipped at {frame_a.timestamp:.2f}s")
 
-        if debug and plotter is not None:
-            plot_path = output_dir / "debug" / f"bar_profile_page_{page_num:03d}.png"
+        if plotter is not None:
+            plot_path = output_dir / "diagnostics" / f"bar_profile_page_{page_num:03d}.png"
             plotter.plot(
                 frame_a.image, frame_b.image, self.config.default_crop_ratio,
                 bar_x, bar_width, self.config.bar_padding_px,
@@ -381,6 +385,8 @@ class PageCommitter:
                 self.deduplicator, peaks=bar_peaks, has_clean=has_clean_profile,
                 has_left_spike=has_left_spike
             )
+
+        attempt_duration_ms = (time.time() - t_commit_start) * 1000
 
         return PageManifestEntry(
             page=attempt_num,
@@ -391,6 +397,9 @@ class PageCommitter:
             merge_x=merge_x,
             is_duplicate=is_dup,
             ocr_number=str(merged_number) if merged_number is not None else None,
+            ssim_score=ssim_score,
+            guard_rail_passed=guard_rail_passed,
+            attempt_duration_ms=round(attempt_duration_ms, 1),
         )
 
 

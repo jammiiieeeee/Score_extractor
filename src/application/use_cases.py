@@ -56,15 +56,14 @@ class ExtractScoreUseCase:
         deduplicator = Deduplicator(self.config, effective_ocr)
         ocr_available = effective_ocr.is_enabled()
 
-        # Write extraction log to debug/ subfolder
+        # Write extraction log to diagnostics/ subfolder (always on)
         log_file: Optional[TextIO] = None
-        if debug:
-            try:
-                log_path = output_dir / "debug" / "extraction.log"
-                log_path.parent.mkdir(parents=True, exist_ok=True)
-                log_file = open(log_path, "w", encoding="utf-8")
-            except Exception:
-                pass
+        try:
+            log_path = output_dir / "diagnostics" / "extraction.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_file = open(log_path, "w", encoding="utf-8")
+        except Exception:
+            pass
 
         def log(msg: str):
             on_log(msg)
@@ -73,7 +72,7 @@ class ExtractScoreUseCase:
                 log_file.flush()
 
         # Build sub-components
-        plotter = BarProfilePlotter() if debug else None
+        plotter = BarProfilePlotter()
         committer = PageCommitter(
             self.video_service, self.file_service, effective_ocr,
             self.config, deduplicator, orig_w, orig_h,
@@ -126,6 +125,7 @@ class ExtractScoreUseCase:
                 entry = committer.commit(
                     a_frame, b_frame, unique_pages, output_dir, attempt_num,
                     debug, log, on_page_detected, is_first=False, plotter=plotter,
+                    ssim_score=ssim_score,
                 )
                 if entry is not None:
                     manifest_entries.append(entry)

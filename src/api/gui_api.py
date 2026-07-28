@@ -19,6 +19,7 @@ from src.infrastructure.ocr_service import OcrService
 from src.infrastructure.pdf_service import PdfService
 from src.infrastructure.file_service import FileService
 from src.infrastructure.download_service import DownloadService
+from src.infrastructure.diagnostics_service import generate_html_report
 from src.application.use_cases import ExtractScoreUseCase
 
 
@@ -403,7 +404,8 @@ class GuiApi:
             self._pages.set_pages(pages)
 
             if manifest_entries:
-                manifest_path = score_dir / "page_manifest.json"
+                manifest_path = score_dir / "diagnostics" / "page_manifest.json"
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(str(manifest_path), 'w', encoding='utf-8') as f:
                     json.dump([e.to_dict() for e in manifest_entries], f, indent=2)
 
@@ -554,9 +556,19 @@ class GuiApi:
             self.save_metadata(str(score_dir), {
                 "score_name": final_title,
                 "crop_ratio": self._config.default_crop_ratio,
+                "crop_top_offset": self._config.crop_top_offset,
                 "page_count": len(self._pages),
                 "extraction_date": time.strftime("%Y-%m-%dT%H:%M:%S"),
             })
+
+            diag_dir = score_dir / "diagnostics"
+            if diag_dir.exists():
+                try:
+                    html = generate_html_report(diag_dir)
+                    if html:
+                        self._emit_log(f"Diagnostics report: {html}")
+                except Exception as e:
+                    self._emit_log(f"  [Warn] Diagnostics HTML failed: {e}")
 
         except Exception as e:
             self._emit_error(f"PDF generation failed: {e}")
@@ -613,6 +625,8 @@ class GuiApi:
         self._loaded_score_metadata = self._read_metadata(score_dir)
         meta_crop = self._loaded_score_metadata.get("crop_ratio", 0.35)
         self._config.default_crop_ratio = meta_crop
+        meta_offset = self._loaded_score_metadata.get("crop_top_offset", 0.0)
+        self._config.crop_top_offset = meta_offset
         self._emit_log(f"Loaded {len(self._pages)} pages from {path}")
         return len(self._pages)
 
@@ -684,7 +698,7 @@ class GuiApi:
     def open_debug_folder(self, score_dir: str) -> None:
         if not self._debug_mode:
             return
-        debug_path = Path(score_dir) / "debug"
+        debug_path = Path(score_dir) / "diagnostics"
         if debug_path.exists():
             os.startfile(str(debug_path.resolve()))
 
