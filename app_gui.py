@@ -1610,9 +1610,6 @@ class ExtractTab(QWidget):
         self.crop_widget.set_ratio(val)
         if self._has_existing_score:
             self._api.reapply_crop(val)
-            first = self._api.get_first_page_image()
-            if first is not None:
-                self.crop_widget.set_frame(self._img_to_pixmap(first))
             self.crop_original_label.setText(
                 f"(was {int(self._loaded_original_ratio * 100)}%)" if self._loaded_original_ratio else "")
 
