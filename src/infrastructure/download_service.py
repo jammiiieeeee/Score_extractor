@@ -1,10 +1,11 @@
+import re
 import shutil
 import glob as _glob
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 
 class DownloadResult:
@@ -52,6 +53,43 @@ class DownloadService:
         except Exception:
             return False
 
+    @staticmethod
+    def _extract_video_id(url: str) -> Optional[str]:
+        """Extract YouTube video ID from various URL formats."""
+        patterns = [
+            r'(?:v=|/v/|youtu\.be/|/embed/)([a-zA-Z0-9_-]{11})',
+            r'^([a-zA-Z0-9_-]{11})$',
+        ]
+        for pat in patterns:
+            m = re.search(pat, url)
+            if m:
+                return m.group(1)
+        return None
+
+    def _check_cache(self, video_id: str, scan_fmt: str,
+                     on_log: Optional[Callable[[str], None]] = None) -> Optional[DownloadResult]:
+        """Check if video files already exist in yt_dl/ for this video ID."""
+        dl_dir = self.base_dir / "yt_dl"
+        if not dl_dir.exists():
+            return None
+
+        main_files = sorted(dl_dir.glob(f"{video_id}.*"), key=lambda f: f.stat().st_mtime, reverse=True)
+        if not main_files:
+            return None
+
+        main_path = str(main_files[0])
+        scan_path = main_path
+
+        if scan_fmt:
+            scan_files = sorted(dl_dir.glob(f"{video_id}_scan.*"), key=lambda f: f.stat().st_mtime, reverse=True)
+            if scan_files:
+                scan_path = str(scan_files[0])
+
+        if on_log:
+            on_log(f"  Cached video found: {main_path}")
+
+        return DownloadResult(video_path=main_path, video_title=video_id, scan_path=scan_path)
+
     def download(
         self,
         url: str,
@@ -71,6 +109,16 @@ class DownloadService:
 
         dl_dir = self.base_dir / "yt_dl"
         dl_dir.mkdir(parents=True, exist_ok=True)
+
+        # Check cache before downloading
+        video_id = self._extract_video_id(url)
+        if video_id:
+            cached = self._check_cache(video_id, scan_fmt, on_log=on_log)
+            if cached:
+                if on_log:
+                    on_log(f"Using cached video: {cached.video_path}")
+                return cached
+
         output_template = str(dl_dir / "%(id)s.%(ext)s")
 
         finished_logged = False
