@@ -740,6 +740,33 @@ class ConfigTab(QWidget):
         self.ocr_enabled = QCheckBox("Enable OCR")
         self.ocr_enabled.setChecked(False)
 
+        self.crop_ratio.setToolTip(
+            "How much of the top portion of each video frame to keep.\n"
+            "0.35 keeps the top 35%, discarding the bottom (useful for scores\n"
+            "where the music notation sits in the upper portion).\n"
+            "Safe range: 0.20–0.50. Drag the crop line in the preview to adjust visually."
+        )
+        self.sensitivity.setToolTip(
+            "How similar two consecutive frames must be to count as 'unchanged'.\n"
+            "Higher values = fewer false triggers but may miss subtle page turns.\n"
+            "Safe range: 0.90–0.99. Raise toward 0.99 if the tool triggers on lighting flickers."
+        )
+        self.min_interval.setToolTip(
+            "Minimum seconds between page captures, even if changes are detected.\n"
+            "Prevents duplicate captures during slow page turns or hand movements.\n"
+            "Safe range: 1.0–10.0. Raise to 5+ for slow page-turners."
+        )
+        self.ocr_conf.setToolTip(
+            "Minimum OCR confidence score (0–100) to accept recognized text.\n"
+            "Used to deduplicate pages by comparing text content.\n"
+            "Safe range: 30–70. Set to 0 to disable OCR entirely."
+        )
+        self.ocr_enabled.setToolTip(
+            "Use OCR to compare page text for deduplication.\n"
+            "Requires PaddleOCR (adds startup time). Recommended for scores\n"
+            "where visual similarity alone may confuse similar-looking pages."
+        )
+
         form.addRow("Crop ratio:", self.crop_ratio)
         form.addRow("Page change sensitivity:", self.sensitivity)
         form.addRow("Min seconds between captures:", self.min_interval)
@@ -756,27 +783,72 @@ class ConfigTab(QWidget):
         adv_grid.setHorizontalSpacing(12)
 
         adv_fields = [
-            ("Frame check interval (s):", self._spin_float(0.05, 5.0, 0.05, 0.2)),
-            ("Top analysis ratio:", self._spin_float(0.05, 1.0, 0.01, 0.34)),
-            ("A-capture delay (s):", self._spin_float(0.0, 5.0, 0.1, 0.3)),
-            ("B-capture delay (s):", self._spin_float(0.0, 10.0, 0.1, 3.0)),
-            ("B overlay width ratio:", self._spin_float(0.0, 1.0, 0.01, 0.5)),
-            ("Duplicate top ratio:", self._spin_float(0.0, 1.0, 0.01, 0.27)),
-            ("Pixel similarity threshold:", self._spin_float(0.0, 1.0, 0.01, 0.95)),
-            ("Row similarity threshold:", self._spin_float(0.0, 1.0, 0.01, 0.98)),
-            ("Row coverage threshold:", self._spin_float(0.0, 1.0, 0.01, 0.94)),
-            ("OCR horizontal ratio:", self._spin_float(0.0, 1.0, 0.01, 0.30)),
-            ("Crop top offset:", self._spin_float(0.0, 1.0, 0.01, 0.0)),
-            ("Blank content std threshold:", self._spin_float(0.0, 50.0, 0.5, 3.0)),
-            ("Bar min diff threshold:", self._spin_float(0.0, 50000.0, 100.0, 500.0)),
-            ("Bar overlay offset (px):", self._spin_int(-200, 200, -15)),
+            ("Frame check interval (s):", self._spin_float(0.05, 5.0, 0.05, 0.2),
+             "How often (in seconds) the video is sampled for page changes.\n"
+             "Lower = faster detection but higher CPU usage.\n"
+             "Safe range: 0.05–1.0. Use 0.1 for quick extraction, 0.5 to save CPU."),
+            ("Top analysis ratio:", self._spin_float(0.05, 1.0, 0.01, 0.34),
+             "How much of the frame's top portion is compared between frames.\n"
+             "Only this region is checked for page changes, ignoring the bottom\n"
+             "(typically a static piano keyboard or player UI).\n"
+             "Safe range: 0.20–0.50."),
+            ("A-capture delay (s):", self._spin_float(0.0, 5.0, 0.1, 0.3),
+             "Seconds to wait after detecting a change before capturing the\n"
+             "'before' frame (clean page). Gives the page time to settle.\n"
+             "Safe range: 0.0–1.0. Increase if captures show a partial page turn."),
+            ("B-capture delay (s):", self._spin_float(0.0, 10.0, 0.1, 3.0),
+             "Seconds to wait after A-capture before capturing the 'after' frame\n"
+             "(page with overlay bar). Controls how much of the new page is visible.\n"
+             "Safe range: 1.0–6.0. Increase if the bar overlaps content."),
+            ("B overlay width ratio:", self._spin_float(0.0, 1.0, 0.01, 0.5),
+             "Width of the vertical overlay bar on the B-frame, as a fraction\n"
+             "of the image width. The bar marks where the page transition occurred.\n"
+             "Safe range: 0.3–0.7."),
+            ("Duplicate top ratio:", self._spin_float(0.0, 1.0, 0.01, 0.27),
+             "How much of the top area is compared when deduplicating pages.\n"
+             "Only this portion is checked for visual similarity between captures.\n"
+             "Safe range: 0.15–0.40."),
+            ("Pixel similarity threshold:", self._spin_float(0.0, 1.0, 0.01, 0.95),
+             "Minimum pixel-level similarity (0–1) for two pages to be\n"
+             "considered duplicates. Higher = stricter matching.\n"
+             "Safe range: 0.90–0.99. Lower to 0.90 if near-duplicates slip through."),
+            ("Row similarity threshold:", self._spin_float(0.0, 1.0, 0.01, 0.98),
+             "Minimum row-by-row similarity for deduplication. Checks each\n"
+             "horizontal strip independently. Higher = stricter.\n"
+             "Safe range: 0.95–0.99."),
+            ("Row coverage threshold:", self._spin_float(0.0, 1.0, 0.01, 0.94),
+             "Fraction of rows that must be similar for pages to be considered\n"
+             "duplicates. Allows minor differences (e.g., page numbers) while\n"
+             "catching truly identical content.\n"
+             "Safe range: 0.85–0.98."),
+            ("OCR horizontal ratio:", self._spin_float(0.0, 1.0, 0.01, 0.30),
+             "How far across the page (from the left) OCR text is extracted.\n"
+             "Useful for scores where the title/header sits on the left side.\n"
+             "Safe range: 0.20–0.50. Set to 1.0 for full-width OCR."),
+            ("Crop top offset:", self._spin_float(0.0, 1.0, 0.01, 0.0),
+             "Shifts the crop region downward by this fraction of the frame height.\n"
+             "Useful when the score content doesn't start at the very top.\n"
+             "Safe range: 0.0–0.10. Usually leave at 0.0."),
+            ("Blank content std threshold:", self._spin_float(0.0, 50.0, 0.5, 3.0),
+             "Pixel standard deviation below which a frame is considered blank\n"
+             "(white/black screen, no content). Blank frames are skipped.\n"
+             "Safe range: 1.0–8.0. Raise to 10+ if real content is being rejected."),
+            ("Bar min diff threshold:", self._spin_float(0.0, 50000.0, 100.0, 500.0),
+             "Minimum pixel intensity difference required to detect the black\n"
+             "bar overlay on the B-frame. Higher = less sensitive to the bar.\n"
+             "Safe range: 200–2000. Raise if the bar isn't being detected."),
+            ("Bar overlay offset (px):", self._spin_int(-200, 200, -15),
+             "Pixel offset applied to the bar detection position.\n"
+             "Negative = shift left, positive = shift right.\n"
+             "Safe range: -50 to +50. Fine-tune when the bar position is slightly off."),
         ]
 
-        for r, (label_text, spinbox) in enumerate(adv_fields):
+        for r, (label_text, spinbox, tip) in enumerate(adv_fields):
             lbl = QLabel(label_text)
             lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             adv_grid.addWidget(lbl, r, 0)
             adv_grid.addWidget(spinbox, r, 1)
+            spinbox.setToolTip(tip)
 
         adv_grid.setColumnStretch(0, 0)
         adv_grid.setColumnStretch(1, 1)
@@ -799,6 +871,11 @@ class ConfigTab(QWidget):
         # Debug mode checkbox
         r = len(adv_fields)
         self.debug_cb = QCheckBox("Debug mode (open temp folder on completion)")
+        self.debug_cb.setToolTip(
+            "When enabled, opens the output folder automatically after extraction\n"
+            "so you can inspect intermediate files (cropped frames, debug images).\n"
+            "Enable this when diagnosing extraction issues."
+        )
         adv_grid.addWidget(self.debug_cb, r, 0, 1, 2)
 
         layout.addWidget(self.advanced)
