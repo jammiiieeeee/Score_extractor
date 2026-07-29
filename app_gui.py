@@ -1013,6 +1013,8 @@ class ConfigTab(QWidget):
 class PreviewSeeker(QObject):
     """Background frame reader using FFmpeg subprocess (or OpenCV fallback) for seeking."""
     frame_ready = pyqtSignal(object)  # QImage, safe cross-thread
+    open_requested = pyqtSignal(str)
+    close_requested = pyqtSignal()
     seek_requested = pyqtSignal(float, float)
 
     def __init__(self):
@@ -1026,6 +1028,8 @@ class PreviewSeeker(QObject):
         self._seek_seq = 0
         self._ffmpeg = self._find_ffmpeg()
         self._use_ffmpeg = False
+        self.open_requested.connect(self.open)
+        self.close_requested.connect(self.close)
         self.seek_requested.connect(self._do_seek)
 
     def open(self, path: str):
@@ -1149,6 +1153,11 @@ class ExtractTab(QWidget):
         self._seek_coalesce.setTimerType(Qt.TimerType.PreciseTimer)
         self._seek_coalesce.timeout.connect(self._emit_pending_seek)
         self._pending_seek_ts: Optional[float] = None
+
+        self._watchdog = QTimer(self)
+        self._watchdog.setSingleShot(True)
+        self._watchdog.setTimerType(Qt.TimerType.CoarseTimer)
+        self._watchdog.timeout.connect(self._on_watchdog_timeout)
 
         self._settings = QSettings("ScoreExtractor", "App")
         self._parent_dir = self._settings.value("parent_dir", str(Path(__file__).resolve().parent / "output"))
@@ -1318,15 +1327,27 @@ class ExtractTab(QWidget):
         self.reextract_btn.setFixedWidth(110)
         self.reextract_btn.setVisible(False)
         self.reextract_btn.clicked.connect(self._on_reextract)
-        self.action_btn = QPushButton("Start Extraction")
-        self.action_btn.setEnabled(False)
-        self.action_btn.setFixedWidth(200)
+        self.extract_btn = QPushButton("Start Extraction")
+        self.extract_btn.setEnabled(False)
+        self.extract_btn.setFixedWidth(160)
+        self.regenerate_btn = QPushButton("Regenerate PDF")
+        self.regenerate_btn.setEnabled(False)
+        self.regenerate_btn.setFixedWidth(160)
+        self.regenerate_btn.setVisible(False)
+        self.regenerate_btn.clicked.connect(self._regenerate_pdf)
+        self.open_pdf_btn = QPushButton("Open PDF")
+        self.open_pdf_btn.setEnabled(False)
+        self.open_pdf_btn.setFixedWidth(120)
+        self.open_pdf_btn.setVisible(False)
+        self.open_pdf_btn.clicked.connect(self._open_pdf)
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setObjectName("danger")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.setFixedWidth(90)
         action_row.addWidget(self.reextract_btn)
-        action_row.addWidget(self.action_btn)
+        action_row.addWidget(self.extract_btn)
+        action_row.addWidget(self.regenerate_btn)
+        action_row.addWidget(self.open_pdf_btn)
         action_row.addWidget(self.cancel_btn)
         layout.addLayout(action_row)
 
@@ -1336,7 +1357,7 @@ class ExtractTab(QWidget):
         self.project_browse_btn.clicked.connect(self._browse_project)
         self.browse_btn.clicked.connect(self._browse_video)
         self.video_path_edit.textChanged.connect(self._on_path_changed)
-        self.action_btn.clicked.connect(self._on_action)
+        self.extract_btn.clicked.connect(self._start_extraction)
         self.cancel_btn.clicked.connect(self._cancel)
         self.local_radio.toggled.connect(self._on_source_toggled)
         self.yt_radio.toggled.connect(self._on_source_toggled)
@@ -1646,7 +1667,7 @@ class ExtractTab(QWidget):
             if img is not None:
                 self.crop_widget.set_frame(self._img_to_pixmap(img))
 
-            self._preview_seeker.open(path)
+            self._preview_seeker.open_requested.emit(path)
             self._log(f"Video loaded: {info.duration:.1f}s  {info.width}x{info.height}  {info.fps:.2f}fps")
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Could not open video:\n{e}")
@@ -1722,48 +1743,41 @@ class ExtractTab(QWidget):
 
         dbg(f"_update_state: busy={self._busy}, reextract={self._reextract_mode}, has_existing={self._has_existing_score}, has_pages={has_pages}, has_project={has_project}, has_video={has_video}")
 
+        self.cancel_btn.setVisible(self._busy)
+        self.extract_btn.setVisible(False)
+        self.regenerate_btn.setVisible(False)
+        self.open_pdf_btn.setVisible(False)
+        self.reextract_btn.setVisible(False)
+
         if self._busy:
-            pass  # button text set by _on_action
+            self.cancel_btn.setEnabled(True)
         elif self._reextract_mode:
-            self.action_btn.setText("Start Extraction")
-            self.action_btn.setEnabled(can_act and has_video)
-            self.reextract_btn.setVisible(False)
+            self.extract_btn.setVisible(True)
+            self.extract_btn.setEnabled(can_act and has_video)
+            self.extract_btn.setText("Start Extraction")
             self.status_label.setText(
                 f"Re-extract: will replace {self._api.get_page_count()} pages")
         elif self._has_existing_score and has_pages:
-            self.action_btn.setText("Regenerate PDF")
-            self.action_btn.setEnabled(can_act)
+            self.regenerate_btn.setVisible(True)
+            self.regenerate_btn.setEnabled(can_act)
             self.reextract_btn.setVisible(True)
             self.status_label.setText(
                 f"Loaded {self._api.get_page_count()} pages — regenerate PDF or re-extract")
         elif has_project and has_video:
-            self.action_btn.setText("Start Extraction")
-            self.action_btn.setEnabled(can_act)
-            self.reextract_btn.setVisible(False)
+            self.extract_btn.setVisible(True)
+            self.extract_btn.setEnabled(can_act)
+            self.extract_btn.setText("Start Extraction")
             self.status_label.setText("Ready — start extraction")
         else:
-            self.action_btn.setText("Start Extraction")
-            self.action_btn.setEnabled(False)
-            self.reextract_btn.setVisible(False)
+            self.extract_btn.setVisible(True)
+            self.extract_btn.setEnabled(False)
+            self.extract_btn.setText("Start Extraction")
             if not has_video:
                 self.status_label.setText("Select a video source")
             elif not has_project:
                 self.status_label.setText("Enter a score name")
             else:
                 self.status_label.setText("Ready")
-
-    # ── Action button ──
-
-    def _on_action(self):
-        dbg(f"_on_action: busy={self._busy}, reextract={self._reextract_mode}, has_existing={self._has_existing_score}, has_pages={self._api.get_page_count()}, completed_pdf={self._completed_pdf_path}")
-        if self._busy:
-            return
-        if self._completed_pdf_path:
-            self._open_pdf()
-        elif self._reextract_mode or not (self._has_existing_score and self._api.get_page_count() > 0):
-            self._start_extraction()
-        else:
-            self._regenerate_pdf()
 
     def _start_extraction(self):
         dbg("_start_extraction")
@@ -1810,14 +1824,16 @@ class ExtractTab(QWidget):
         no_ocr = (self._api.get_config().get("ocr_confidence_threshold", 40) == 0)
 
         self._busy = True
-        self.action_btn.setText("Extracting…")
-        self.action_btn.setEnabled(False)
+        self.extract_btn.setText("Extracting…")
+        self.extract_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
         self.status_label.setText("Extracting…")
+        self._watchdog.start(300000)  # 5 min safety timeout
 
-        self._api.start_extraction(
+        try:
+            self._api.start_extraction(
             video_path=video_path,
             no_ocr=no_ocr,
             start_time=start_time,
@@ -1825,6 +1841,9 @@ class ExtractTab(QWidget):
             output_folder=self._parent_dir,
             score_name=project,
         )
+        except RuntimeError as e:
+            QMessageBox.warning(self, "Error", str(e))
+            self._reset_ui()
 
     def _regenerate_pdf(self):
         dbg("_regenerate_pdf")
@@ -1843,8 +1862,9 @@ class ExtractTab(QWidget):
         title = pdf_name if pdf_name else None
 
         self._busy = True
-        self.action_btn.setText("Generating PDF…")
-        self.action_btn.setEnabled(False)
+        self.extract_btn.setVisible(False)
+        self.regenerate_btn.setVisible(False)
+        self.regenerate_btn.setEnabled(False)
         self.cancel_btn.setEnabled(False)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
@@ -1863,8 +1883,14 @@ class ExtractTab(QWidget):
 
     def _cancel(self):
         if self._busy:
+            self._watchdog.stop()
             self._api.cancel_extraction()
             self._log("Cancelling…")
+
+    def _on_watchdog_timeout(self):
+        self._log("[Timeout] Extraction stalled — forcing reset")
+        self._api.cancel_extraction()
+        self._reset_ui()
 
     def _open_pdf(self):
         if self._completed_pdf_path and os.path.exists(self._completed_pdf_path):
@@ -1886,9 +1912,10 @@ class ExtractTab(QWidget):
 
         output_path = self.get_output_path()
         title = self.pdf_name_edit.text().strip() or None
+        self._watchdog.start(300000)
         try:
             self._api.generate_pdf(output_path, title=title)
-        except RuntimeError as e:
+        except (RuntimeError, ValueError, PermissionError) as e:
             QMessageBox.warning(self, "Error", str(e))
             self._reset_ui()
 
@@ -1897,11 +1924,13 @@ class ExtractTab(QWidget):
         dbg(f"on_pdf_completed: page_count={page_count}, path={output_path}")
         self._completed_pdf_path = output_path
         self._reextract_mode = False
-        self.status_label.setText(f"✓ PDF saved — {output_path}")
-        self.action_btn.setText("Open PDF")
-        self.action_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(False)
         self._busy = False
+        self.cancel_btn.setEnabled(False)
+        self.extract_btn.setVisible(False)
+        self.regenerate_btn.setVisible(False)
+        self.open_pdf_btn.setVisible(True)
+        self.open_pdf_btn.setEnabled(True)
+        self.status_label.setText(f"✓ PDF saved — {output_path}")
 
     def on_cancelled(self):
         dbg("on_cancelled")
@@ -1922,13 +1951,20 @@ class ExtractTab(QWidget):
     def on_progress(self, phase: str, percent: float, detail: str):
         dbg(f"on_progress: phase={phase}, percent={percent:.0f}%, detail={detail}")
         self.progress_bar.setValue(int(percent))
+        self._watchdog.start(300000)
+        phase_text = phase.replace("_", " ").title()
+        if detail:
+            self.status_label.setText(f"{phase_text}: {detail}")
+        else:
+            self.status_label.setText(phase_text)
 
     def _reset_ui(self):
         dbg("_reset_ui")
         self._busy = False
         self._reextract_mode = False
+        self._watchdog.stop()
         self.cancel_btn.setEnabled(False)
-        self.action_btn.setText("Start Extraction")
+        self.open_pdf_btn.setVisible(False)
         self.download_btn.setEnabled(True)
         self.download_btn.setText("Download")
         self.yt_url_edit.setEnabled(True)
@@ -2031,7 +2067,7 @@ class MainWindow(QMainWindow):
             self.config_tab.refresh_from_api()
 
     def closeEvent(self, event):
-        self.extract_tab._preview_seeker.close()
+        self.extract_tab._preview_seeker.close_requested.emit()
         self.extract_tab._preview_thread.quit()
         self.extract_tab._preview_thread.wait(2000)
         super().closeEvent(event)
