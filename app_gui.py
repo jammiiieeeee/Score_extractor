@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import threading
 import subprocess
 import shutil
 import glob as _glob
@@ -1020,6 +1021,7 @@ class PreviewSeeker(QObject):
     def __init__(self):
         super().__init__()
         self._cap = None
+        self._cap_lock = threading.Lock()
         self._path: Optional[str] = None
         self._fps = 1.0
         self._width = 0
@@ -1032,15 +1034,17 @@ class PreviewSeeker(QObject):
     def open(self, path: str):
         self.close()
         self._path = path
-        self._cap = cv2.VideoCapture(path)
-        self._fps = self._cap.get(cv2.CAP_PROP_FPS) or 1.0
-        self._width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self._height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        with self._cap_lock:
+            self._cap = cv2.VideoCapture(path)
+            self._fps = self._cap.get(cv2.CAP_PROP_FPS) or 1.0
+            self._width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            self._height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     def close(self):
-        if self._cap:
-            self._cap.release()
-            self._cap = None
+        with self._cap_lock:
+            if self._cap:
+                self._cap.release()
+                self._cap = None
         self._path = None
 
     @staticmethod
@@ -1085,10 +1089,11 @@ class PreviewSeeker(QObject):
         return np.frombuffer(data[:out_w * out_h * 3], dtype=np.uint8).reshape(out_h, out_w, 3)
 
     def _read_frame_opencv(self, ts: float) -> Optional[np.ndarray]:
-        if self._cap is None or not self._cap.isOpened():
-            return None
-        self._cap.set(cv2.CAP_PROP_POS_MSEC, ts * 1000)
-        ret, frame = self._cap.read()
+        with self._cap_lock:
+            if self._cap is None or not self._cap.isOpened():
+                return None
+            self._cap.set(cv2.CAP_PROP_POS_MSEC, ts * 1000)
+            ret, frame = self._cap.read()
         if not ret or frame is None:
             return None
         return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
