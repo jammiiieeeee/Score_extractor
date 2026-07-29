@@ -1923,6 +1923,7 @@ class ExtractTab(QWidget):
         output_path = self.get_output_path()
         dbg(f"on_pdf_completed: page_count={page_count}, path={output_path}")
         self._completed_pdf_path = output_path
+        self._has_existing_score = True
         self._reextract_mode = False
         self._busy = False
         self.cancel_btn.setEnabled(False)
