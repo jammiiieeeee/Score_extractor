@@ -1262,8 +1262,7 @@ class ExtractTab(QWidget):
         layout.addSpacing(2)
 
         self.seek_bar = DualHandleSeekBar()
-        self.seek_bar.setMaximumHeight(80)
-        self.seek_bar.setMinimumHeight(60)
+        self.seek_bar.setMinimumHeight(64)
         layout.addWidget(self.seek_bar)
         layout.addSpacing(4)
 
@@ -1945,43 +1944,6 @@ class ExtractTab(QWidget):
 
 
 
-
-
-# ── Piano-key motif divider ──────────────────────────────────────────
-
-class PianoKeyDivider(QWidget):
-    def paintEvent(self, event):
-        from PyQt6.QtGui import QPainter, QColor, QPen
-        painter = QPainter(self)
-        w = self.width()
-        h = self.height()
-        key_w = 18
-        key_h = 18
-        black_h = 12
-        black_w = 10
-        offset = 12
-
-        # Brushed brass line across the rest
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(212, 168, 67))
-        painter.drawRect(offset + 8 * key_w, h // 2 - 1, w - offset - 8 * key_w, 2)
-
-        # Draw 8 white keys
-        for i in range(8):
-            x = offset + i * key_w
-            painter.setPen(QPen(QColor(51, 51, 51), 1))
-            painter.setBrush(QColor(232, 232, 232))
-            painter.drawRect(x, h // 2 - key_h // 2, key_w - 1, key_h)
-
-        # Draw 6 black keys (skip positions where there's no black key)
-        black_positions = [0, 1, 3, 4, 5, 7]
-        for i in black_positions:
-            bx = offset + (i + 1) * key_w - black_w // 2
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(22, 22, 22))
-            painter.drawRect(bx, h // 2 - key_h // 2, black_w, black_h)
-
-        painter.end()
 
 
 # ── Main Window ──────────────────────────────────────────────────────
