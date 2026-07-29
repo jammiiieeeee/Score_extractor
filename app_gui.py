@@ -1231,6 +1231,7 @@ class ExtractTab(QWidget):
 
         # ── Crop preview ──
         self.crop_widget = CropPreviewWidget()
+        self.crop_widget.setMinimumHeight(180)
         self.crop_widget.setMaximumHeight(360)
         self.crop_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.crop_widget)
