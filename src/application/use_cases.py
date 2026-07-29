@@ -47,7 +47,7 @@ class ExtractScoreUseCase:
             effective_ocr = _NoopOcrService()
         else:
             if not self.ocr_service.initialize():
-                on_log("[WARN] OCR initialization failed, continuing without OCR.")
+                on_log("[WARN] OCR unavailable")
                 from src.domain.interfaces import _NoopOcrService
                 effective_ocr = _NoopOcrService()
             else:
@@ -87,7 +87,7 @@ class ExtractScoreUseCase:
         manifest_entries: List[PageManifestEntry] = []
         stepper.set_unique_pages_ref(unique_pages)
 
-        log(f"Processing video: {video_path}")
+        log(f"Processing {video_path}")
 
         # Get video duration for end_offset calculation
         video_duration = self.video_service.get_total_frames() / self.video_service.get_fps() if self.video_service.get_fps() > 0 else 0.0
@@ -106,7 +106,7 @@ class ExtractScoreUseCase:
             if entry is not None:
                 manifest_entries.append(entry)
 
-        log(f"Starting extraction from ~{stepper.current_idx / stepper.fps:.1f}s...")
+        log(f"Extracting from ~{stepper.current_idx / stepper.fps:.1f}s")
 
         # Main loop
         while True:
@@ -119,7 +119,7 @@ class ExtractScoreUseCase:
                 break
 
             if stepper.should_trigger(ssim_score):
-                log(f"  Change detected at ~{current_frame.timestamp:.1f}s, scanning for precise trigger...")
+                log(f"  Change at ~{current_frame.timestamp:.1f}s")
                 a_frame, b_frame = stepper.capture_a_b(current_frame)
                 attempt_num += 1
                 entry = committer.commit(
@@ -151,7 +151,7 @@ class GeneratePdfUseCase:
 
     def execute(self, frames: List[Frame], output_path: str):
         if not frames:
-            self._log("[WARN] No pages detected. PDF not generated.")
+            self._log("[WARN] No pages — PDF skipped")
             return
 
         images = [f.image for f in frames]
@@ -159,6 +159,6 @@ class GeneratePdfUseCase:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
 
-        self._log(f"Generating PDF with {len(frames)} pages...")
+        self._log(f"PDF: {len(frames)} pages...")
         self.pdf_service.create_pdf(images, output, self.config, title_hint=final_title)
-        self._log(f"PDF generated: {output_path}")
+        self._log(f"PDF saved: {output_path}")

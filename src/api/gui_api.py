@@ -380,7 +380,7 @@ class GuiApi:
             # The original_video_path is only used by PageCommitter for OCR/debug full-res reads
             extraction_video_path = self._video_info.path
 
-            self._emit_log("Extracting pages from video...")
+            self._emit_log("Extracting...")
 
             use_case = ExtractScoreUseCase(self._video_service, effective_ocr,
                                            self._file_service, self._config)
@@ -414,7 +414,7 @@ class GuiApi:
                 self._state.pages_detected = len(self._pages)
                 self._emit_progress("extracting", 100.0, "Extraction complete")
                 self._emit_completed(len(self._pages))
-                self._emit_log(f"Extraction complete: {len(self._pages)} pages found")
+                self._emit_log(f"Extracted: {len(self._pages)} pages")
             else:
                 self._pages.clear()
                 self._state.phase = "idle"
@@ -543,14 +543,14 @@ class GuiApi:
             output = Path(output_path)
             output.parent.mkdir(parents=True, exist_ok=True)
 
-            self._emit_log(f"Generating PDF with {len(images)} pages...")
-            self._emit_progress("generating_pdf", 0.0, "Starting PDF generation...")
+            self._emit_log(f"PDF: {len(images)} pages...")
+            self._emit_progress("generating_pdf", 0.0, "Generating PDF...")
 
             self._pdf_service.create_pdf(images, output, self._config, title_hint=final_title)
 
             self._emit_progress("generating_pdf", 100.0, "PDF generated successfully")
             self._emit_completed(len(self._pages))
-            self._emit_log(f"PDF generated: {output_path}")
+            self._emit_log(f"PDF saved: {output_path}")
 
             score_dir = output.parent
 
@@ -616,7 +616,6 @@ class GuiApi:
         if output_path is None:
             output_path = str(sb_path / f"{sb_path.name}.pdf")
 
-        self._emit_log(f"Loaded {len(images)} pages from {score_dir}")
         self.generate_pdf(output_path)
 
     # ═════════════════════════════════════════════════════════════════════
@@ -646,7 +645,6 @@ class GuiApi:
         self._loaded_score_metadata = self._read_metadata(score_dir)
         meta_crop = self._loaded_score_metadata.get("crop_ratio", 0.35)
         self._config.default_crop_ratio = meta_crop
-        self._emit_log(f"Loaded {len(self._pages)} pages from {path}")
         return len(self._pages)
 
     def delete_saved_score(self, path: str) -> None:
@@ -655,7 +653,7 @@ class GuiApi:
         if not score_path.exists():
             return
         shutil.rmtree(score_path)
-        self._emit_log(f"Deleted score: {path}")
+        self._emit_log(f"Deleted: {path}")
 
     # ═════════════════════════════════════════════════════════════════════
     #  Re-extraction helpers

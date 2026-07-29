@@ -22,7 +22,7 @@ def load_config(config_path: str) -> ScoreConfig:
                 data = json.load(f)
                 return ScoreConfig(**data)
         except Exception as e:
-            print(f"[WARN] Failed to load config, using defaults. {e}")
+            print(f"[WARN] Config load failed: {e}")
     return ScoreConfig()
 
 
@@ -69,20 +69,20 @@ def main():
     if args.from_dir:
         score_dir = Path(args.from_dir)
         if not score_dir.is_dir():
-            print(f"[ERROR] Directory not found: {args.from_dir}")
+            print(f"[ERROR] Dir not found: {args.from_dir}")
             sys.exit(1)
 
         images = FileService().load_page_images(score_dir)
         if not images:
-            print(f"[ERROR] No page images found in {score_dir}/photos/")
+            print(f"[ERROR] No images in {score_dir}/photos/")
             sys.exit(1)
 
-        print(f"Loaded {len(images)} page images from {args.from_dir}")
+        print(f"Loaded {len(images)} images from {args.from_dir}")
 
         output_path = args.output or str(score_dir / f"{score_dir.name}.pdf")
         pdf_service = PdfService()
         pdf_service.create_pdf(images, Path(output_path), config, title_hint=Path(output_path).stem)
-        print(f"\nSuccess! PDF generated: {output_path}")
+        print(f"\nPDF saved: {output_path}")
 
     else:
         # Determine video path - handle YouTube URLs
@@ -100,7 +100,7 @@ def main():
 
         # Download YouTube video if needed
         if is_youtube:
-            print(f"Downloading YouTube video: {video_path}")
+            print(f"Downloading: {video_path}")
             download_service = DownloadService(Path.cwd())
             
             # Map quality to format selector
@@ -126,7 +126,7 @@ def main():
             if not args.score_name:
                 args.score_name = result.video_title
         elif not video_path or not os.path.exists(video_path):
-            print(f"[ERROR] File not found: {video_path}")
+            print(f"[ERROR] Not found: {video_path}")
             sys.exit(1)
 
         video_service = VideoService()
@@ -161,10 +161,10 @@ def main():
                 end_offset=args.end_offset,
                 on_progress=lambda pct, msg: print(f"\r  [{pct:5.1f}%] {msg}", end="", flush=True),
             )
-            print(f"\nExtraction complete: {len(pages)} pages found")
+            print(f"\nExtracted: {len(pages)} pages")
 
             if pages:
-                print(f"Generating PDF: {output_pdf}")
+                print(f"PDF: {output_pdf}")
                 cropped_images = []
                 for page in pages:
                     img = page.image
@@ -178,10 +178,10 @@ def main():
                     config,
                     title_hint=score_name,
                 )
-                print(f"PDF generated: {output_pdf}")
+                print(f"PDF saved: {output_pdf}")
 
             if args.debug:
-                print(f"Debug files kept in: {output_dir / 'debug'}")
+                print(f"Debug: {output_dir / 'debug'}")
 
         except Exception as e:
             import traceback

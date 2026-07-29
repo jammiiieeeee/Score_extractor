@@ -113,7 +113,7 @@ class DownloadService:
             cached = self._check_cache(video_id, scan_fmt, on_log=on_log)
             if cached:
                 if on_log:
-                    on_log(f"Using cached video: {cached.video_path}")
+                    on_log(f"Cached: {cached.video_path}")
                 return cached
 
         output_template = str(dl_dir / "%(id)s.%(ext)s")
@@ -132,18 +132,18 @@ class DownloadService:
             elif d['status'] == 'finished' and not finished_logged:
                 finished_logged = True
                 if on_log:
-                    on_log("  Download finished, processing...")
+                    on_log("  Processing...")
 
         ffmpeg_path = self.find_ffmpeg()
         has_ffmpeg = self._ffmpeg_works(ffmpeg_path)
         if on_log and ffmpeg_path and not has_ffmpeg:
-            on_log("  ffmpeg found but blocked by policy, will skip format merging")
+            on_log("  ffmpeg blocked, skipping merge")
 
         # bestvideo requires ffmpeg for merging — fall back to best (combined) when unavailable
         if not has_ffmpeg and fmt.startswith("bestvideo"):
             fmt = fmt.replace("bestvideo", "best")
             if on_log:
-                on_log("  ffmpeg unavailable, using combined format instead of bestvideo")
+                on_log("  No ffmpeg, using combined format")
 
         ydl_opts = {
             'format': fmt,
@@ -189,7 +189,7 @@ class DownloadService:
         scan_path = video_path
         if scan_fmt:
             if on_log:
-                on_log(f"Downloading scan version (low-res)...")
+                on_log(f"Downloading scan (low-res)...")
             scan_template = str(dl_dir / f"%(id)s_scan.%(ext)s")
             ydl_opts_scan = {
                 'format': scan_fmt,

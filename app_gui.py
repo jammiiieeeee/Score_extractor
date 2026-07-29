@@ -1224,7 +1224,7 @@ class ExtractTab(QWidget):
         layout.addLayout(project_row)
 
         # ── Status line ──
-        self.status_label = QLabel("Select a video source above to begin")
+        self.status_label = QLabel("Select a video source")
         self.status_label.setObjectName("muted")
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
@@ -1424,7 +1424,7 @@ class ExtractTab(QWidget):
         self.seek_bar.setEnabled(enabled)
 
     def _load_existing_score(self, score_path: str):
-        self._log(f"Loading score: {score_path}")
+        self._log(f"Loading {score_path}")
         dbg(f"_load_existing_score: {score_path}")
         try:
             count = self._api.load_saved_score(score_path)
@@ -1444,14 +1444,14 @@ class ExtractTab(QWidget):
                 self._set_video_controls_enabled(True)
                 self.video_path_edit.setText(video_path)
                 self._load_preview()
-                self.status_label.setText(f"Loaded {count} pages from \"{p.name}\" — video preview active")
+                self.status_label.setText(f"Loaded {count} pages — {p.name} (preview active)")
             else:
                 self._set_video_controls_enabled(False)
-                self.status_label.setText(f"Loaded {count} pages from \"{p.name}\"")
+                self.status_label.setText(f"Loaded {count} pages — {p.name}")
                 if video_path and not os.path.exists(video_path):
-                    self._log(f"Original video not found: {video_path}")
+                    self._log(f"Video missing: {video_path}")
 
-            self._log(f"Loaded {count} pages (original crop: {int(self._loaded_original_ratio * 100)}%)")
+            self._log(f"Loaded {count} pages (crop {int(self._loaded_original_ratio * 100)}%)")
             self._refresh_completer()
             self._update_state()
         except Exception as e:
@@ -1470,7 +1470,7 @@ class ExtractTab(QWidget):
         if not self.pdf_name_edit.text():
             self.pdf_name_edit.setText(self.project_edit.text())
         self._set_video_controls_enabled(True)
-        self.status_label.setText("Select a video source above to begin")
+        self.status_label.setText("Select a video source")
         self._update_state()
 
     # ── Source toggle ──
@@ -1567,7 +1567,7 @@ class ExtractTab(QWidget):
             if orig:
                 self._api._original_video_path = str(video_dir / Path(orig).name)
 
-        self._log(f"Video saved to project folder: {new_path}")
+        self._log(f"Video saved: {new_path}")
         self._load_preview()
         self._busy = False
         self.download_btn.setEnabled(True)
@@ -1622,9 +1622,7 @@ class ExtractTab(QWidget):
                 self.crop_widget.set_frame(self._img_to_pixmap(img))
 
             self._preview_seeker.open(path)
-            self._log("Video loaded: " + path)
-            self._log(f"Duration: {info.duration:.1f}s, FPS: {info.fps:.2f}, "
-                      f"Resolution: {info.width}x{info.height}")
+            self._log(f"Video loaded: {info.duration:.1f}s  {info.width}x{info.height}  {info.fps:.2f}fps")
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Could not open video:\n{e}")
 
@@ -1667,7 +1665,7 @@ class ExtractTab(QWidget):
         ratio = self.crop_spin.value()
         try:
             self._api.update_config({"default_crop_ratio": ratio})
-            self._log(f"Crop default set to {int(ratio * 100)}%")
+            self._log(f"Crop: {int(ratio * 100)}%")
         except ValueError as e:
             QMessageBox.warning(self, "Error", str(e))
 
@@ -1706,26 +1704,26 @@ class ExtractTab(QWidget):
             self.action_btn.setEnabled(can_act and has_video)
             self.reextract_btn.setVisible(False)
             self.status_label.setText(
-                f"Re-extract mode — new extraction will replace {self._api.get_page_count()} existing pages")
+                f"Re-extract: will replace {self._api.get_page_count()} pages")
         elif self._has_existing_score and has_pages:
             self.action_btn.setText("Regenerate PDF")
             self.action_btn.setEnabled(can_act)
             self.reextract_btn.setVisible(True)
             self.status_label.setText(
-                f"Loaded {self._api.get_page_count()} pages — adjust crop ratio and regenerate, or re-extract")
+                f"Loaded {self._api.get_page_count()} pages — regenerate PDF or re-extract")
         elif has_project and has_video:
             self.action_btn.setText("Start Extraction")
             self.action_btn.setEnabled(can_act)
             self.reextract_btn.setVisible(False)
-            self.status_label.setText("Ready — click Start Extraction to begin")
+            self.status_label.setText("Ready — start extraction")
         else:
             self.action_btn.setText("Start Extraction")
             self.action_btn.setEnabled(False)
             self.reextract_btn.setVisible(False)
             if not has_video:
-                self.status_label.setText("Select a video source above to begin")
+                self.status_label.setText("Select a video source")
             elif not has_project:
-                self.status_label.setText("Enter a score name to continue")
+                self.status_label.setText("Enter a score name")
             else:
                 self.status_label.setText("Ready")
 
@@ -1792,7 +1790,7 @@ class ExtractTab(QWidget):
         self.cancel_btn.setEnabled(True)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
-        self.status_label.setText("Extracting pages from video…")
+        self.status_label.setText("Extracting…")
 
         self._api.start_extraction(
             video_path=video_path,
@@ -1825,7 +1823,7 @@ class ExtractTab(QWidget):
         self.cancel_btn.setEnabled(False)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
-        self.status_label.setText("Generating PDF from loaded pages…")
+        self.status_label.setText("Generating PDF…")
 
         if hasattr(main_win, '_generating_pdf'):
             main_win._generating_pdf = True
@@ -1856,14 +1854,12 @@ class ExtractTab(QWidget):
 
     def on_completed(self, page_count: int):
         dbg(f"on_completed: page_count={page_count}")
-        self._log(f"Operation complete: {page_count} pages")
         if page_count == 0:
-            self._log("No pages resulted. Skipping PDF.")
+            self._log("No pages — skipping PDF")
             self._reset_ui()
             return
 
         output_path = self.get_output_path()
-        self._log(f"Generating PDF: {output_path}")
         title = self.pdf_name_edit.text().strip() or None
         try:
             self._api.generate_pdf(output_path, title=title)
@@ -1876,7 +1872,6 @@ class ExtractTab(QWidget):
         dbg(f"on_pdf_completed: page_count={page_count}, path={output_path}")
         self._completed_pdf_path = output_path
         self._reextract_mode = False
-        self._log(f"PDF saved to: {output_path}")
         self.status_label.setText(f"✓ PDF saved — {output_path}")
         self.action_btn.setText("Open PDF")
         self.action_btn.setEnabled(True)
@@ -1885,7 +1880,7 @@ class ExtractTab(QWidget):
 
     def on_cancelled(self):
         dbg("on_cancelled")
-        self._log("Cancelled by user.")
+        self._log("Cancelled")
         self._reset_ui()
 
     def on_error(self, message: str):

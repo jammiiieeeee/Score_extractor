@@ -25,10 +25,10 @@ class OcrService(IOcrService):
         try:
             from paddleocr import PaddleOCR
         except ImportError:
-            self._log("[ERROR] paddleocr library not found. Please install requirements.")
+            self._log("[ERROR] paddleocr not installed")
             return False
 
-        self._log("Initializing OCR engine...")
+        self._log("Starting OCR...")
 
         # Test image with a number to verify detection + recognition
         test_img = np.zeros((200, 200, 3), dtype=np.uint8)
@@ -47,13 +47,13 @@ class OcrService(IOcrService):
                 self.ocr = init_func()
                 res = self.ocr.ocr(test_img)
                 if res:
-                    self._log(f"  SUCCESS (Attempt {i+1})")
+                    self._log(f"  OK (Attempt {i+1})")
                     self.enabled = True
                     return True
             except Exception as e:
-                self._log(f"  [WARN] Attempt {i+1} FAILED - {e}")
+                self._log(f"  [WARN] Attempt {i+1} - {e}")
 
-        self._log("[ERROR] All PaddleOCR initialization attempts failed!")
+        self._log("[ERROR] OCR init failed")
         self.enabled = False
         return False
 
