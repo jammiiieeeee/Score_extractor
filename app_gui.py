@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse, parse_qs
 
+def dbg(msg: str):
+    print(f"[GUI] {msg}", flush=True)
+
 import cv2
 import numpy as np
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, pyqtSignal, QStringListModel, QObject, QThread
@@ -25,6 +28,14 @@ from PyQt6.QtWidgets import (
 
 from gui_bridge import ExtractionSignals
 from src.api.gui_api import GuiApi, ScoreInfo
+
+
+# ── Debug logging ──────────────────────────────────────────────────────
+DEBUG_GUI = os.environ.get("DEBUG_GUI", "0") == "1"
+
+def dbg(msg: str):
+    if DEBUG_GUI:
+        print(f"[GUI DEBUG] {msg}", flush=True)
 
 
 # ── Palette (piano ebony-and-brass) ───────────────────────────────────
@@ -1219,7 +1230,9 @@ class ExtractTab(QWidget):
 
         # ── Crop preview ──
         self.crop_widget = CropPreviewWidget()
-        layout.addWidget(self.crop_widget, 1)
+        self.crop_widget.setMaximumHeight(360)
+        self.crop_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self.crop_widget)
 
         self.seek_bar = DualHandleSeekBar()
         self.seek_bar.setMaximumHeight(80)
@@ -1410,6 +1423,7 @@ class ExtractTab(QWidget):
 
     def _load_existing_score(self, score_path: str):
         self._log(f"Loading score: {score_path}")
+        dbg(f"_load_existing_score: {score_path}")
         try:
             count = self._api.load_saved_score(score_path)
             meta = self._api.get_loaded_score_metadata()
@@ -1422,10 +1436,7 @@ class ExtractTab(QWidget):
             self.crop_spin.setValue(self._loaded_original_ratio)
             self.crop_original_label.setText(f"(was {int(self._loaded_original_ratio * 100)}%)")
             self._set_video_controls_enabled(False)
-            # Show first page in preview
-            first = self._api.get_first_page_image()
-            if first is not None:
-                self.crop_widget.set_frame(self._img_to_pixmap(first))
+            self._load_preview()
             self.status_label.setText(f"Loaded {count} pages from \"{p.name}\"")
             self._log(f"Loaded {count} pages (original crop: {int(self._loaded_original_ratio * 100)}%)")
             self._refresh_completer()
@@ -1434,6 +1445,7 @@ class ExtractTab(QWidget):
             QMessageBox.warning(self, "Error", f"Could not load score:\n{e}")
 
     def _switch_to_new_project(self):
+        dbg("_switch_to_new_project")
         self._api.clear_pages()
         self._has_existing_score = False
         self._reextract_mode = False
@@ -1607,6 +1619,7 @@ class ExtractTab(QWidget):
         self.crop_widget.set_frame(QPixmap.fromImage(qt_img))
 
     def _on_crop_spin_changed(self, val: float):
+        dbg(f"_on_crop_spin_changed: val={val}, has_existing={self._has_existing_score}")
         self.crop_widget.set_ratio(val)
         if self._has_existing_score:
             self._api.reapply_crop(val)
@@ -1622,6 +1635,7 @@ class ExtractTab(QWidget):
             QMessageBox.warning(self, "Error", str(e))
 
     def _on_reextract(self):
+        dbg("_on_reextract: entering re-extract mode")
         self._reextract_mode = True
         self._set_video_controls_enabled(True)
         self._update_state()
@@ -1634,6 +1648,8 @@ class ExtractTab(QWidget):
         has_video = bool(self._video_path and os.path.exists(self._video_path))
         has_pages = self._api.get_page_count() > 0
         can_act = not self._busy
+
+        dbg(f"_update_state: busy={self._busy}, reextract={self._reextract_mode}, has_existing={self._has_existing_score}, has_pages={has_pages}, has_project={has_project}, has_video={has_video}")
 
         if self._busy:
             pass  # button text set by _on_action
@@ -1668,6 +1684,7 @@ class ExtractTab(QWidget):
     # ── Action button ──
 
     def _on_action(self):
+        dbg(f"_on_action: busy={self._busy}, reextract={self._reextract_mode}, has_existing={self._has_existing_score}, has_pages={self._api.get_page_count()}, completed_pdf={self._completed_pdf_path}")
         if self._busy:
             return
         if self._completed_pdf_path:
@@ -1678,6 +1695,7 @@ class ExtractTab(QWidget):
             self._regenerate_pdf()
 
     def _start_extraction(self):
+        dbg("_start_extraction")
         video_path = self._video_path
         if not video_path or not os.path.exists(video_path):
             QMessageBox.warning(self, "Error", "Please select a valid video file.")
@@ -1738,6 +1756,7 @@ class ExtractTab(QWidget):
         )
 
     def _regenerate_pdf(self):
+        dbg("_regenerate_pdf")
         output_path = self.get_output_path()
         if not output_path:
             QMessageBox.warning(self, "Error", "Please set a project name.")
@@ -1788,6 +1807,7 @@ class ExtractTab(QWidget):
     # ── Callbacks from MainWindow ──
 
     def on_completed(self, page_count: int):
+        dbg(f"on_completed: page_count={page_count}")
         self._log(f"Operation complete: {page_count} pages")
         if page_count == 0:
             self._log("No pages resulted. Skipping PDF.")
@@ -1806,6 +1826,7 @@ class ExtractTab(QWidget):
 
     def on_pdf_completed(self, page_count: int):
         output_path = self.get_output_path()
+        dbg(f"on_pdf_completed: page_count={page_count}, path={output_path}")
         self._completed_pdf_path = output_path
         self._log(f"PDF saved to: {output_path}")
         self.status_label.setText(f"✓ PDF saved — {output_path}")
@@ -1815,26 +1836,27 @@ class ExtractTab(QWidget):
         self._busy = False
 
     def on_cancelled(self):
+        dbg("on_cancelled")
         self._log("Cancelled by user.")
         self._reset_ui()
 
     def on_error(self, message: str):
+        dbg(f"on_error: {message}")
         self._log(f"[Error] {message}")
         if not self._busy:
             QMessageBox.critical(self, "Error", message)
         self._reset_ui()
 
-    def on_page_detected(self, _idx: int, _png_bytes: bytes):
+    def on_page_detected(self, idx: int, png_bytes: bytes):
+        dbg(f"on_page_detected: idx={idx}")
         pass
 
-    def on_progress(self, phase: str, percent: float, _detail: str):
+    def on_progress(self, phase: str, percent: float, detail: str):
+        dbg(f"on_progress: phase={phase}, percent={percent:.0f}%, detail={detail}")
         self.progress_bar.setValue(int(percent))
-        if phase == "extracting":
-            self.action_btn.setText(f"Extracting… {int(percent)}%")
-        elif phase == "generating_pdf":
-            self.action_btn.setText(f"Generating PDF… {int(percent)}%")
 
     def _reset_ui(self):
+        dbg("_reset_ui")
         self._busy = False
         self._reextract_mode = False
         self.cancel_btn.setEnabled(False)
