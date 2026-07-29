@@ -565,7 +565,7 @@ class DualHandleSeekBar(QWidget):
         self.groove.paintEvent = lambda e: self._paint_groove(e)
         self.groove.mousePressEvent = self._groove_press
         self.groove.mouseMoveEvent = self._groove_move
-        self.groove.mouseReleaseEvent = lambda e: setattr(self, '_dragging', None)
+        self.groove.mouseReleaseEvent = lambda e: self._groove_release(e)
 
     # ── Public API ──
 
@@ -635,17 +635,17 @@ class DualHandleSeekBar(QWidget):
             painter.setBrush(QColor(BRASS))
             painter.drawRoundedRect(x1, mid - 3, x2 - x1, 6, 3, 3)
 
-        # Start handle
+        # Start handle (24px diameter for 44pt hit target)
         if self._start_enabled:
             painter.setBrush(QColor(BRASS))
             painter.setPen(QPen(QColor(BG), 2))
-            painter.drawEllipse(x1 - 7, mid - 7, 14, 14)
+            painter.drawEllipse(x1 - 12, mid - 12, 24, 24)
 
-        # End handle
+        # End handle (24px diameter)
         if self._end_enabled:
             painter.setBrush(QColor(BRASS))
             painter.setPen(QPen(QColor(BG), 2))
-            painter.drawEllipse(x2 - 7, mid - 7, 14, 14)
+            painter.drawEllipse(x2 - 12, mid - 12, 24, 24)
 
         painter.end()
 
@@ -669,30 +669,48 @@ class DualHandleSeekBar(QWidget):
         d_start = dist_to(x_start) if self._start_enabled else 999
         d_end = dist_to(x_end) if self._end_enabled else 999
 
-        if d_start < 16 and d_start <= d_end:
+        if d_start < 22 and d_start <= d_end:
             self._dragging = 'start'
-        elif d_end < 16:
+        elif d_end < 22:
             self._dragging = 'end'
         else:
             self._dragging = None
 
     def _groove_move(self, event):
-        if not self._dragging or self._duration <= 0:
+        if self._duration <= 0:
             return
         pos = event.position()
         w = self.groove.width()
         margin = 16
         track_w = max(w - margin * 2, 1)
-        frac = max(0.0, min(1.0, (pos.x() - margin) / track_w))
+        mx = pos.x()
+        my = pos.y()
+        mid = self.groove.height() // 2
 
-        if self._dragging == 'start':
-            self._start = min(frac, self._end)
+        if self._dragging:
+            frac = max(0.0, min(1.0, (mx - margin) / track_w))
+            if self._dragging == 'start':
+                self._start = min(frac, self._end)
+            else:
+                self._end = max(frac, self._start)
+            self.groove.update()
+            self._update_labels()
+            ts = frac * self._duration
+            self.seek_changed.emit(ts)
         else:
-            self._end = max(frac, self._start)
-        self.groove.update()
-        self._update_labels()
-        ts = frac * self._duration
-        self.seek_changed.emit(ts)
+            # Cursor hover
+            x_start = margin + track_w * self._start
+            x_end = margin + track_w * self._end
+            def dist_to(x):
+                return ((mx - x) ** 2 + (my - mid) ** 2) ** 0.5
+            near_start = self._start_enabled and dist_to(x_start) < 22
+            near_end = self._end_enabled and dist_to(x_end) < 22
+            self.groove.setCursor(Qt.CursorShape.SizeHorCursor if (near_start or near_end)
+                                  else Qt.CursorShape.ArrowCursor)
+
+    def _groove_release(self, event):
+        self._dragging = None
+        self.groove.setCursor(Qt.CursorShape.ArrowCursor)
 
 
 # ── Page Preview Dialog ──────────────────────────────────────────────
