@@ -9,9 +9,6 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse, parse_qs
 
-def dbg(msg: str):
-    print(f"[GUI] {msg}", flush=True)
-
 import cv2
 import numpy as np
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, pyqtSignal, QStringListModel, QObject, QThread
@@ -454,7 +451,7 @@ class CropPreviewWidget(QWidget):
 
             # Overlay: transparent red band from top to crop line
             line_y = oy + int(ph * self._ratio)
-            overlay = QColor(212, 168, 67, 25)
+            overlay = QColor(212, 168, 67, 40)
             painter.fillRect(ox, oy, pw, line_y - oy, overlay)
 
             # Crop line
@@ -2008,19 +2005,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(12, 12, 12, 12)
-
-        # header = QLabel("Score Extractor")
-        # header.setObjectName("title")
-        # header.setStyleSheet(f"""
-        #     font-size: 26px; font-weight: 700;
-        #     color: {INK}; padding: 4px 0 4px 0;
-        # """)
-        # main_layout.addWidget(header)
-
-        # Piano-key motif divider
-        # piano_div = PianoKeyDivider()
-        # piano_div.setFixedHeight(28)
-        # main_layout.addWidget(piano_div)
 
         # Tabs
         self.tabs = QTabWidget()
