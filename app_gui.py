@@ -1128,6 +1128,7 @@ class PreviewSeeker(QObject):
 
 class ExtractTab(QWidget):
     extraction_completed = pyqtSignal(int)
+    config_requested = pyqtSignal()
 
     def __init__(self, api: GuiApi, parent=None):
         super().__init__(parent)
@@ -1295,6 +1296,13 @@ class ExtractTab(QWidget):
         crop_row.addWidget(self.crop_spin)
         crop_row.addWidget(self.crop_original_label)
         crop_row.addStretch()
+        self.config_btn = QPushButton("⚙ Config")
+        self.config_btn.setObjectName("secondary")
+        self.config_btn.setFixedWidth(80)
+        self.config_btn.setToolTip("Open extraction settings (Config tab)")
+        self.config_btn.clicked.connect(self.config_requested.emit)
+
+        crop_row.addWidget(self.config_btn)
         crop_row.addWidget(self.set_default_btn)
         layout.addLayout(crop_row)
 
@@ -2029,6 +2037,7 @@ class MainWindow(QMainWindow):
         self.signals.cancelled.connect(self._on_cancelled)
         self.signals.download_done.connect(self._on_yt_downloaded)
 
+        self.extract_tab.config_requested.connect(lambda: self.tabs.setCurrentIndex(1))
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
     def _on_progress(self, phase: str, percent: float, detail: str):
