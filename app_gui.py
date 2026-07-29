@@ -886,6 +886,7 @@ class ConfigTab(QWidget):
         adv_grid.addWidget(self.debug_cb, r, 0, 1, 2)
 
         layout.addWidget(self.advanced)
+        layout.addStretch()
 
         # Connect all signals
         for widget in self._all_spins():
@@ -1201,10 +1202,13 @@ class ExtractTab(QWidget):
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         sep.setObjectName("hline")
+        layout.addSpacing(6)
         layout.addWidget(sep)
+        layout.addSpacing(6)
 
         # ── Project field ──
         project_label = QLabel("Project:")
+        project_label.setFixedWidth(115)
 
         self.project_edit = QLineEdit()
         self.project_edit.setPlaceholderText("Score name — type to search existing, or enter a new name")
@@ -1270,6 +1274,7 @@ class ExtractTab(QWidget):
         pdf_row = QHBoxLayout()
         pdf_label = QLabel("Output PDF:")
         pdf_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        pdf_label.setFixedWidth(115)
         self.pdf_name_edit = QLineEdit()
         self.pdf_name_edit.setPlaceholderText("Auto-filled from project name")
         pdf_row.addWidget(pdf_label)
