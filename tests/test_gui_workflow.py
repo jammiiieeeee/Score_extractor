@@ -410,16 +410,19 @@ class TestScoreManagementWorkflow:
         assert result.get("page_count") == 7
         assert result.get("crop_ratio") == 0.28
 
-    def test_reapply_crop_uses_original_pages(self, api, synthetic_images):
+    def test_reapply_crop_updates_config_only(self, api, synthetic_images):
         from src.domain.models import Frame
-        originals = [Frame(img.copy(), float(i), i) for i, img in enumerate(synthetic_images)]
-        api._pages.set_originals(originals)
+        frames = [Frame(img.copy(), float(i), i) for i, img in enumerate(synthetic_images)]
+        api._pages.set_pages(frames)
+        api._pages.set_originals(frames)
 
         api.reapply_crop(0.15)
         assert api.get_page_count() == 5
+        assert api._config.default_crop_ratio == 0.15
         for f in api._pages:
             h = f.image.shape[0]
-            assert h <= 600, "Crop should reduce height"
+            # synthetic images are 600px tall; reapply_crop should NOT reduce height
+            assert h == 600, "reapply_crop should NOT modify page images"
 
     def test_has_loaded_score(self, api, tmp_path):
         assert api.has_loaded_score() is False

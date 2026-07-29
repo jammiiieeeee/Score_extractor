@@ -1133,6 +1133,7 @@ class ExtractTab(QWidget):
         self._parent_dir = self._settings.value("parent_dir", str(Path(__file__).resolve().parent / "output"))
 
         layout = QVBoxLayout(self)
+        layout.setSpacing(0)
 
         # ── Source toggle ──
         toggle_row = QHBoxLayout()
@@ -1233,6 +1234,7 @@ class ExtractTab(QWidget):
         self.crop_widget.setMaximumHeight(360)
         self.crop_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.crop_widget)
+        layout.addSpacing(2)
 
         self.seek_bar = DualHandleSeekBar()
         self.seek_bar.setMaximumHeight(80)
@@ -1435,9 +1437,20 @@ class ExtractTab(QWidget):
             self.pdf_name_edit.setText(p.name)
             self.crop_spin.setValue(self._loaded_original_ratio)
             self.crop_original_label.setText(f"(was {int(self._loaded_original_ratio * 100)}%)")
-            self._set_video_controls_enabled(False)
-            self._load_preview()
-            self.status_label.setText(f"Loaded {count} pages from \"{p.name}\"")
+
+            # Load associated video for preview if available
+            video_path = meta.get("video_path", "")
+            if video_path and os.path.exists(video_path):
+                self._set_video_controls_enabled(True)
+                self.video_path_edit.setText(video_path)
+                self._load_preview()
+                self.status_label.setText(f"Loaded {count} pages from \"{p.name}\" — video preview active")
+            else:
+                self._set_video_controls_enabled(False)
+                self.status_label.setText(f"Loaded {count} pages from \"{p.name}\"")
+                if video_path and not os.path.exists(video_path):
+                    self._log(f"Original video not found: {video_path}")
+
             self._log(f"Loaded {count} pages (original crop: {int(self._loaded_original_ratio * 100)}%)")
             self._refresh_completer()
             self._update_state()
@@ -1530,7 +1543,31 @@ class ExtractTab(QWidget):
         cur_name = self.project_edit.text().strip()
         if not cur_name or cur_name == prev_title:
             self.project_edit.setText(title)
-        self._log(f"Video downloaded: {path}")
+
+        # Move video files into the project's video folder
+        project_dir = self.get_project_dir()
+        if project_dir:
+            video_dir = Path(project_dir) / "video"
+            video_dir.mkdir(parents=True, exist_ok=True)
+            import shutil
+            video_files = [Path(path)]
+            orig = self._api._original_video_path
+            if orig and os.path.exists(orig) and orig != path:
+                video_files.append(Path(orig))
+            for src in video_files:
+                dst = video_dir / src.name
+                if not dst.exists():
+                    shutil.move(str(src), str(dst))
+            # Update GUI + API paths to the new location
+            new_path = str(video_dir / Path(path).name)
+            self._video_path = new_path
+            self.video_path_edit.setText(new_path)
+            if self._api._video_info:
+                self._api._video_info.path = new_path
+            if orig:
+                self._api._original_video_path = str(video_dir / Path(orig).name)
+
+        self._log(f"Video saved to project folder: {new_path}")
         self._load_preview()
         self._busy = False
         self.download_btn.setEnabled(True)
@@ -1619,10 +1656,10 @@ class ExtractTab(QWidget):
         self.crop_widget.set_frame(QPixmap.fromImage(qt_img))
 
     def _on_crop_spin_changed(self, val: float):
-        dbg(f"_on_crop_spin_changed: val={val}, has_existing={self._has_existing_score}")
+        dbg(f"_on_crop_spin_changed: val={val}")
+        self._api.update_config({"default_crop_ratio": val})
         self.crop_widget.set_ratio(val)
         if self._has_existing_score:
-            self._api.reapply_crop(val)
             self.crop_original_label.setText(
                 f"(was {int(self._loaded_original_ratio * 100)}%)" if self._loaded_original_ratio else "")
 
@@ -1635,11 +1672,22 @@ class ExtractTab(QWidget):
             QMessageBox.warning(self, "Error", str(e))
 
     def _on_reextract(self):
-        dbg("_on_reextract: entering re-extract mode")
+        dbg("_on_reextract")
+        if self._busy:
+            return
+        page_count = self._api.get_page_count()
+        reply = QMessageBox.question(
+            self, "Re-extract",
+            f"This will re-run extraction to replace all {page_count} existing pages.\n\n"
+            "The current PDF will not be affected until you regenerate it.\n"
+            "Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
         self._reextract_mode = True
-        self._set_video_controls_enabled(True)
-        self._update_state()
-        self._log("Re-extract mode enabled — select a video and adjust settings")
+        self._start_extraction()
 
     # ── State management ──
 
@@ -1708,7 +1756,7 @@ class ExtractTab(QWidget):
 
         project_dir = self.get_project_dir()
         photos_dir = Path(project_dir) / "photos"
-        if photos_dir.is_dir():
+        if photos_dir.is_dir() and not self._reextract_mode:
             existing = sorted(photos_dir.glob("page_*_merged.png"))
             if existing:
                 reply = QMessageBox.question(
@@ -1814,20 +1862,20 @@ class ExtractTab(QWidget):
             self._reset_ui()
             return
 
-        if not self._has_existing_score:
-            output_path = self.get_output_path()
-            self._log(f"Generating PDF: {output_path}")
-            title = self.pdf_name_edit.text().strip() or None
-            try:
-                self._api.generate_pdf(output_path, title=title)
-            except RuntimeError as e:
-                QMessageBox.warning(self, "Error", str(e))
-                self._reset_ui()
+        output_path = self.get_output_path()
+        self._log(f"Generating PDF: {output_path}")
+        title = self.pdf_name_edit.text().strip() or None
+        try:
+            self._api.generate_pdf(output_path, title=title)
+        except RuntimeError as e:
+            QMessageBox.warning(self, "Error", str(e))
+            self._reset_ui()
 
     def on_pdf_completed(self, page_count: int):
         output_path = self.get_output_path()
         dbg(f"on_pdf_completed: page_count={page_count}, path={output_path}")
         self._completed_pdf_path = output_path
+        self._reextract_mode = False
         self._log(f"PDF saved to: {output_path}")
         self.status_label.setText(f"✓ PDF saved — {output_path}")
         self.action_btn.setText("Open PDF")

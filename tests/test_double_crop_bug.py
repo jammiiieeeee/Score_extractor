@@ -134,23 +134,38 @@ class TestRegenerateWithDifferentCrop:
         assert store._original_pages[0].image.shape[0] == 1000, "Original unchanged"
 
 
-class TestReapplyCropStillWorks:
-    """Verify reapply_crop still works for GUI slider."""
+class TestReapplyCropUpdatesConfig:
+    """Verify reapply_crop now only updates config (single-crop model)."""
 
-    def test_reapply_crop_then_pdf(self):
-        """reapply_crop crops originals, then PdfService crops again."""
+    def test_reapply_crop_updates_config(self):
+        """reapply_crop changes config, does NOT modify page images."""
         img = make_tall_image(800, 1000)
         config = ScoreConfig(default_crop_ratio=0.1)
 
         store = PageStore()
         store.set_originals([Frame(img, 0.0, 0)])
+        store._pages.append(Frame(img.copy(), 0.0, 0))
 
-        # reapply_crop: ratio=0.9 → crops to 900px
-        store.reapply_crop(0.9)
-        assert store[0].image.shape[0] == 900, "reapply_crop: 900px"
+        # reapply_crop sets ratio on config — no page mutation
+        from src.api.gui_api import GuiApi
+        api = GuiApi()
+        api._config.default_crop_ratio = 0.9
+        api._pages = store
 
-        # PdfService crops again to 90px (900 * 0.1)
-        cropped = crop_image(store[0].image, config)
-        assert cropped.shape[0] == 90, (
-            f"Expected 90px. Got {cropped.shape[0]}px"
-        )
+        api.reapply_crop(0.5)
+        assert api._config.default_crop_ratio == 0.5
+        assert store[0].image.shape[0] == 1000, "Pages should NOT be cropped by reapply_crop"
+
+    def test_single_crop_in_pdf_service(self):
+        """PdfService crops once from full-size images."""
+        img = make_tall_image(800, 1000)
+        config = ScoreConfig(default_crop_ratio=0.3)
+
+        # Full-size image goes directly to PdfService
+        cropped = crop_image(img, config)
+        assert cropped.shape[0] == 300, "Single crop: 300px from 1000px"
+
+        # Change ratio and crop again from original
+        config.default_crop_ratio = 0.5
+        cropped = crop_image(img, config)
+        assert cropped.shape[0] == 500, "Single crop: 500px from 1000px"

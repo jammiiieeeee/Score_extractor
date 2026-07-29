@@ -75,6 +75,7 @@ class GuiApi:
 
         self._video_info: Optional[VideoInfo] = None
         self._original_video_path: Optional[str] = None
+        self._video_path: Optional[str] = None
         self._loaded_score_path: Optional[str] = None
         self._loaded_score_metadata: dict = {}
 
@@ -241,8 +242,10 @@ class GuiApi:
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         duration = frame_count / fps if fps > 0 else 0.0
 
+        abs_path = os.path.abspath(path)
+        self._video_path = abs_path
         self._video_info = VideoInfo(
-            path=os.path.abspath(path),
+            path=abs_path,
             duration=duration,
             fps=fps,
             width=width,
@@ -396,6 +399,9 @@ class GuiApi:
             )
 
             self._pages.set_pages(pages)
+            self._pages.set_originals([
+                Frame(p.image.copy(), p.timestamp, p.index) for p in pages
+            ])
 
             if manifest_entries:
                 manifest_path = score_dir / "diagnostics" / "page_manifest.json"
@@ -474,7 +480,7 @@ class GuiApi:
                 self.open_video(result.video_path)
 
             self._emit_download_completed(result.video_path)
-            self._emit_log(f"Video ready: {result.video_path}")
+            self._emit_log("Download complete")
 
         except Exception as e:
             self._state.phase = "error"
@@ -547,12 +553,34 @@ class GuiApi:
             self._emit_log(f"PDF generated: {output_path}")
 
             score_dir = output.parent
-            self.save_metadata(str(score_dir), {
+
+            # Copy video to score's video folder so it's portable
+            import shutil
+            video_dir = score_dir / "video"
+            video_dir.mkdir(parents=True, exist_ok=True)
+            if self._video_path and os.path.exists(self._video_path):
+                src = Path(self._video_path)
+                dst = video_dir / src.name
+                if not dst.exists():
+                    shutil.copy2(str(src), str(dst))
+                self._video_path = str(dst)
+                # Also relocate original_video_path if set
+                if self._original_video_path and os.path.exists(self._original_video_path):
+                    orig_src = Path(self._original_video_path)
+                    orig_dst = video_dir / orig_src.name
+                    if not orig_dst.exists():
+                        shutil.copy2(str(orig_src), str(orig_dst))
+                    self._original_video_path = str(orig_dst)
+
+            meta = {
                 "score_name": final_title,
                 "crop_ratio": self._config.default_crop_ratio,
                 "page_count": len(self._pages),
                 "extraction_date": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            })
+            }
+            if self._video_path:
+                meta["video_path"] = self._video_path
+            self.save_metadata(str(score_dir), meta)
 
             diag_dir = score_dir / "diagnostics"
             if diag_dir.exists():
@@ -634,7 +662,7 @@ class GuiApi:
     # ═════════════════════════════════════════════════════════════════════
 
     def reapply_crop(self, ratio: float) -> None:
-        self._pages.reapply_crop(ratio)
+        self._config.default_crop_ratio = ratio
 
     def has_loaded_score(self) -> bool:
         return self._pages.has_originals() and self._loaded_score_path is not None
