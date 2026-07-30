@@ -57,7 +57,7 @@ class TestScoreConfigDefaults:
         assert ScoreConfig().bar_padding_px == -15
 
     def test_bar_left_margin(self):
-        assert ScoreConfig().bar_left_margin == 0.20
+        assert ScoreConfig().bar_left_margin == 0.35
 
     def test_blank_content_std_threshold(self):
         assert ScoreConfig().blank_content_std_threshold == 3.0

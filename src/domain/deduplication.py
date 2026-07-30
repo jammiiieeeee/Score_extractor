@@ -17,7 +17,7 @@ class Deduplicator:
 
     def has_clean_bar_profile(self, frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float) -> bool:
         n = len(self._get_bar_profile_peaks(frame_a, frame_b, crop_ratio))
-        return 2 <= n <= 4
+        return n == 0 or n == 2
 
     def has_left_spike_in_margin(self, frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float) -> bool:
         peaks = self._get_bar_profile_peaks(frame_a, frame_b, crop_ratio)
@@ -30,7 +30,7 @@ class Deduplicator:
     def check_bar_profile(self, frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float):
         """Returns (has_clean, has_left_spike, peaks) from a single peak computation."""
         peaks = self._get_bar_profile_peaks(frame_a, frame_b, crop_ratio)
-        has_clean = 2 <= len(peaks) <= 4
+        has_clean = len(peaks) == 0 or len(peaks) == 2
         has_left_spike = False
         if len(peaks) >= 2:
             left_col = sorted(peaks[:2], key=lambda p: p[0])[0][0]

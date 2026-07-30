@@ -489,7 +489,7 @@ class BarProfilePlotter:
             ax.annotate(f'{n_spikes} SPIKES OK', xy=(annot_x, max_val * 0.15), fontsize=9,
                         color='green', fontweight='bold')
         else:
-            ax.annotate(f'{n_spikes} SPIKES — REJECTED (need 2-4)', xy=(annot_x, max_val * 0.15), fontsize=9,
+            ax.annotate(f'{n_spikes} SPIKES — REJECTED (need 0 or 2)', xy=(annot_x, max_val * 0.15), fontsize=9,
                         color='red', fontweight='bold')
 
         # Merge cutoff line

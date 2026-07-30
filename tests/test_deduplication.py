@@ -73,11 +73,11 @@ class TestHasCleanBarProfile:
         b = _vertical_stripe_image(stripes=[])
         assert deduplicator.has_clean_bar_profile(a, b, crop_ratio=0.3) is True
 
-    def test_four_peaks_returns_true(self, deduplicator):
+    def test_four_peaks_returns_false(self, deduplicator):
         stripes = [(50, 70), (170, 190), (290, 310), (410, 430)]
         a = _vertical_stripe_image(stripes=stripes)
         b = _vertical_stripe_image(stripes=[])
-        assert deduplicator.has_clean_bar_profile(a, b, crop_ratio=0.3) is True
+        assert deduplicator.has_clean_bar_profile(a, b, crop_ratio=0.3) is False
 
     def test_one_peak_returns_false(self, deduplicator):
         a = _vertical_stripe_image(stripes=[(80, 100)])
@@ -90,9 +90,15 @@ class TestHasCleanBarProfile:
         b = _vertical_stripe_image(stripes=[])
         assert deduplicator.has_clean_bar_profile(a, b, crop_ratio=0.3) is False
 
-    def test_zero_peaks_returns_false(self, deduplicator):
+    def test_zero_peaks_returns_true(self, deduplicator):
         img = make_solid_image(800, 600, (128, 128, 128))
-        assert deduplicator.has_clean_bar_profile(img, img, crop_ratio=0.3) is False
+        assert deduplicator.has_clean_bar_profile(img, img, crop_ratio=0.3) is True
+
+    def test_three_peaks_returns_false(self, deduplicator):
+        stripes = [(50, 70), (170, 190), (290, 310)]
+        a = _vertical_stripe_image(stripes=stripes)
+        b = _vertical_stripe_image(stripes=[])
+        assert deduplicator.has_clean_bar_profile(a, b, crop_ratio=0.3) is False
 
 
 @pytest.mark.unit
@@ -103,7 +109,7 @@ class TestHasLeftSpikeInMargin:
         assert deduplicator.has_left_spike_in_margin(a, b, crop_ratio=0.3) is True
 
     def test_left_peak_outside_margin(self, deduplicator):
-        a = _vertical_stripe_image(stripes=[(200, 220), (400, 420)])
+        a = _vertical_stripe_image(stripes=[(300, 320), (400, 420)])
         b = _vertical_stripe_image(stripes=[])
         assert deduplicator.has_left_spike_in_margin(a, b, crop_ratio=0.3) is False
 
@@ -128,7 +134,7 @@ class TestCheckBarProfile:
         assert len(peaks) == 2
 
     def test_two_peaks_no_left_spike(self, deduplicator):
-        a = _vertical_stripe_image(stripes=[(200, 220), (500, 520)])
+        a = _vertical_stripe_image(stripes=[(300, 320), (500, 520)])
         b = _vertical_stripe_image(stripes=[])
         has_clean, has_left_spike, peaks = deduplicator.check_bar_profile(a, b, crop_ratio=0.3)
         assert has_clean is True
@@ -137,7 +143,7 @@ class TestCheckBarProfile:
     def test_zero_peaks(self, deduplicator):
         img = make_solid_image(800, 600, (128, 128, 128))
         has_clean, has_left_spike, peaks = deduplicator.check_bar_profile(img, img, crop_ratio=0.3)
-        assert has_clean is False
+        assert has_clean is True
         assert has_left_spike is False
         assert peaks == []
 
