@@ -765,150 +765,179 @@ class ConfigTab(QWidget):
         desc.setObjectName("muted")
         layout.addWidget(desc)
 
-        form = QFormLayout()
-        form.setSpacing(18)
+        # ── Detection group ──
+        det_group = QGroupBox("Detection")
+        det_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        det_form = QFormLayout(det_group)
+        det_form.setSpacing(10)
 
-        self.crop_ratio = self._spin_float(0.0, 1.0, 0.01, 0.35)
         self.sensitivity = self._spin_float(0.0, 1.0, 0.01, 0.96)
-        self.min_interval = self._spin_float(0.0, 60.0, 0.5, 3.0)
-        self.ocr_conf = self._spin_int(0, 100, 40)
-
-        self.ocr_enabled = QCheckBox("Enable OCR")
-        self.ocr_enabled.setChecked(False)
-
-        self.crop_ratio.setToolTip(
-            "How much of the top portion of each video frame to keep.\n"
-            "0.35 keeps the top 35%, discarding the bottom (useful for scores\n"
-            "where the music notation sits in the upper portion).\n"
-            "Safe range: 0.20–0.50. Drag the crop line in the preview to adjust visually."
-        )
         self.sensitivity.setToolTip(
             "How similar two consecutive frames must be to count as 'unchanged'.\n"
             "Higher values = fewer false triggers but may miss subtle page turns.\n"
             "Safe range: 0.90–0.99. Raise toward 0.99 if the tool triggers on lighting flickers."
         )
+        self.min_interval = self._spin_float(0.0, 60.0, 0.5, 3.0)
         self.min_interval.setToolTip(
             "Minimum seconds between page captures, even if changes are detected.\n"
             "Prevents duplicate captures during slow page turns or hand movements.\n"
             "Safe range: 1.0–10.0. Raise to 5+ for slow page-turners."
         )
-        self.ocr_conf.setToolTip(
-            "Minimum OCR confidence score (0–100) to accept recognized text.\n"
-            "Used to deduplicate pages by comparing text content.\n"
-            "Safe range: 30–70. Set to 0 to disable OCR entirely."
+        self.frame_check = self._spin_float(0.05, 5.0, 0.05, 0.8)
+        self.frame_check.setToolTip(
+            "How often (in seconds) the video is sampled for page changes.\n"
+            "Lower = faster detection but higher CPU usage.\n"
+            "Safe range: 0.05–1.0. Use 0.1 for quick extraction, 0.5 to save CPU."
         )
+        self.top_ratio = self._spin_float(0.05, 1.0, 0.01, 0.34)
+        self.top_ratio.setToolTip(
+            "How much of the frame's top portion is compared between frames.\n"
+            "Only this region is checked for page changes, ignoring the bottom\n"
+            "(typically a static piano keyboard or player UI).\n"
+            "Safe range: 0.20–0.50."
+        )
+        self.blank_std = self._spin_float(0.0, 50.0, 0.5, 3.0)
+        self.blank_std.setToolTip(
+            "Pixel standard deviation below which a frame is considered blank\n"
+            "(white/black screen, no content). Blank frames are skipped.\n"
+            "Safe range: 1.0–8.0. Raise to 10+ if real content is being rejected."
+        )
+
+        det_form.addRow("Page change sensitivity:", self.sensitivity)
+        det_form.addRow("Min seconds between captures:", self.min_interval)
+        det_form.addRow("Frame check interval (s):", self.frame_check)
+        det_form.addRow("Top analysis ratio:", self.top_ratio)
+        det_form.addRow("Blank content std threshold:", self.blank_std)
+        layout.addWidget(det_group)
+
+        # ── Capture group ──
+        cap_group = QGroupBox("Capture Timing")
+        cap_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        cap_form = QFormLayout(cap_group)
+        cap_form.setSpacing(10)
+
+        self.a_delay = self._spin_float(0.0, 5.0, 0.1, 0.3)
+        self.a_delay.setToolTip(
+            "Seconds to wait after detecting a change before capturing the\n"
+            "'before' frame (clean page). Gives the page time to settle.\n"
+            "Safe range: 0.0–1.0. Increase if captures show a partial page turn."
+        )
+        self.b_delay = self._spin_float(0.0, 10.0, 0.1, 3.0)
+        self.b_delay.setToolTip(
+            "Seconds to wait after A-capture before capturing the 'after' frame\n"
+            "(page with overlay bar). Controls how much of the new page is visible.\n"
+            "Safe range: 1.0–6.0. Increase if the bar overlaps content."
+        )
+        self.overlay_width = self._spin_float(0.0, 1.0, 0.01, 0.5)
+        self.overlay_width.setToolTip(
+            "Width of the vertical overlay bar on the B-frame, as a fraction\n"
+            "of the image width. The bar marks where the page transition occurred.\n"
+            "Safe range: 0.3–0.7."
+        )
+
+        cap_form.addRow("A-capture delay (s):", self.a_delay)
+        cap_form.addRow("B-capture delay (s):", self.b_delay)
+        cap_form.addRow("B overlay width ratio:", self.overlay_width)
+        layout.addWidget(cap_group)
+
+        # ── Deduplication group ──
+        dedup_group = QGroupBox("Deduplication")
+        dedup_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        dedup_form = QFormLayout(dedup_group)
+        dedup_form.setSpacing(10)
+
+        self.dup_top = self._spin_float(0.0, 1.0, 0.01, 0.27)
+        self.dup_top.setToolTip(
+            "How much of the top area is compared when deduplicating pages.\n"
+            "Only this portion is checked for visual similarity between captures.\n"
+            "Safe range: 0.15–0.40."
+        )
+        self.pixel_sim = self._spin_float(0.0, 1.0, 0.01, 0.95)
+        self.pixel_sim.setToolTip(
+            "Minimum pixel-level similarity (0–1) for two pages to be\n"
+            "considered duplicates. Higher = stricter matching.\n"
+            "Safe range: 0.90–0.99. Lower to 0.90 if near-duplicates slip through."
+        )
+        self.row_sim = self._spin_float(0.0, 1.0, 0.01, 0.98)
+        self.row_sim.setToolTip(
+            "Minimum row-by-row similarity for deduplication. Checks each\n"
+            "horizontal strip independently. Higher = stricter.\n"
+            "Safe range: 0.95–0.99."
+        )
+        self.row_cov = self._spin_float(0.0, 1.0, 0.01, 0.94)
+        self.row_cov.setToolTip(
+            "Fraction of rows that must be similar for pages to be considered\n"
+            "duplicates. Allows minor differences (e.g., page numbers) while\n"
+            "catching truly identical content.\n"
+            "Safe range: 0.85–0.98."
+        )
+
+        dedup_form.addRow("Duplicate top ratio:", self.dup_top)
+        dedup_form.addRow("Pixel similarity threshold:", self.pixel_sim)
+        dedup_form.addRow("Row similarity threshold:", self.row_sim)
+        dedup_form.addRow("Row coverage threshold:", self.row_cov)
+        layout.addWidget(dedup_group)
+
+        # ── OCR group ──
+        ocr_group = QGroupBox("OCR")
+        ocr_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        ocr_form = QFormLayout(ocr_group)
+        ocr_form.setSpacing(10)
+
+        self.ocr_enabled = QCheckBox("Enable OCR")
+        self.ocr_enabled.setChecked(False)
         self.ocr_enabled.setToolTip(
             "Use OCR to compare page text for deduplication.\n"
             "Requires PaddleOCR (adds startup time). Recommended for scores\n"
             "where visual similarity alone may confuse similar-looking pages."
         )
+        self.ocr_conf = self._spin_int(0, 100, 40)
+        self.ocr_conf.setToolTip(
+            "Minimum OCR confidence score (0–100) to accept recognized text.\n"
+            "Used to deduplicate pages by comparing text content.\n"
+            "Safe range: 30–70. Set to 0 to disable OCR entirely."
+        )
+        self.ocr_horiz = self._spin_float(0.0, 1.0, 0.01, 0.30)
+        self.ocr_horiz.setToolTip(
+            "How far across the page (from the left) OCR text is extracted.\n"
+            "Useful for scores where the title/header sits on the left side.\n"
+            "Safe range: 0.20–0.50. Set to 1.0 for full-width OCR."
+        )
 
-        form.addRow("Crop ratio:", self.crop_ratio)
-        form.addRow("Page change sensitivity:", self.sensitivity)
-        form.addRow("Min seconds between captures:", self.min_interval)
-        form.addRow("", self.ocr_enabled)
-        form.addRow("OCR confidence:", self.ocr_conf)
+        ocr_form.addRow("", self.ocr_enabled)
+        ocr_form.addRow("OCR confidence:", self.ocr_conf)
+        ocr_form.addRow("OCR horizontal ratio:", self.ocr_horiz)
+        layout.addWidget(ocr_group)
 
-        layout.addLayout(form)
-
-        # Advanced group
-        self.advanced = QGroupBox("Advanced Settings")
+        # ── Advanced group ──
+        self.advanced = QGroupBox("Advanced")
         self.advanced.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        adv_grid = QGridLayout(self.advanced)
-        adv_grid.setVerticalSpacing(10)
-        adv_grid.setHorizontalSpacing(12)
+        adv_form = QFormLayout(self.advanced)
+        adv_form.setSpacing(10)
 
-        adv_fields = [
-            ("Frame check interval (s):", self._spin_float(0.05, 5.0, 0.05, 0.2),
-             "How often (in seconds) the video is sampled for page changes.\n"
-             "Lower = faster detection but higher CPU usage.\n"
-             "Safe range: 0.05–1.0. Use 0.1 for quick extraction, 0.5 to save CPU."),
-            ("Top analysis ratio:", self._spin_float(0.05, 1.0, 0.01, 0.34),
-             "How much of the frame's top portion is compared between frames.\n"
-             "Only this region is checked for page changes, ignoring the bottom\n"
-             "(typically a static piano keyboard or player UI).\n"
-             "Safe range: 0.20–0.50."),
-            ("A-capture delay (s):", self._spin_float(0.0, 5.0, 0.1, 0.3),
-             "Seconds to wait after detecting a change before capturing the\n"
-             "'before' frame (clean page). Gives the page time to settle.\n"
-             "Safe range: 0.0–1.0. Increase if captures show a partial page turn."),
-            ("B-capture delay (s):", self._spin_float(0.0, 10.0, 0.1, 3.0),
-             "Seconds to wait after A-capture before capturing the 'after' frame\n"
-             "(page with overlay bar). Controls how much of the new page is visible.\n"
-             "Safe range: 1.0–6.0. Increase if the bar overlaps content."),
-            ("B overlay width ratio:", self._spin_float(0.0, 1.0, 0.01, 0.5),
-             "Width of the vertical overlay bar on the B-frame, as a fraction\n"
-             "of the image width. The bar marks where the page transition occurred.\n"
-             "Safe range: 0.3–0.7."),
-            ("Duplicate top ratio:", self._spin_float(0.0, 1.0, 0.01, 0.27),
-             "How much of the top area is compared when deduplicating pages.\n"
-             "Only this portion is checked for visual similarity between captures.\n"
-             "Safe range: 0.15–0.40."),
-            ("Pixel similarity threshold:", self._spin_float(0.0, 1.0, 0.01, 0.95),
-             "Minimum pixel-level similarity (0–1) for two pages to be\n"
-             "considered duplicates. Higher = stricter matching.\n"
-             "Safe range: 0.90–0.99. Lower to 0.90 if near-duplicates slip through."),
-            ("Row similarity threshold:", self._spin_float(0.0, 1.0, 0.01, 0.98),
-             "Minimum row-by-row similarity for deduplication. Checks each\n"
-             "horizontal strip independently. Higher = stricter.\n"
-             "Safe range: 0.95–0.99."),
-            ("Row coverage threshold:", self._spin_float(0.0, 1.0, 0.01, 0.94),
-             "Fraction of rows that must be similar for pages to be considered\n"
-             "duplicates. Allows minor differences (e.g., page numbers) while\n"
-             "catching truly identical content.\n"
-             "Safe range: 0.85–0.98."),
-            ("OCR horizontal ratio:", self._spin_float(0.0, 1.0, 0.01, 0.30),
-             "How far across the page (from the left) OCR text is extracted.\n"
-             "Useful for scores where the title/header sits on the left side.\n"
-             "Safe range: 0.20–0.50. Set to 1.0 for full-width OCR."),
+        self.bar_diff = self._spin_float(0.0, 50000.0, 100.0, 500.0)
+        self.bar_diff.setToolTip(
+            "Minimum pixel intensity difference required to detect the black\n"
+            "bar overlay on the B-frame. Higher = less sensitive to the bar.\n"
+            "Safe range: 200–2000. Raise if the bar isn't being detected."
+        )
+        self.bar_pad = self._spin_int(-200, 200, -15)
+        self.bar_pad.setToolTip(
+            "Pixel offset applied to the bar detection position.\n"
+            "Negative = shift left, positive = shift right.\n"
+            "Safe range: -50 to +50. Fine-tune when the bar position is slightly off."
+        )
 
-("Blank content std threshold:", self._spin_float(0.0, 50.0, 0.5, 3.0),
-              "Pixel standard deviation below which a frame is considered blank\n"
-              "(white/black screen, no content). Blank frames are skipped.\n"
-              "Safe range: 1.0–8.0. Raise to 10+ if real content is being rejected."),
-            ("Bar min diff threshold:", self._spin_float(0.0, 50000.0, 100.0, 500.0),
-              "Minimum pixel intensity difference required to detect the black\n"
-              "bar overlay on the B-frame. Higher = less sensitive to the bar.\n"
-              "Safe range: 200–2000. Raise if the bar isn't being detected."),
-            ("Bar overlay offset (px):", self._spin_int(-200, 200, -15),
-              "Pixel offset applied to the bar detection position.\n"
-              "Negative = shift left, positive = shift right.\n"
-              "Safe range: -50 to +50. Fine-tune when the bar position is slightly off."),
-        ]
+        adv_form.addRow("Bar min diff threshold:", self.bar_diff)
+        adv_form.addRow("Bar overlay offset (px):", self.bar_pad)
 
-        for r, (label_text, spinbox, tip) in enumerate(adv_fields):
-            lbl = QLabel(label_text)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            adv_grid.addWidget(lbl, r, 0)
-            adv_grid.addWidget(spinbox, r, 1)
-            spinbox.setToolTip(tip)
-
-        adv_grid.setColumnStretch(0, 0)
-        adv_grid.setColumnStretch(1, 1)
-
-        self.adv_frame_check = adv_fields[0][1]
-        self.adv_top_ratio = adv_fields[1][1]
-        self.adv_a_delay = adv_fields[2][1]
-        self.adv_b_delay = adv_fields[3][1]
-        self.adv_overlay = adv_fields[4][1]
-        self.adv_dup_top = adv_fields[5][1]
-        self.adv_pixel_sim = adv_fields[6][1]
-        self.adv_row_sim = adv_fields[7][1]
-        self.adv_row_cov = adv_fields[8][1]
-        self.adv_ocr_horiz = adv_fields[9][1]
-        self.adv_blank_std = adv_fields[10][1]
-        self.adv_bar_diff = adv_fields[11][1]
-        self.adv_bar_pad = adv_fields[12][1]
-
-        # Debug mode checkbox
-        r = len(adv_fields)
         self.debug_cb = QCheckBox("Debug mode (open temp folder on completion)")
         self.debug_cb.setToolTip(
             "When enabled, opens the output folder automatically after extraction\n"
             "so you can inspect intermediate files (cropped frames, debug images).\n"
             "Enable this when diagnosing extraction issues."
         )
-        adv_grid.addWidget(self.debug_cb, r, 0, 1, 2)
+        adv_form.addRow(self.debug_cb)
 
         layout.addWidget(self.advanced)
         layout.addStretch()
@@ -921,6 +950,11 @@ class ConfigTab(QWidget):
                 widget.valueChanged.connect(self._on_change)
         self.ocr_enabled.toggled.connect(self._on_change)
         self.debug_cb.toggled.connect(self._on_debug_toggled)
+        self.reset_btn = QPushButton("Reset to Defaults")
+        self.reset_btn.setObjectName("secondary")
+        self.reset_btn.setToolTip("Restore all parameters to their factory defaults")
+        self.reset_btn.clicked.connect(self._reset_defaults)
+        layout.addWidget(self.reset_btn)
 
         scroll.setWidget(inner)
         outer = QVBoxLayout(self)
@@ -945,35 +979,33 @@ class ConfigTab(QWidget):
 
     def _all_spins(self):
         return [
-            self.crop_ratio, self.sensitivity, self.min_interval, self.ocr_conf,
-            self.adv_frame_check, self.adv_top_ratio, self.adv_a_delay, self.adv_b_delay,
-            self.adv_overlay, self.adv_dup_top, self.adv_pixel_sim, self.adv_row_sim,
-            self.adv_row_cov, self.adv_ocr_horiz, self.adv_blank_std,
-            self.adv_bar_diff,
-            self.adv_bar_pad,
+            self.sensitivity, self.min_interval, self.frame_check,
+            self.top_ratio, self.blank_std, self.a_delay, self.b_delay,
+            self.overlay_width, self.dup_top, self.pixel_sim,
+            self.row_sim, self.row_cov, self.ocr_conf, self.ocr_horiz,
+            self.bar_diff, self.bar_pad,
         ]
 
     def apply_to_api(self):
         self._updating = True
         try:
             updates = {
-                "default_crop_ratio": self.crop_ratio.value(),
                 "change_detection_threshold": self.sensitivity.value(),
                 "min_screenshot_interval": self.min_interval.value(),
+                "frame_check_interval": self.frame_check.value(),
+                "top_analysis_ratio": self.top_ratio.value(),
+                "blank_content_std_threshold": self.blank_std.value(),
+                "a_capture_delay": self.a_delay.value(),
+                "b_capture_delay": self.b_delay.value(),
+                "b_overlay_width_ratio": self.overlay_width.value(),
+                "duplicate_top_ratio": self.dup_top.value(),
+                "pixel_similarity_threshold": self.pixel_sim.value(),
+                "row_similarity_threshold": self.row_sim.value(),
+                "row_coverage_threshold": self.row_cov.value(),
                 "ocr_confidence_threshold": self.ocr_conf.value() if self.ocr_enabled.isChecked() else 0,
-                "frame_check_interval": self.adv_frame_check.value(),
-                "top_analysis_ratio": self.adv_top_ratio.value(),
-                "a_capture_delay": self.adv_a_delay.value(),
-                "b_capture_delay": self.adv_b_delay.value(),
-                "b_overlay_width_ratio": self.adv_overlay.value(),
-                "duplicate_top_ratio": self.adv_dup_top.value(),
-                "pixel_similarity_threshold": self.adv_pixel_sim.value(),
-                "row_similarity_threshold": self.adv_row_sim.value(),
-                "row_coverage_threshold": self.adv_row_cov.value(),
-                "ocr_horizontal_ratio": self.adv_ocr_horiz.value(),
-                "blank_content_std_threshold": self.adv_blank_std.value(),
-                "bar_min_diff_threshold": self.adv_bar_diff.value(),
-                "bar_padding_px": self.adv_bar_pad.value(),
+                "ocr_horizontal_ratio": self.ocr_horiz.value(),
+                "bar_min_diff_threshold": self.bar_diff.value(),
+                "bar_padding_px": self.bar_pad.value(),
             }
             self._api.update_config(updates)
             self._api.set_debug_mode(self.debug_cb.isChecked())
@@ -986,25 +1018,59 @@ class ConfigTab(QWidget):
         self._updating = True
         try:
             cfg = self._api.get_config()
-            self.crop_ratio.setValue(cfg.get("default_crop_ratio", 0.35))
             self.sensitivity.setValue(cfg.get("change_detection_threshold", 0.96))
             self.min_interval.setValue(cfg.get("min_screenshot_interval", 3.0))
+            self.frame_check.setValue(cfg.get("frame_check_interval", 0.8))
+            self.top_ratio.setValue(cfg.get("top_analysis_ratio", 0.34))
+            self.blank_std.setValue(cfg.get("blank_content_std_threshold", 3.0))
+            self.a_delay.setValue(cfg.get("a_capture_delay", 0.3))
+            self.b_delay.setValue(cfg.get("b_capture_delay", 3.0))
+            self.overlay_width.setValue(cfg.get("b_overlay_width_ratio", 0.5))
+            self.dup_top.setValue(cfg.get("duplicate_top_ratio", 0.27))
+            self.pixel_sim.setValue(cfg.get("pixel_similarity_threshold", 0.95))
+            self.row_sim.setValue(cfg.get("row_similarity_threshold", 0.98))
+            self.row_cov.setValue(cfg.get("row_coverage_threshold", 0.94))
             ocr_conf = cfg.get("ocr_confidence_threshold", 40)
             self.ocr_conf.setValue(ocr_conf if ocr_conf > 0 else 40)
-            self.adv_frame_check.setValue(cfg.get("frame_check_interval", 0.8))
-            self.adv_top_ratio.setValue(cfg.get("top_analysis_ratio", 0.34))
-            self.adv_a_delay.setValue(cfg.get("a_capture_delay", 0.3))
-            self.adv_b_delay.setValue(cfg.get("b_capture_delay", 3.0))
-            self.adv_overlay.setValue(cfg.get("b_overlay_width_ratio", 0.2))
-            self.adv_dup_top.setValue(cfg.get("duplicate_top_ratio", 0.27))
-            self.adv_pixel_sim.setValue(cfg.get("pixel_similarity_threshold", 0.95))
-            self.adv_row_sim.setValue(cfg.get("row_similarity_threshold", 0.98))
-            self.adv_row_cov.setValue(cfg.get("row_coverage_threshold", 0.94))
-            self.adv_ocr_horiz.setValue(cfg.get("ocr_horizontal_ratio", 0.30))
-            self.adv_blank_std.setValue(cfg.get("blank_content_std_threshold", 3.0))
-            self.adv_bar_diff.setValue(cfg.get("bar_min_diff_threshold", 500.0))
-            self.adv_bar_pad.setValue(cfg.get("bar_padding_px", -15))
+            self.ocr_horiz.setValue(cfg.get("ocr_horizontal_ratio", 0.30))
+            self.bar_diff.setValue(cfg.get("bar_min_diff_threshold", 500.0))
+            self.bar_pad.setValue(cfg.get("bar_padding_px", -15))
             self.debug_cb.setChecked(self._api.is_debug_mode())
+        finally:
+            self._updating = False
+
+    def _reset_defaults(self):
+        reply = QMessageBox.question(
+            self, "Reset to Defaults",
+            "This will restore all extraction parameters to their factory defaults.\n\n"
+            "Your current video, project, and extracted pages will not be affected.\n"
+            "Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._updating = True
+        try:
+            self.sensitivity.setValue(0.96)
+            self.min_interval.setValue(3.0)
+            self.frame_check.setValue(0.8)
+            self.top_ratio.setValue(0.34)
+            self.blank_std.setValue(3.0)
+            self.a_delay.setValue(0.3)
+            self.b_delay.setValue(3.0)
+            self.overlay_width.setValue(0.5)
+            self.dup_top.setValue(0.27)
+            self.pixel_sim.setValue(0.95)
+            self.row_sim.setValue(0.98)
+            self.row_cov.setValue(0.94)
+            self.ocr_enabled.setChecked(False)
+            self.ocr_conf.setValue(40)
+            self.ocr_horiz.setValue(0.30)
+            self.bar_diff.setValue(500.0)
+            self.bar_pad.setValue(-15)
+            self.debug_cb.setChecked(False)
+            self.apply_to_api()
         finally:
             self._updating = False
 
@@ -1288,22 +1354,18 @@ class ExtractTab(QWidget):
         self.crop_spin.setFixedWidth(100)
         self.crop_original_label = QLabel("")
         self.crop_original_label.setObjectName("muted")
-        self.set_default_btn = QPushButton("Set as Default")
-        self.set_default_btn.setObjectName("secondary")
-        self.set_default_btn.setFixedWidth(120)
 
         crop_row.addWidget(crop_label)
         crop_row.addWidget(self.crop_spin)
         crop_row.addWidget(self.crop_original_label)
         crop_row.addStretch()
-        self.config_btn = QPushButton("⚙ Config")
+        self.config_btn = QPushButton("⚙ Settings")
         self.config_btn.setObjectName("secondary")
         self.config_btn.setFixedWidth(80)
-        self.config_btn.setToolTip("Open extraction settings (Config tab)")
+        self.config_btn.setToolTip("Open extraction settings")
         self.config_btn.clicked.connect(self.config_requested.emit)
 
         crop_row.addWidget(self.config_btn)
-        crop_row.addWidget(self.set_default_btn)
         layout.addLayout(crop_row)
 
         # ── Output PDF name ──
@@ -1375,7 +1437,6 @@ class ExtractTab(QWidget):
         self.quality_combo.currentIndexChanged.connect(self._on_quality_changed)
         self.seek_bar.seek_changed.connect(self._on_seek)
         self.crop_spin.valueChanged.connect(self._on_crop_spin_changed)
-        self.set_default_btn.clicked.connect(self._set_crop_default)
         self.crop_widget.crop_ratio_changed.connect(self.crop_spin.setValue)
 
         self._refresh_completer()
@@ -1715,14 +1776,6 @@ class ExtractTab(QWidget):
             self.crop_original_label.setText(
                 f"(was {int(self._loaded_original_ratio * 100)}%)" if self._loaded_original_ratio else "")
 
-    def _set_crop_default(self):
-        ratio = self.crop_spin.value()
-        try:
-            self._api.update_config({"default_crop_ratio": ratio})
-            self._log(f"Crop: {int(ratio * 100)}%")
-        except ValueError as e:
-            QMessageBox.warning(self, "Error", str(e))
-
     def _on_reextract(self):
         dbg("_on_reextract")
         if self._busy:
@@ -1996,7 +2049,7 @@ class ExtractTab(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        # self.setWindowTitle("Score Extractor")
+        self.setWindowTitle("Score Extractor — Piano Score Video to PDF")
         self.setMinimumSize(960, 760)
         self.resize(1100, 780)
         self.setStyleSheet(STYLESHEET.replace("__CHECK_PLACEHOLDER__", CHECK_INDICATOR_PATH).replace("__CHEVRON_PLACEHOLDER__", CHEVRON_PATH))
@@ -2019,7 +2072,7 @@ class MainWindow(QMainWindow):
         self.config_tab = ConfigTab(self.api)
 
         self.tabs.addTab(self.extract_tab, "Extract")
-        self.tabs.addTab(self.config_tab, "Config")
+        self.tabs.addTab(self.config_tab, "Settings")
 
         main_layout.addWidget(self.tabs, 1)
 
@@ -2088,7 +2141,7 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    # app.setApplicationName("Score Extractor")
+    app.setApplicationName("Score Extractor")
 
     global CHECK_INDICATOR_PATH
     global CHEVRON_PATH
