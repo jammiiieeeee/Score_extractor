@@ -3,6 +3,7 @@ import numpy as np
 from typing import Optional
 from src.domain.value_objects.config import ScoreConfig
 from src.domain.interfaces import IOcrService
+from src.domain.bar_profile_service import BarProfileService
 
 class Deduplicator:
     def __init__(self, config: ScoreConfig, ocr_service: IOcrService):
@@ -11,41 +12,8 @@ class Deduplicator:
         self._number_cache: dict[int, Optional[int]] = {}
 
     def _get_bar_profile_peaks(self, frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float) -> list:
-        h, w = frame_a.shape[:2]
-        target_w = 640
-        scale = target_w / w
-        target_h = int(h * scale)
-
-        a_small = cv2.resize(frame_a, (target_w, target_h))
-        b_small = cv2.resize(frame_b, (target_w, target_h))
-
-        crop_h = int(target_h * crop_ratio)
-        a_top = cv2.cvtColor(a_small[:crop_h, :], cv2.COLOR_BGR2GRAY).astype(float)
-        b_top = cv2.cvtColor(b_small[:crop_h, :], cv2.COLOR_BGR2GRAY).astype(float)
-
-        diff = np.abs(a_top - b_top)
-        col_sums = np.sum(diff, axis=0)
-
-        max_val = np.max(col_sums)
-        if max_val < 100:
-            return []
-
-        threshold = max_val * 0.3
-        min_dist = max(3, int(target_w * 0.06))
-
-        peaks = []
-        for i in range(2, len(col_sums) - 2):
-            if col_sums[i] > col_sums[i-1] and col_sums[i] >= col_sums[i+1] and col_sums[i] > threshold:
-                is_clean = True
-                for prev_col, _ in peaks:
-                    if abs(i - prev_col) < min_dist:
-                        is_clean = False
-                        break
-                if is_clean:
-                    peaks.append((i, col_sums[i]))
-
-        peaks.sort(key=lambda p: p[1], reverse=True)
-        return peaks
+        col_sums = BarProfileService.compute_column_sums(frame_a, frame_b, crop_ratio)
+        return BarProfileService.detect_spikes(col_sums)
 
     def has_clean_bar_profile(self, frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float) -> bool:
         n = len(self._get_bar_profile_peaks(frame_a, frame_b, crop_ratio))

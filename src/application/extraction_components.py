@@ -324,25 +324,27 @@ class PageCommitter:
         # Merge frames — use full-res when available, scan-res as fallback
         merge_a = full_a if full_a is not None else frame_a.image
         merge_b = full_b if full_b is not None else frame_b.image
-        full_img, bar_x, bar_width = self.video.merge_frames(
+        debug_profile_path = str(output_dir / "diagnostics" / f"bar_profile_page_{page_num:03d}.txt") if debug else None
+        mr = self.video.merge_frames(
             merge_a, merge_b, self.config.b_overlay_width_ratio,
             self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
-            self.config.bar_padding_px, None
+            self.config.bar_padding_px, debug_profile_path
         )
-        merge_x = max(0, bar_x - bar_width + self.config.bar_padding_px) if bar_x > 0 else 0
-        log(f"  Bar right edge at x={bar_x}, width={bar_width}px, merge_x={merge_x} for page {page_num}")
+        full_img = mr.merged
+        merge_x = mr.merge_x
+        log(f"  Merge result: {len(mr.spikes)} spike(s), merge_x={merge_x} for page {page_num}")
 
         # Deduplication check
         is_dup = False
         merged_number = None
         if self.ocr_service.is_enabled() and full_a is not None and full_b is not None:
-            ocr_merged, _, _ = self.video.merge_frames(
+            ocr_mr = self.video.merge_frames(
                 full_a, full_b, self.config.b_overlay_width_ratio,
                 self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
                 self.config.bar_padding_px, None
             )
             merged_number = self.ocr_service.get_leftmost_number(
-                ocr_merged, self.config.duplicate_top_ratio,
+                ocr_mr.merged, self.config.duplicate_top_ratio,
                 self.config.ocr_horizontal_ratio, self.config.ocr_confidence_threshold
             )
 
@@ -350,6 +352,10 @@ class PageCommitter:
         has_clean_profile, has_left_spike, bar_peaks = self.deduplicator.check_bar_profile(
             frame_a.image, frame_b.image, self.config.default_crop_ratio
         )
+        if bar_peaks:
+            sorted_peaks = sorted(bar_peaks, key=lambda p: p[0])
+            peak_str = ", ".join(f"col{p[0]}:{p[1]:.0f}" for p in sorted_peaks)
+            log(f"  Dedup peaks: [{peak_str}] (n={len(bar_peaks)}, clean={has_clean_profile})")
         guard_rail_passed = True
         if not is_first:
             if not is_dup and not has_clean_profile:
@@ -378,12 +384,22 @@ class PageCommitter:
 
         if plotter is not None:
             plot_path = output_dir / "diagnostics" / f"bar_profile_page_{page_num:03d}.png"
+            w_full = frame_a.image.shape[1]
+            merge_x_640 = int(mr.merge_x * (640 / w_full)) if w_full > 0 else 0
+            left_spike_col = -1
+            if len(bar_peaks) >= 2:
+                sorted_ps = sorted(bar_peaks, key=lambda p: p[0])
+                left_spike_col = sorted_ps[0][0]
             plotter.plot(
-                frame_a.image, frame_b.image, self.config.default_crop_ratio,
-                bar_x, bar_width, self.config.bar_padding_px,
-                int(640 * self.config.bar_left_margin), plot_path, page_num,
-                self.deduplicator, peaks=bar_peaks, has_clean=has_clean_profile,
-                has_left_spike=has_left_spike
+                col_sums=mr.col_sums,
+                spikes=mr.spikes,
+                merge_x_640=merge_x_640,
+                margin_col=int(640 * self.config.bar_left_margin),
+                left_spike_col=left_spike_col,
+                has_left_spike=has_left_spike,
+                has_clean=has_clean_profile,
+                output_path=plot_path,
+                page_num=page_num,
             )
 
         attempt_duration_ms = (time.time() - t_commit_start) * 1000
@@ -392,8 +408,8 @@ class PageCommitter:
             page=attempt_num,
             timestamp=frame_a.timestamp,
             frame_index=frame_a.index,
-            bar_x=bar_x,
-            bar_width=bar_width,
+            bar_x=merge_x,
+            bar_width=0,
             merge_x=merge_x,
             is_duplicate=is_dup,
             ocr_number=str(merged_number) if merged_number is not None else None,
@@ -405,13 +421,15 @@ class PageCommitter:
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  BarProfilePlotter – matplotlib diagnostic plots (optional)
+#  PURE DISPLAY — no computation, all data provided by caller.
 # ═══════════════════════════════════════════════════════════════════════════
 
 class BarProfilePlotter:
     """Generates matplotlib bar profile diagnostic plots.
 
-    Lazy-imports matplotlib on first use. Can be disabled by not passing
-    to PageCommitter (pass None instead).
+    Pure display — all data (col_sums, spikes, merge point) must be
+    pre-computed and passed in.  Lazy-imports matplotlib on first use.
+    Can be disabled by not passing to PageCommitter (pass None instead).
     """
 
     def __init__(self):
@@ -419,10 +437,15 @@ class BarProfilePlotter:
 
     def plot(
         self,
-        frame_a: np.ndarray, frame_b: np.ndarray,
-        crop_ratio: float, bar_x: int, bar_width: int, bar_padding_px: int,
-        margin_col: int, output_path: Path, page_num: int,
-        deduplicator, peaks=None, has_clean=None, has_left_spike=None
+        col_sums: np.ndarray,
+        spikes: list,
+        merge_x_640: int,
+        margin_col: int,
+        left_spike_col: int = -1,
+        has_left_spike: bool = False,
+        has_clean: bool = False,
+        output_path: Path = None,
+        page_num: int = 0,
     ):
         if self._plt is None:
             import matplotlib
@@ -430,19 +453,6 @@ class BarProfilePlotter:
             import matplotlib.pyplot as plt
             self._plt = plt
         plt = self._plt
-
-        h, w = frame_a.shape[:2]
-        scale = 640 / w
-        target_h = int(h * scale)
-        a_small = cv2.resize(frame_a, (640, target_h))
-        b_small = cv2.resize(frame_b, (640, target_h))
-
-        crop_h = int(target_h * crop_ratio)
-        a_top = cv2.cvtColor(a_small[:crop_h, :], cv2.COLOR_BGR2GRAY).astype(float)
-        b_top = cv2.cvtColor(b_small[:crop_h, :], cv2.COLOR_BGR2GRAY).astype(float)
-
-        diff = np.abs(a_top - b_top)
-        col_sums = np.sum(diff, axis=0)
 
         fig, ax = plt.subplots(figsize=(10, 4))
         x = np.arange(len(col_sums))
@@ -452,63 +462,42 @@ class BarProfilePlotter:
         max_val = max(np.max(col_sums), 1)
 
         ax.axvline(x=margin_col, color='red', linewidth=2, alpha=0.7)
-        ax.annotate(f'Left {crop_ratio:.0%} cutoff (col {margin_col})',
+        ax.annotate(f'Left margin cutoff (col {margin_col})',
                     xy=(margin_col, max_val * 0.9), fontsize=8, color='red',
                     fontweight='bold', rotation=90, va='bottom')
 
-        if peaks is None:
-            peaks = deduplicator._get_bar_profile_peaks(frame_a, frame_b, crop_ratio)
-
-        n_peaks = len(peaks)
-        two_spike_ok = 2 <= n_peaks <= 4
-        if has_left_spike is None and two_spike_ok:
-            has_left_spike = deduplicator.has_left_spike_in_margin(frame_a, frame_b, crop_ratio)
-        elif has_left_spike is None:
-            has_left_spike = False
-
-        if n_peaks >= 1:
-            sorted_peaks = sorted(peaks[:2], key=lambda p: p[0])
+        # Spike lines — annotate up to 2 spikes across full profile
+        n_spikes = len(spikes)
+        if n_spikes >= 1:
+            sorted_spikes = sorted(spikes[:2], key=lambda p: p[0])
             colors = ['orange', 'purple']
             labels = ['Bar in A (old)', 'Bar in B (new)']
-            for pi, (col, val) in enumerate(sorted_peaks):
+            for pi, (col, val) in enumerate(sorted_spikes):
                 ax.axvline(x=col, color=colors[pi], linestyle='--', alpha=0.7)
                 ax.annotate(f'{labels[pi]} (col {col})', xy=(col, val),
                             xytext=(5, 5), textcoords='offset points', fontsize=8,
                             color=colors[pi])
 
-            if n_peaks >= 2:
-                left_col = sorted_peaks[0][0]
+            if n_spikes >= 2 and left_spike_col >= 0:
                 ax.annotate('LEFT SPIKE OK' if has_left_spike else 'LEFT SPIKE REJECTED',
-                            xy=(left_col, 0), fontsize=8,
+                            xy=(left_spike_col, 0), fontsize=8,
                             color='green' if has_left_spike else 'red',
                             fontweight='bold')
 
-        if two_spike_ok:
-            ax.annotate(f'{n_peaks} PEAKS OK', xy=(600, max_val * 0.15), fontsize=9,
+        annot_x = min(len(col_sums) - 80, 600)
+        if has_clean:
+            ax.annotate(f'{n_spikes} SPIKES OK', xy=(annot_x, max_val * 0.15), fontsize=9,
                         color='green', fontweight='bold')
         else:
-            ax.annotate(f'{n_peaks} PEAKS — REJECTED (need 2-4)', xy=(400, max_val * 0.15), fontsize=9,
+            ax.annotate(f'{n_spikes} SPIKES — REJECTED (need 2-4)', xy=(annot_x, max_val * 0.15), fontsize=9,
                         color='red', fontweight='bold')
 
-        bar_x_640 = int(round(bar_x * (640 / w)))
-        bar_left_640 = max(0, bar_x_640 - int(round(bar_width * (640 / w))))
-        merge_x_640 = max(0, min(640, bar_left_640 + int(round(bar_padding_px * (640 / w)))))
-        if bar_x_640 > 0:
-            ax.axvspan(bar_left_640, bar_x_640, alpha=0.08, color='orange', label='Playback bar')
-            ax.axvline(x=bar_x_640, color='orange', linestyle='-', alpha=0.9, linewidth=2)
-            ax.annotate(f'Bar right edge (col {bar_x_640})', xy=(bar_x_640, max_val * 0.5),
-                        fontsize=8, color='orange', fontweight='bold',
+        # Merge cutoff line
+        if 0 < merge_x_640 < len(col_sums):
+            ax.axvline(x=merge_x_640, color='crimson', linestyle='-', alpha=0.9, linewidth=2)
+            ax.annotate(f'Overlay cutoff (col {merge_x_640})', xy=(merge_x_640, max_val * 0.65),
+                        fontsize=8, color='crimson', fontweight='bold',
                         rotation=90, va='bottom')
-            if bar_left_640 > 0:
-                ax.axvline(x=bar_left_640, color='orange', linestyle='-', alpha=0.7, linewidth=2)
-                ax.annotate(f'Bar left edge (col {bar_left_640})', xy=(bar_left_640, max_val * 0.35),
-                            fontsize=8, color='orange', fontweight='bold',
-                            rotation=90, va='bottom')
-            if 0 < merge_x_640 < 640:
-                ax.axvline(x=merge_x_640, color='crimson', linestyle='-', alpha=0.9, linewidth=2)
-                ax.annotate(f'Overlay cutoff (col {merge_x_640})', xy=(merge_x_640, max_val * 0.65),
-                            fontsize=8, color='crimson', fontweight='bold',
-                            rotation=90, va='bottom')
 
         ax.set_xlabel('Column (640px scale)')
         ax.set_ylabel('Summed absdiff')
@@ -516,5 +505,6 @@ class BarProfilePlotter:
         ax.set_xlim(0, len(col_sums))
 
         plt.tight_layout()
-        plt.savefig(str(output_path), dpi=150)
+        if output_path:
+            plt.savefig(str(output_path), dpi=150)
         plt.close(fig)

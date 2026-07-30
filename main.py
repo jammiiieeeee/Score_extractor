@@ -152,7 +152,7 @@ def main():
         extract_use_case = ExtractScoreUseCase(video_service, ocr_service, file_service, config)
 
         try:
-            pages = extract_use_case.execute(
+            pages, manifest = extract_use_case.execute(
                 video_path,
                 output_dir=output_dir,
                 no_ocr=not args.ocr,

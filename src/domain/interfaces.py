@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, List, Tuple
 
+from src.domain.models import MergeResult
+
 class IVideoService(ABC):
     @abstractmethod
     def open_video(self, video_path: str) -> None:
@@ -43,8 +45,14 @@ class IVideoService(ABC):
         pass
 
     @abstractmethod
-    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, bar_padding_px: int = -15, debug_save_path: Optional[str] = None) -> Tuple[np.ndarray, int, int]:
-        """Applies Dynamic Bar Erase and merges Frame B onto Frame A. Returns (merged_image, bar_x (right edge), bar_width)."""
+    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, bar_padding_px: int = -15, debug_save_path: Optional[str] = None) -> MergeResult:
+        """Detect bar edge via spike detection and merge Frame B onto Frame A.
+        
+        If exactly 2 spikes are found, sets the overlay cutoff to the midpoint between them.
+        Otherwise returns frame A unchanged.
+        
+        Returns MergeResult containing the merged image, merge point, and debug data.
+        """
         pass
 
     @abstractmethod

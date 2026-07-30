@@ -88,6 +88,7 @@ class ExtractScoreUseCase:
         stepper.set_unique_pages_ref(unique_pages)
 
         log(f"Processing {video_path}")
+        log(f"Video resolution: {orig_w}x{orig_h} (scale 640→{640/orig_w:.3f})")
 
         # Get video duration for end_offset calculation
         video_duration = self.video_service.get_total_frames() / self.video_service.get_fps() if self.video_service.get_fps() > 0 else 0.0

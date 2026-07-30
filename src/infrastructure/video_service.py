@@ -1,7 +1,9 @@
 import cv2
 import numpy as np
-from typing import Tuple, Optional
+from typing import Optional
 from src.domain.interfaces import IVideoService
+from src.domain.models import MergeResult
+from src.domain.bar_profile_service import BarProfileService
 
 class VideoService(IVideoService):
 
@@ -87,71 +89,42 @@ class VideoService(IVideoService):
         timestamp = frame_idx / self.fps
         return frame, timestamp
 
-    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, bar_padding_px: int = -15, debug_save_path: Optional[str] = None) -> Tuple[np.ndarray, int, int]:
+    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, bar_padding_px: int = -15, debug_save_path: Optional[str] = None) -> MergeResult:
         h, w = frame_a.shape[:2]
 
-        # Downscale to 640px for bar detection
-        small_w = 640
-        small_h = int(h * (small_w / w))
-        a_small = cv2.resize(frame_a, (small_w, small_h))
-        b_small = cv2.resize(frame_b, (small_w, small_h))
+        col_sums = BarProfileService.compute_column_sums(frame_a, frame_b, crop_ratio)
+        search_range = int(640 * overlay_width_ratio)
 
-        diff = cv2.absdiff(a_small, b_small)
-        gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+        # Detect spikes on the FULL profile — same data the deduplicator sees.
+        spikes = BarProfileService.detect_spikes(col_sums)
 
-        # Restrict scan to top portion (overlap region)
-        crop_h = int(small_h * crop_ratio) if 0 < crop_ratio < 1 else small_h
-        gray_diff = gray_diff[:crop_h, :]
-
-        vertical_sum = np.sum(gray_diff, axis=0)
-
-        search_range = int(small_w * overlay_width_ratio)
-        relevant_sum = vertical_sum[:search_range]
-
-        bar_width = 0
-        if len(relevant_sum) > 0:
-            max_diff = float(np.max(relevant_sum))
-            if max_diff < min_diff_threshold:
-                bar_x = 0
-                merge_x = 0
-            else:
-                # Detect right edge of bar (right-to-left, column > 50% of max)
-                right_threshold = max_diff * 0.5
-                bar_right_small = -1
-                for col in range(len(relevant_sum) - 1, -1, -1):
-                    if relevant_sum[col] > right_threshold:
-                        bar_right_small = col
-                        break
-                if bar_right_small < 0:
-                    bar_right_small = int(np.argmax(relevant_sum))
-
-                # Detect left edge of bar (left-to-right, column > 20% of max)
-                left_threshold = max_diff * 0.2
-                bar_left_small = -1
-                for col in range(bar_right_small - 1, -1, -1):
-                    if relevant_sum[col] < left_threshold:
-                        bar_left_small = col + 1
-                        break
-                if bar_left_small < 0:
-                    bar_left_small = 0
-
-                bar_x = int(bar_right_small * (w / small_w))
-                bar_left = int(bar_left_small * (w / small_w))
-                bar_width = bar_x - bar_left
-                # Set merge point to the bar's left edge, fully excluding the bar body
-                merge_x = max(0, min(bar_left + bar_padding_px, w))
-        else:
-            bar_x = 0
-            merge_x = 0
-
-        if debug_save_path:
-            np.savetxt(debug_save_path, relevant_sum, fmt='%d')
+        merge_x = 0
+        if len(spikes) == 2:
+            sorted_spikes = sorted(spikes, key=lambda p: p[0])
+            midpoint_640 = (sorted_spikes[0][0] + sorted_spikes[1][0]) // 2
+            merge_x = int(midpoint_640 * (w / 640))
 
         result = frame_a.copy()
-        result[:, 0:merge_x] = frame_b[:, 0:merge_x]
+        if merge_x > 0:
+            result[:, 0:merge_x] = frame_b[:, 0:merge_x]
 
-        bar_width = max(0, bar_width)
-        return result, bar_x, bar_width
+        if debug_save_path and len(col_sums) > 0:
+            relevant = col_sums[:search_range]
+            with open(debug_save_path, 'w') as f:
+                f.write(f"# n_spikes={len(spikes)} search_range={search_range}\n")
+                for i, v in enumerate(spikes):
+                    f.write(f"# spike col={v[0]} val={v[1]:.0f}\n")
+                if len(spikes) == 2:
+                    sorted_s = sorted(spikes, key=lambda p: p[0])
+                    f.write(f"# a_spike={sorted_s[0][0]} b_spike={sorted_s[1][0]} midpoint_640={midpoint_640} merge_x={merge_x}\n")
+                np.savetxt(f, relevant.reshape(1, -1), fmt='%d', header='relevant (column sums at 640 scale)', comments='')
+
+        return MergeResult(
+            merged=result,
+            merge_x=merge_x,
+            col_sums=col_sums,
+            spikes=spikes,
+        )
 
     def close(self) -> None:
         if self.cap:

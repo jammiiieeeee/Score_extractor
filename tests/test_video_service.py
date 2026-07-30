@@ -22,47 +22,60 @@ class TestMergeFrames:
     def svc(self):
         return VideoService()
 
-    def test_identical_images_no_bar(self, svc):
+    def test_identical_images_no_merge(self, svc):
         img = make_solid_image(800, 600, (100, 100, 100))
-        result, bar_x, bar_width = svc.merge_frames(img.copy(), img.copy())
-        assert bar_x == 0
-        assert bar_width == 0
+        mr = svc.merge_frames(img.copy(), img.copy())
+        assert mr.merge_x == 0
 
-    def test_identical_images_merge_x_zero(self, svc):
+    def test_identical_images_unchanged(self, svc):
         img = make_solid_image(800, 600, (100, 100, 100))
-        result, merge_x_unused, bar_width = svc.merge_frames(img.copy(), img.copy())
-        h, w = img.shape[:2]
-        result2, bar_x, bar_width2 = svc.merge_frames(img.copy(), img.copy())
-        assert bar_x == 0
+        mr = svc.merge_frames(img.copy(), img.copy())
+        np.testing.assert_array_equal(mr.merged, img)
 
-    def test_bar_detected_in_frame_b(self, svc):
-        frame_a = make_solid_image(800, 600, (200, 200, 200))
-        frame_b = make_bar_image(800, 600, bar_left=100, bar_right=400)
-        result, bar_x, bar_width = svc.merge_frames(frame_a, frame_b)
-        assert bar_x > 0, "bar_x should be > 0 when a bar is detected"
+    def _make_two_spike_pair(self, w=800, h=600, gap_start=200, gap_end=300):
+        """Create (frame_a, frame_b) where two separate diff spikes appear
+        at gap_start and gap_end (before 640px scaling)."""
+        bg = (200, 200, 200)
+        frame_a = make_solid_image(w, h, bg)
+        frame_b = make_solid_image(w, h, bg)
+        stripe_top = int(h * 0.15)
+        stripe_h = 30
+        # Left stripe — produces first spike
+        frame_b[stripe_top:stripe_top + stripe_h, gap_start - 30:gap_start] = (255, 50, 50)
+        # Right stripe — produces second spike
+        frame_b[stripe_top:stripe_top + stripe_h, gap_end:gap_end + 30] = (255, 50, 50)
+        return frame_a, frame_b
 
-    def test_merge_x_respects_bar_padding_positive(self, svc):
-        frame_a = make_solid_image(800, 600, (200, 200, 200))
-        frame_b = make_bar_image(800, 600, bar_left=100, bar_right=400)
-        _, bar_x_pos, _ = svc.merge_frames(frame_a, frame_b, bar_padding_px=15)
-        _, bar_x_neg, _ = svc.merge_frames(frame_a, frame_b, bar_padding_px=-15)
-        assert bar_x_pos >= bar_x_neg, "Positive padding should shift merge_x further right"
+    def test_two_spikes_sets_merge_x(self, svc):
+        frame_a, frame_b = self._make_two_spike_pair()
+        mr = svc.merge_frames(frame_a, frame_b)
+        assert len(mr.spikes) == 2, f"Expected 2 spikes, got {len(mr.spikes)}"
+        assert mr.merge_x > 0, "merge_x should be > 0 when 2 spikes detected"
 
-    def test_overlay_width_ratio_limits_search(self, svc):
-        frame_a = make_solid_image(800, 600, (200, 200, 200))
-        frame_b = make_bar_image(800, 600, bar_left=100, bar_right=400)
-        _, bar_x_narrow, _ = svc.merge_frames(frame_a, frame_b, overlay_width_ratio=0.3)
-        _, bar_x_wide, _ = svc.merge_frames(frame_a, frame_b, overlay_width_ratio=0.8)
-        assert bar_x_wide >= bar_x_narrow, "Wider ratio should find bar at same or larger x"
-
-    def test_high_min_diff_threshold_no_bar(self, svc):
-        frame_a = make_solid_image(800, 600, (200, 200, 200))
-        frame_b = make_bar_image(800, 600, bar_left=100, bar_right=400)
-        result, bar_x, bar_width = svc.merge_frames(
-            frame_a, frame_b, min_diff_threshold=999999.0
+    def test_merge_x_at_midpoint(self, svc):
+        frame_a, frame_b = self._make_two_spike_pair()
+        mr = svc.merge_frames(frame_a, frame_b)
+        assert len(mr.spikes) == 2, f"Expected 2 spikes, got {len(mr.spikes)}"
+        sorted_s = sorted(mr.spikes, key=lambda p: p[0])
+        expected_mid_640 = (sorted_s[0][0] + sorted_s[1][0]) // 2
+        expected_mid_full = int(expected_mid_640 * (frame_a.shape[1] / 640))
+        assert abs(mr.merge_x - expected_mid_full) < 3, (
+            f"merge_x {mr.merge_x} ≈ expected {expected_mid_full}"
         )
-        assert bar_x == 0
-        assert bar_width == 0
+
+    def test_full_profile_used_regardless_of_overlay_ratio(self, svc):
+        """Spike detection uses the full 640-column profile regardless of overlay_width_ratio."""
+        frame_a = make_solid_image(800, 600, (200, 200, 200))
+        frame_b = make_bar_image(800, 600, bar_left=100, bar_right=400)
+        mr_narrow = svc.merge_frames(frame_a, frame_b, overlay_width_ratio=0.2)
+        mr_wide = svc.merge_frames(frame_a, frame_b, overlay_width_ratio=0.8)
+        assert len(mr_narrow.col_sums) == 640
+        assert len(mr_wide.col_sums) == 640
+
+    def test_no_spikes_with_very_small_images(self, svc):
+        img = make_solid_image(32, 32, (100, 100, 100))
+        mr = svc.merge_frames(img.copy(), img.copy())
+        assert mr.merge_x == 0
 
     def test_debug_save_path_creates_file(self, svc, tmp_path):
         frame_a = make_solid_image(800, 600, (200, 200, 200))
@@ -75,26 +88,18 @@ class TestMergeFrames:
     def test_output_dimensions_match_input(self, svc):
         frame_a = make_solid_image(800, 600, (200, 200, 200))
         frame_b = make_bar_image(800, 600, bar_left=100, bar_right=400)
-        result, _, _ = svc.merge_frames(frame_a, frame_b)
-        assert result.shape == frame_a.shape
+        mr = svc.merge_frames(frame_a, frame_b)
+        assert mr.merged.shape == frame_a.shape
 
-    def test_no_bar_identical_merges_same_pixels(self, svc):
-        img = make_solid_image(800, 600, (100, 100, 100))
-        result, _, _ = svc.merge_frames(img.copy(), img.copy())
-        np.testing.assert_array_equal(result, img)
-
-    def test_bar_detected_merges_portion_of_frame_b(self, svc):
-        bg = (200, 200, 200)
-        frame_a = make_solid_image(800, 600, bg)
-        frame_b = make_solid_image(800, 600, bg)
-        bar_top = int(600 * 0.15)
-        bar_bottom = bar_top + 18
-        frame_b[bar_top:bar_bottom, 100:400] = (255, 50, 50)
-        result, bar_x, bar_width = svc.merge_frames(frame_a, frame_b, bar_padding_px=0)
-        assert bar_x > 0, "bar_x should be positive when bar exists"
+    def test_merge_result_contains_col_sums_and_spikes(self, svc):
+        frame_a = make_solid_image(800, 600, (200, 200, 200))
+        frame_b = make_bar_image(800, 600, bar_left=100, bar_right=400)
+        mr = svc.merge_frames(frame_a, frame_b)
+        assert len(mr.col_sums) == 640
+        assert isinstance(mr.spikes, list)
 
     def test_different_image_sizes(self, svc):
         frame_a = make_solid_image(1024, 768, (100, 100, 100))
         frame_b = make_bar_image(1024, 768, bar_left=200, bar_right=600)
-        result, bar_x, bar_width = svc.merge_frames(frame_a, frame_b)
-        assert result.shape == frame_a.shape
+        mr = svc.merge_frames(frame_a, frame_b)
+        assert mr.merged.shape == frame_a.shape

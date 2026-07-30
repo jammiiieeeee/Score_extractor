@@ -5,6 +5,14 @@ from typing import Optional
 from src.domain.value_objects.config import ScoreConfig
 
 @dataclass
+class MergeResult:
+    merged: np.ndarray
+    merge_x: int
+    col_sums: np.ndarray
+    spikes: list
+
+
+@dataclass
 class Frame:
     image: np.ndarray
     timestamp: float
