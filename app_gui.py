@@ -51,6 +51,15 @@ DANGER    = "#cc4444"
 BORDER    = "#333333"
 BORDER2   = "#444444"
 
+# ── Spacing scale (4px base) ──────────────────────────────────────────
+
+SPACE_XXS = 2
+SPACE_XS  = 4
+SPACE_SM  = 8
+SPACE_MD  = 12
+SPACE_LG  = 16
+SPACE_XL  = 24
+
 STYLESHEET = f"""
 QMainWindow, QWidget {{
     background-color: {BG};
@@ -206,7 +215,7 @@ QProgressBar {{
     border: 1px solid {BORDER};
     border-radius: 6px;
     text-align: center;
-    height: 22px;
+    height: 28px;
     font-weight: 600;
     color: {INK};
 }}
@@ -529,7 +538,7 @@ class DualHandleSeekBar(QWidget):
 
         # Groove surface
         self.groove = QWidget()
-        self.groove.setMinimumHeight(24)
+        self.groove.setMinimumHeight(32)
         self.groove.setMouseTracking(True)
         layout.addWidget(self.groove)
 
@@ -746,7 +755,7 @@ class ConfigTab(QWidget):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         inner = QWidget()
         layout = QVBoxLayout(inner)
-        layout.setSpacing(12)
+        layout.setSpacing(SPACE_MD)
 
         title = QLabel("Settings")
         title.setObjectName("title")
@@ -1164,7 +1173,7 @@ class ExtractTab(QWidget):
         self._parent_dir = self._settings.value("parent_dir", str(Path(__file__).resolve().parent / "output"))
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(0)
+        layout.setSpacing(SPACE_SM)
 
         # ── Source toggle ──
         toggle_row = QHBoxLayout()
@@ -1181,7 +1190,7 @@ class ExtractTab(QWidget):
         input_grid = QGridLayout()
         input_grid.setColumnMinimumWidth(0, 115)
         input_grid.setColumnStretch(1, 1)
-        input_grid.setColumnMinimumWidth(2, 210)
+        input_grid.setColumnMinimumWidth(2, 130)
 
         # Local mode
         self._local_label = QLabel("Video file:")
@@ -1229,13 +1238,6 @@ class ExtractTab(QWidget):
 
         layout.addLayout(input_grid)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setObjectName("hline")
-        layout.addSpacing(6)
-        layout.addWidget(sep)
-        layout.addSpacing(6)
-
         # ── Project field ──
         project_label = QLabel("Project:")
         project_label.setFixedWidth(115)
@@ -1265,20 +1267,18 @@ class ExtractTab(QWidget):
 
         # ── Crop preview ──
         self.crop_widget = CropPreviewWidget()
-        self.crop_widget.setMinimumHeight(180)
-        self.crop_widget.setMaximumHeight(360)
-        self.crop_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self.crop_widget.setMinimumHeight(240)
+        self.crop_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         layout.addWidget(self.crop_widget)
-        layout.addSpacing(2)
 
         self.seek_bar = DualHandleSeekBar()
         self.seek_bar.setMinimumHeight(64)
         layout.addWidget(self.seek_bar)
-        layout.addSpacing(4)
 
         # ── Crop ratio row ──
         crop_row = QHBoxLayout()
         crop_label = QLabel("Crop ratio:")
+        crop_label.setFixedWidth(115)
         crop_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.crop_spin = QDoubleSpinBox()
         self.crop_spin.setRange(0.0, 1.0)
