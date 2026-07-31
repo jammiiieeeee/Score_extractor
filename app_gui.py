@@ -164,10 +164,12 @@ QDoubleSpinBox, QSpinBox {{
     background: #0d0d0d;
     border: 1px solid {BORDER};
     border-radius: 6px;
-    padding: 4px 10px;
+    padding: 5px 12px;
     color: {INK};
-    min-height: 26px;
+    min-height: 28px;
     font-size: 14px;
+    selection-background-color: {BRASS};
+    selection-color: {BG};
 }}
 QDoubleSpinBox:hover, QSpinBox:hover {{
     border-color: {BORDER2};
@@ -178,6 +180,30 @@ QDoubleSpinBox:focus, QSpinBox:focus {{
 QDoubleSpinBox:disabled, QSpinBox:disabled {{
     background: {SURFACE2};
     color: {MUTED};
+}}
+QDoubleSpinBox::up-button, QSpinBox::up-button {{
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 22px;
+    border: none;
+    background: transparent;
+}}
+QDoubleSpinBox::up-arrow, QSpinBox::up-arrow {{
+    image: url(__SPIN_UP_PLACEHOLDER__);
+    width: 10px;
+    height: 10px;
+}}
+QDoubleSpinBox::down-button, QSpinBox::down-button {{
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 22px;
+    border: none;
+    background: transparent;
+}}
+QDoubleSpinBox::down-arrow, QSpinBox::down-arrow {{
+    image: url(__SPIN_DOWN_PLACEHOLDER__);
+    width: 10px;
+    height: 10px;
 }}
 QGroupBox {{
     background: {SURFACE};
@@ -197,6 +223,7 @@ QGroupBox::title {{
 QCheckBox {{
     spacing: 8px;
     color: {INK};
+    background: transparent;
 }}
 QCheckBox::indicator {{
     width: 18px;
@@ -281,6 +308,12 @@ QLabel.muted, QLabel#muted {{
     font-size: 12px;
     font-weight: 400;
     letter-spacing: 0.4px;
+}}
+QLabel.param, QLabel#param {{
+    color: #9a9a9a;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
 }}
 QLabel.title, QLabel#title {{
     font-size: 22px;
@@ -378,6 +411,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
 QRadioButton {{
     color: {INK};
     spacing: 8px;
+    background: transparent;
 }}
 QRadioButton::indicator {{
     width: 16px;
@@ -398,6 +432,8 @@ QRadioButton::indicator:hover {{
 
 CHECK_INDICATOR_PATH: str = ""
 CHEVRON_PATH: str = ""
+SPIN_UP_PATH: str = ""
+SPIN_DOWN_PATH: str = ""
 
 
 def _generate_check_pixmap() -> str:
@@ -427,6 +463,27 @@ def _generate_chevron_pixmap() -> str:
     p.setPen(QPen(QColor(BRASS), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     p.drawLine(2, 4, 6, 8)
     p.drawLine(6, 8, 10, 4)
+    p.end()
+    pm.save(path)
+    return path.replace("\\", "/")
+
+
+def _generate_spin_arrow_pixmap(up: bool) -> str:
+    from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen
+    import tempfile
+    name = "up" if up else "down"
+    path = os.path.join(tempfile.gettempdir(), f"score_extractor_spin_{name}_{os.getpid()}.png")
+    pm = QPixmap(12, 12)
+    pm.fill(QColor(Qt.GlobalColor.transparent))
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(QPen(QColor(BRASS), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    if up:
+        p.drawLine(2, 8, 6, 4)
+        p.drawLine(6, 4, 10, 8)
+    else:
+        p.drawLine(2, 4, 6, 8)
+        p.drawLine(6, 8, 10, 4)
     p.end()
     pm.save(path)
     return path.replace("\\", "/")
@@ -829,6 +886,8 @@ class ReviewPagesDialog(QDialog):
         self.setStyleSheet(
             STYLESHEET.replace("__CHECK_PLACEHOLDER__", CHECK_INDICATOR_PATH)
             .replace("__CHEVRON_PLACEHOLDER__", CHEVRON_PATH)
+            .replace("__SPIN_UP_PLACEHOLDER__", SPIN_UP_PATH)
+            .replace("__SPIN_DOWN_PLACEHOLDER__", SPIN_DOWN_PATH)
         )
 
         root = QVBoxLayout(self)
@@ -926,6 +985,7 @@ class ConfigTab(QWidget):
         super().__init__(parent)
         self._api = api
         self._updating = False
+        self._param_labels: list[QLabel] = []
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -1126,6 +1186,12 @@ class ConfigTab(QWidget):
         adv_form.addRow(self.debug_cb)
 
         layout.addWidget(self.advanced)
+
+        if self._param_labels:
+            label_w = max(lbl.sizeHint().width() for lbl in self._param_labels) + 12
+            for lbl in self._param_labels:
+                lbl.setFixedWidth(label_w)
+
         layout.addStretch()
 
         # Connect all signals
@@ -1147,12 +1213,11 @@ class ConfigTab(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scroll)
 
-    @staticmethod
-    def _form_label(text: str) -> QLabel:
+    def _form_label(self, text: str) -> QLabel:
         lbl = QLabel(text)
-        _set_widget_class(lbl, "muted")
-        lbl.setFixedWidth(115)
+        _set_widget_class(lbl, "param")
         lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._param_labels.append(lbl)
         return lbl
 
     def _spin_float(self, min_v: float, max_v: float, step: float, default: float) -> QDoubleSpinBox:
@@ -1161,14 +1226,14 @@ class ConfigTab(QWidget):
         s.setSingleStep(step)
         s.setValue(default)
         s.setDecimals(2)
-        s.setFixedWidth(110)
+        s.setFixedWidth(132)
         return s
 
     def _spin_int(self, min_v: int, max_v: int, default: int) -> QSpinBox:
         s = QSpinBox()
         s.setRange(min_v, max_v)
         s.setValue(default)
-        s.setFixedWidth(110)
+        s.setFixedWidth(132)
         return s
 
     def _all_spins(self):
@@ -2402,7 +2467,12 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Score Extractor — Piano Score Video to PDF")
         self.setMinimumSize(960, 760)
         self.resize(1100, 780)
-        self.setStyleSheet(STYLESHEET.replace("__CHECK_PLACEHOLDER__", CHECK_INDICATOR_PATH).replace("__CHEVRON_PLACEHOLDER__", CHEVRON_PATH))
+        self.setStyleSheet(
+            STYLESHEET.replace("__CHECK_PLACEHOLDER__", CHECK_INDICATOR_PATH)
+            .replace("__CHEVRON_PLACEHOLDER__", CHEVRON_PATH)
+            .replace("__SPIN_UP_PLACEHOLDER__", SPIN_UP_PATH)
+            .replace("__SPIN_DOWN_PLACEHOLDER__", SPIN_DOWN_PATH)
+        )
 
         # Core API
         self.api = GuiApi()
@@ -2499,8 +2569,12 @@ def main():
 
     global CHECK_INDICATOR_PATH
     global CHEVRON_PATH
+    global SPIN_UP_PATH
+    global SPIN_DOWN_PATH
     CHECK_INDICATOR_PATH = _generate_check_pixmap()
     CHEVRON_PATH = _generate_chevron_pixmap()
+    SPIN_UP_PATH = _generate_spin_arrow_pixmap(up=True)
+    SPIN_DOWN_PATH = _generate_spin_arrow_pixmap(up=False)
 
     # Set app-wide font
     font = QFont("Segoe UI", 10)

@@ -7,6 +7,7 @@ colors:
   surface-elevated: "#282828"
   ink: "#e8e8e8"
   muted: "#888888"
+  param-muted: "#9a9a9a"
   warm-brass: "#d4a843"
   brass-hover: "#e0b85a"
   brass-dark: "#b89230"
@@ -33,6 +34,11 @@ typography:
     fontSize: "12px"
     fontWeight: 400
     letterSpacing: "0.4px"
+  param:
+    fontFamily: "Segoe UI, 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans', sans-serif"
+    fontSize: "13px"
+    fontWeight: 500
+    letterSpacing: "0.3px"
   tab:
     fontFamily: "Segoe UI, 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans', sans-serif"
     fontSize: "14px"
@@ -171,6 +177,7 @@ A restrained studio palette: deep blacks, warm brass accents, and desaturated fu
 - **Tab / Emphasis** (600, 14px, 0.3px tracking): Tab labels, page count indicators, emphasized numeric displays.
 - **Count** (600, 14px, 0.4px tracking): Live data readouts in brass — the page badge, the completion peak status.
 - **Label** (400, 12px, 0.4px tracking): Secondary information, metadata, muted status text. The `.muted` style.
+- **Param** (500, 13px, 0.3px tracking, #9a9a9a): Config-tab parameter labels (`.param`) — the name of each tunable, brighter than muted so it reads clearly against the studio field while staying secondary to the ink value.
 - **Mono** (400, 12px): Log output, debug information, diagnostic text in QTextEdit.
 
 ### Named Rules
@@ -236,6 +243,7 @@ Borders are 1px solid, using `border` (#333333) at rest and `border-emphasized` 
 - **Style:** Dark background (#0d0d0d), 1px border (#333333), 6px radius. 7px vertical / 12px horizontal padding. Brass selection background with dark selection text.
 - **Focus:** Border shifts to Warm Brass (#d4a843). No glow, no shadow — a clean line shift.
 - **Placeholder:** Muted (#888888) at body weight.
+- **Spin Boxes:** 14px value text on input-bg, 28px min height, 132px field width on the Config tab. Up/down arrows are 10px Warm Brass chevrons drawn on a transparent right-edge button column (22px wide, split top/bottom); no default Fusion arrow pills.
 
 ### Tabs
 - **Style:** Underline navigation. Transparent background, muted text. 4px tab separation, 8px vertical / 20px horizontal padding. Bold (600) weight at 14px.
@@ -272,7 +280,7 @@ Borders are 1px solid, using `border` (#333333) at rest and `border-emphasized` 
 - **Do** use Warm Brass sparingly — it's a spotlight, not a wash.
 - **Do** let the score preview occupy the majority of vertical space.
 - **Do** use tonal surfaces for depth — stack #161616 → #1e1e1e → #282828.
-- **Do** align form labels to a consistent left column (115px).
+- **Do** align form labels to a consistent left column (115px on the Extract tab; the Config tab sizes its shared label column to the longest parameter name so labels never clip).
 
 ### Don't:
 - **Don't** introduce a second accent color. Warm Brass is the only accent.
