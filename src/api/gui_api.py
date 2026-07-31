@@ -133,6 +133,15 @@ class GuiApi:
             except Exception:
                 pass
 
+    def _on_page_detected_worker(self, index: int, image: np.ndarray):
+        """Background-thread bridge: encode a merged page and relay it to the GUI."""
+        try:
+            png = PageStore.encode_png(image)
+            if png:
+                self._emit_page_detected(index, png)
+        except Exception:
+            pass
+
     def _emit_log(self, message: str):
         if self._on_log:
             try:
@@ -393,6 +402,7 @@ class GuiApi:
                 debug=debug,
                 end_offset=end_offset,
                 on_log=self._emit_log,
+                on_page_detected=self._on_page_detected_worker,
                 on_progress=lambda pct, d: self._emit_progress("extracting", pct, d),
                 is_cancelled=lambda: self._cancel_flag,
                 original_video_path=original_video_path,

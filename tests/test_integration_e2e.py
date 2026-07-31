@@ -173,6 +173,10 @@ class TestExtractionFromSyntheticVideo:
         assert cb.completed_count[0] > 0
         assert len(cb.progress_events) > 0
         assert len(cb.logs) > 0
+        assert len(cb.page_events) == api.get_page_count(), (
+            f"on_page_detected should fire once per captured page "
+            f"({len(cb.page_events)} events for {api.get_page_count()} pages)")
+        assert all(size > 0 for _, size in cb.page_events), "page bytes should be non-empty"
 
     def test_extraction_with_different_threshold(self, api, real_video, work_dir):
         api.update_config({"change_detection_threshold": 0.85})

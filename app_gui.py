@@ -566,25 +566,38 @@ class DualHandleSeekBar(QWidget):
         self.groove = QWidget()
         self.groove.setMinimumHeight(32)
         self.groove.setMouseTracking(True)
+        self.groove.setToolTip(
+            "Drag the brass handles to set where extraction begins and ends."
+        )
         layout.addWidget(self.groove)
 
         # Controls row
         ctrl = QHBoxLayout()
         ctrl.setSpacing(4)
-        self.start_cb = QCheckBox("Start-time capture")
+        self.start_cb = QCheckBox("Trim start")
         self.start_cb.setChecked(True)
-        self.start_label = QLabel("00:00.0")
+        self.start_cb.setToolTip(
+            "Extraction skips the start of the video.\n"
+            "The first 2 seconds are skipped by default so the\n"
+            "camera settling isn't captured. Uncheck to start\n"
+            "from the very beginning."
+        )
+        self.start_label = QLabel("")
         self.start_label.setObjectName("muted")
         self.start_label.setFixedWidth(88)
         ctrl.addWidget(self.start_cb)
         ctrl.addWidget(self.start_label)
 
-        self.end_cb = QCheckBox("End offset (s)")
+        self.end_cb = QCheckBox("Trim end")
         self.end_cb.setChecked(False)
-        self.end_label = QLabel("00:00.0")
+        self.end_cb.setToolTip(
+            "Extraction stops before the end of the video,\n"
+            "skipping the closing tail (e.g. the camera being put down)."
+        )
+        self.end_label = QLabel("")
         self.end_label.setObjectName("muted")
         self.end_label.setFixedWidth(88)
-        self.dur_label = QLabel("/ 00:00.0")
+        self.dur_label = QLabel("")
         self.dur_label.setObjectName("muted")
         self.dur_label.setFixedWidth(80)
         ctrl.addStretch()
@@ -633,19 +646,38 @@ class DualHandleSeekBar(QWidget):
     def _on_start_toggled(self, checked: bool):
         self._start_enabled = checked
         self.groove.update()
+        self._update_labels()
 
     def _on_end_toggled(self, checked: bool):
         self._end_enabled = checked
         self.groove.update()
+        self._update_labels()
+
+    @staticmethod
+    def _fmt_time(secs: float) -> str:
+        """Format seconds as m:ss.t (or h:mm:ss.t for long videos)."""
+        tenths = max(0, int(round(secs * 10)))
+        total_secs = tenths / 10
+        minutes, s = divmod(total_secs, 60)
+        minutes = int(minutes)
+        if minutes >= 60:
+            hours, minutes = divmod(minutes, 60)
+            return f"{hours}:{minutes:02d}:{s:04.1f}"
+        return f"{minutes}:{s:04.1f}"
 
     def _update_labels(self):
-        def fmt(s):
-            m = int(s // 60)
-            ss = s % 60
-            return f"{m}:{ss:05.2f}"
-        self.start_label.setText(fmt(self._start * self._duration))
-        self.end_label.setText(fmt(self._end * self._duration))
-        self.dur_label.setText(f"/ {fmt(self._duration)}")
+        if self._duration > 0:
+            start_skip = self._start * self._duration if self._start_enabled else 0.0
+            end_skip = (1.0 - self._end) * self._duration if self._end_enabled else 0.0
+            self.start_label.setText(
+                f"Skip {self._fmt_time(start_skip)}" if self._start_enabled else "No skip")
+            self.end_label.setText(
+                f"Skip {self._fmt_time(end_skip)}" if self._end_enabled else "No skip")
+            self.dur_label.setText(f"/ {self._fmt_time(self._duration)}")
+        else:
+            self.start_label.setText("")
+            self.end_label.setText("")
+            self.dur_label.setText("")
 
     def _paint_groove(self, event):
         from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
@@ -767,6 +799,117 @@ class PagePreviewDialog(QDialog):
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+
+# ── Review Pages Dialog ──────────────────────────────────────────────
+
+class ReviewPagesDialog(QDialog):
+    """Inspect captured pages before the PDF is saved.
+
+    Each page shows a thumbnail and a "Keep" checkbox. Clicking a
+    thumbnail opens the full page for close inspection. When accepted,
+    kept_mask() reports which pages survive (in capture order).
+    """
+
+    def __init__(self, api: GuiApi, parent=None):
+        super().__init__(parent)
+        self._api = api
+        self._count = api.get_page_count()
+        self._kept = [True] * self._count
+
+        self.setWindowTitle(f"Review Pages — {self._count} captured")
+        self.resize(960, 640)
+        self.setStyleSheet(
+            STYLESHEET.replace("__CHECK_PLACEHOLDER__", CHECK_INDICATOR_PATH)
+            .replace("__CHEVRON_PLACEHOLDER__", CHEVRON_PATH)
+        )
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        root.setSpacing(SPACE_MD)
+
+        title = QLabel("Review before saving")
+        title.setObjectName("title")
+        root.addWidget(title)
+
+        hint = QLabel(
+            "Uncheck any page to keep it out of the PDF. "
+            "Click a thumbnail to inspect it up close.")
+        _set_widget_class(hint, "muted")
+        root.addWidget(hint)
+
+        tiles = QWidget()
+        grid = QGridLayout(tiles)
+        grid.setSpacing(SPACE_MD)
+        cols = 4
+        self._checks: list[QCheckBox] = []
+        for i in range(self._count):
+            tile = QWidget()
+            tile.setObjectName("roundedWidget")
+            box = QVBoxLayout(tile)
+            box.setSpacing(SPACE_XS)
+
+            thumb = QLabel()
+            thumb.setFixedWidth(200)
+            thumb.setMinimumHeight(120)
+            thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            thumb.setCursor(Qt.CursorShape.PointingHandCursor)
+            png = api.get_page_thumbnail(i)
+            pix = QPixmap()
+            if png and pix.loadFromData(png):
+                thumb.setPixmap(pix.scaledToWidth(
+                    190, Qt.TransformationMode.SmoothTransformation))
+            thumb.mousePressEvent = (lambda _e, idx=i: self._preview_page(idx))
+
+            check = QCheckBox(f"Page {i + 1}")
+            check.setChecked(True)
+            check.toggled.connect(lambda _on, idx=i: self._on_toggled(idx))
+
+            box.addWidget(thumb, 0, Qt.AlignmentFlag.AlignHCenter)
+            box.addWidget(check, 0, Qt.AlignmentFlag.AlignHCenter)
+            self._checks.append(check)
+            grid.addWidget(tile, i // cols, i % cols)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(tiles)
+        root.addWidget(scroll, 1)
+
+        self._summary = QLabel("")
+        root.addWidget(self._summary)
+
+        footer = QHBoxLayout()
+        footer.addStretch()
+        close_btn = QPushButton("Cancel")
+        _set_widget_class(close_btn, "secondary")
+        close_btn.clicked.connect(self.reject)
+        save_btn = QPushButton("Save changes")
+        save_btn.clicked.connect(self.accept)
+        footer.addWidget(close_btn)
+        footer.addWidget(save_btn)
+        root.addLayout(footer)
+
+        self._update_summary()
+
+    def _update_summary(self):
+        kept = sum(self._kept)
+        if kept == self._count:
+            self._summary.setText("All pages will be in the PDF.")
+        else:
+            self._summary.setText(f"{kept} of {self._count} pages will be in the PDF.")
+
+    def _on_toggled(self, idx: int):
+        self._kept[idx] = self._checks[idx].isChecked()
+        self._update_summary()
+
+    def _preview_page(self, idx: int):
+        png = self._api.get_page_full(idx)
+        pix = QPixmap()
+        if png and pix.loadFromData(png):
+            PagePreviewDialog(pix, f"Page {idx + 1}", self).exec()
+
+    def kept_mask(self) -> list[bool]:
+        return list(self._kept)
 
 
 # ── Config Tab ───────────────────────────────────────────────────────
@@ -1264,6 +1407,7 @@ class ExtractTab(QWidget):
         self._has_existing_score = False
         self._reextract_mode = False
         self._yt_video_paths: list[str] = []
+        self._peak_style = False
 
         # Background preview seeker thread
         self._preview_thread = QThread(self)
@@ -1436,9 +1580,17 @@ class ExtractTab(QWidget):
         layout.addLayout(pdf_row)
 
         # ── Progress & Log ──
+        progress_row = QHBoxLayout()
+        progress_row.setSpacing(SPACE_SM)
         self.progress_bar = QProgressBar()
         self.progress_bar.setValue(0)
-        layout.addWidget(self.progress_bar)
+        self.page_badge = QLabel("")
+        _set_widget_class(self.page_badge, "count")
+        self.page_badge.setFixedWidth(110)
+        self.page_badge.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        progress_row.addWidget(self.progress_bar, 1)
+        progress_row.addWidget(self.page_badge)
+        layout.addLayout(progress_row)
 
         self.log_edit = QTextEdit()
         self.log_edit.setReadOnly(True)
@@ -1462,6 +1614,11 @@ class ExtractTab(QWidget):
         self.regenerate_btn.setFixedWidth(160)
         self.regenerate_btn.setVisible(False)
         self.regenerate_btn.clicked.connect(self._regenerate_pdf)
+        self.review_btn = QPushButton("Review Pages")
+        _set_widget_class(self.review_btn, "secondary")
+        self.review_btn.setFixedWidth(120)
+        self.review_btn.setVisible(False)
+        self.review_btn.clicked.connect(self._on_review_pages)
         self.open_pdf_btn = QPushButton("Open PDF")
         self.open_pdf_btn.setEnabled(False)
         self.open_pdf_btn.setFixedWidth(120)
@@ -1474,6 +1631,7 @@ class ExtractTab(QWidget):
         action_row.addWidget(self.reextract_btn)
         action_row.addWidget(self.extract_btn)
         action_row.addWidget(self.regenerate_btn)
+        action_row.addWidget(self.review_btn)
         action_row.addWidget(self.open_pdf_btn)
         action_row.addWidget(self.cancel_btn)
         layout.addLayout(action_row)
@@ -1851,6 +2009,16 @@ class ExtractTab(QWidget):
 
     # ── State management ──
 
+    def _set_status(self, text: str, peak: bool = False):
+        self.status_label.setText(text)
+        if peak != self._peak_style:
+            if peak:
+                self.status_label.setStyleSheet(
+                    f"color: {BRASS}; font-size: 15px; font-weight: 600;")
+            else:
+                self.status_label.setStyleSheet("")
+            self._peak_style = peak
+
     def _update_state(self):
         has_project = bool(self.project_edit.text().strip())
         has_video = bool(self._video_path and os.path.exists(self._video_path))
@@ -1862,6 +2030,7 @@ class ExtractTab(QWidget):
         self.cancel_btn.setVisible(self._busy)
         self.extract_btn.setVisible(False)
         self.regenerate_btn.setVisible(False)
+        self.review_btn.setVisible(False)
         self.open_pdf_btn.setVisible(False)
         self.reextract_btn.setVisible(False)
 
@@ -1871,29 +2040,31 @@ class ExtractTab(QWidget):
             self.extract_btn.setVisible(True)
             self.extract_btn.setEnabled(can_act and has_video)
             self.extract_btn.setText("Start Extraction")
-            self.status_label.setText(
+            self._set_status(
                 f"Re-extract: will replace {self._api.get_page_count()} pages")
         elif self._has_existing_score and has_pages:
             self.regenerate_btn.setVisible(True)
             self.regenerate_btn.setEnabled(can_act)
+            self.review_btn.setVisible(True)
+            self.review_btn.setEnabled(can_act and self._api.get_page_count() > 0)
             self.reextract_btn.setVisible(True)
-            self.status_label.setText(
-                f"Loaded {self._api.get_page_count()} pages — regenerate PDF or re-extract")
+            self._set_status(
+                f"Loaded {self._api.get_page_count()} pages — review, regenerate PDF, or re-extract")
         elif has_project and has_video:
             self.extract_btn.setVisible(True)
             self.extract_btn.setEnabled(can_act)
             self.extract_btn.setText("Start Extraction")
-            self.status_label.setText("Ready — start extraction")
+            self._set_status("Ready — start extraction")
         else:
             self.extract_btn.setVisible(True)
             self.extract_btn.setEnabled(False)
             self.extract_btn.setText("Start Extraction")
             if not has_video:
-                self.status_label.setText("Select a video source")
+                self._set_status("Select a video source")
             elif not has_project:
-                self.status_label.setText("Enter a score name")
+                self._set_status("Enter a score name")
             else:
-                self.status_label.setText("Ready")
+                self._set_status("Ready")
 
     def _start_extraction(self):
         dbg("_start_extraction")
@@ -1958,7 +2129,8 @@ class ExtractTab(QWidget):
         self.cancel_btn.setEnabled(True)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
-        self.status_label.setText("Extracting…")
+        self.page_badge.setText("")
+        self._set_status("Extracting…")
         self._watchdog.start(300000)  # 5 min safety timeout
 
         try:
@@ -1999,7 +2171,7 @@ class ExtractTab(QWidget):
         self.cancel_btn.setEnabled(False)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
-        self.status_label.setText("Generating PDF…")
+        self._set_status("Generating PDF…")
 
         if hasattr(main_win, '_generating_pdf'):
             main_win._generating_pdf = True
@@ -2073,23 +2245,80 @@ class ExtractTab(QWidget):
         except Exception as e:
             self._log(f"  [Warn] Could not move downloaded video into project: {e}")
 
-    def on_completed(self, page_count: int):
+    def on_completed(self, page_count: int) -> bool:
+        """Finish extraction. Returns True if PDF generation was started."""
         dbg(f"on_completed: page_count={page_count}")
         if page_count == 0:
             self._log("No pages — skipping PDF")
             self._reset_ui()
-            return
+            return False
 
         self._move_downloaded_videos()
+
+        self._review_before_save()
+
+        if self._api.get_page_count() == 0:
+            self._log("All pages removed in review — no PDF generated")
+            self._busy = False
+            self._update_state()
+            self._set_status("No pages kept — re-extract to try again")
+            return False
 
         output_path = self.get_output_path()
         title = self.pdf_name_edit.text().strip() or None
         self._watchdog.start(300000)
         try:
             self._api.generate_pdf(output_path, title=title)
+            return True
         except (RuntimeError, ValueError, PermissionError) as e:
             QMessageBox.warning(self, "Error", str(e))
             self._reset_ui()
+            return False
+
+    def _review_before_save(self):
+        """Show the review dialog so pages can be dropped before the PDF is made."""
+        dlg = ReviewPagesDialog(self._api, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            removed = [i for i, keep in enumerate(dlg.kept_mask()) if not keep]
+            if removed:
+                self._apply_page_removals(removed)
+        kept = self._api.get_page_count()
+        self.page_badge.setText(f"Pages: {kept}")
+        self._log(f"Review: {kept} pages kept")
+
+    def _apply_page_removals(self, removed: list[int]):
+        """Drop pages from the in-memory store and their files on disk.
+
+        Disk files are numbered by extraction attempt (gaps when duplicates
+        were skipped), so store indices map to the sorted file list, not to
+        the numbers in the filenames.
+        """
+        photos = Path(self.get_project_dir()) / "photos"
+        files = sorted(
+            photos.glob("page_*_merged.png"),
+            key=lambda f: int(f.stem.split("_")[1]),
+        )
+        for idx in sorted(removed, reverse=True):
+            if 0 <= idx < len(files):
+                files[idx].unlink(missing_ok=True)
+            try:
+                self._api.remove_page(idx)
+            except IndexError:
+                pass
+        self._log(f"Removed {len(removed)} page(s) — keeping {self._api.get_page_count()}")
+
+    def _on_review_pages(self):
+        if self._api.get_page_count() == 0:
+            return
+        dlg = ReviewPagesDialog(self._api, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            removed = [i for i, keep in enumerate(dlg.kept_mask()) if not keep]
+            if removed:
+                self._apply_page_removals(removed)
+            self.page_badge.setText(f"Pages: {self._api.get_page_count()}")
+            self._update_state()
+            if removed:
+                self._log("Regenerate the PDF to apply the change")
 
     def on_pdf_completed(self, page_count: int):
         output_path = self.get_output_path()
@@ -2103,7 +2332,12 @@ class ExtractTab(QWidget):
         self.regenerate_btn.setVisible(False)
         self.open_pdf_btn.setVisible(True)
         self.open_pdf_btn.setEnabled(True)
-        self.status_label.setText(f"✓ PDF saved — {output_path}")
+        self.review_btn.setVisible(True)
+        self.review_btn.setEnabled(True)
+        self.page_badge.setText(f"Pages: {page_count}")
+        self._set_status(f"Score ready — {page_count} pages in the PDF", peak=True)
+        self._log(f"PDF saved: {output_path}")
+        self._refresh_completer()
 
     def on_cancelled(self):
         dbg("on_cancelled")
@@ -2116,11 +2350,11 @@ class ExtractTab(QWidget):
         if not self._busy:
             QMessageBox.critical(self, "Error", message)
         self._reset_ui()
-        self.status_label.setText(f"Failed — {message}")
+        self._set_status(f"Failed — {message}")
 
     def on_page_detected(self, idx: int, png_bytes: bytes):
         dbg(f"on_page_detected: idx={idx}")
-        pass
+        self.page_badge.setText(f"Pages: {idx + 1}")
 
     def on_progress(self, phase: str, percent: float, detail: str):
         dbg(f"on_progress: phase={phase}, percent={percent:.0f}%, detail={detail}")
@@ -2128,9 +2362,9 @@ class ExtractTab(QWidget):
         self._watchdog.start(300000)
         phase_text = phase.replace("_", " ").title()
         if detail:
-            self.status_label.setText(f"{phase_text}: {detail}")
+            self._set_status(f"{phase_text}: {detail}")
         else:
-            self.status_label.setText(phase_text)
+            self._set_status(phase_text)
 
     def _reset_ui(self):
         dbg("_reset_ui")
@@ -2139,6 +2373,7 @@ class ExtractTab(QWidget):
         self._watchdog.stop()
         self.cancel_btn.setEnabled(False)
         self.open_pdf_btn.setVisible(False)
+        self.page_badge.setText("")
         self.download_btn.setEnabled(True)
         self.download_btn.setText("Download")
         self.yt_url_edit.setEnabled(True)
@@ -2223,12 +2458,12 @@ class MainWindow(QMainWindow):
             self._generating_pdf = False
             self.extract_tab.on_pdf_completed(page_count)
         else:
-            self.extract_tab.on_completed(page_count)
+            started_pdf = self.extract_tab.on_completed(page_count)
             score_dir = self.extract_tab.get_project_dir()
             self.api.open_debug_folder(score_dir)
-            if page_count > 0:
+            if started_pdf:
                 self._generating_pdf = True
-            else:
+            elif page_count == 0:
                 self.extract_tab._reset_ui()
 
     def _on_cancelled(self):

@@ -168,7 +168,7 @@ class FrameStepper:
         if end_offset > 0 and video_duration > 0:
             end_time = video_duration - end_offset
             if timestamp >= end_time:
-                self.on_log(f"  End offset reached ({end_offset:.1f}s from end, at {end_time:.1f}s).")
+                self.on_log(f"  Trim end: stopping at {end_time:.1f}s (last {end_offset:.1f}s skipped).")
                 return True
         return False
 

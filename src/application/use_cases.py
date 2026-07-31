@@ -99,7 +99,7 @@ class ExtractScoreUseCase:
         if start_pair is not None:
             a_frame, b_frame = start_pair
             attempt_num += 1
-            log(f"Start-time capture at {a_frame.timestamp:.1f}s...")
+            log(f"Trim start: capturing first page at {a_frame.timestamp:.1f}s...")
             entry = committer.commit(
                 a_frame, b_frame, unique_pages, output_dir, attempt_num,
                 debug, log, on_page_detected, is_first=True, plotter=plotter,
