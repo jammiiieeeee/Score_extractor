@@ -67,6 +67,7 @@ QMainWindow, QWidget {{
     color: {INK};
     font-family: "Segoe UI", "Noto Sans SC", "Noto Sans JP", "Noto Sans", sans-serif;
     font-size: 13px;
+    letter-spacing: 0.3px;
 }}
 QWidget#roundedWidget {{
     background: {SURFACE};
@@ -184,13 +185,14 @@ QGroupBox {{
     border-radius: 8px;
     margin-top: 12px;
     padding-top: 20px;
-    font-weight: 600;
 }}
 QGroupBox::title {{
     subcontrol-origin: margin;
     left: 14px;
     padding: 0 8px;
     color: {BRASS};
+    font-weight: 600;
+    letter-spacing: 0.5px;
 }}
 QCheckBox {{
     spacing: 8px;
@@ -274,20 +276,23 @@ QLabel {{
     color: {INK};
     background: transparent;
 }}
-QLabel.muted {{
+QLabel.muted, QLabel#muted {{
     color: {MUTED};
     font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0.4px;
 }}
-QLabel.title {{
+QLabel.title, QLabel#title {{
     font-size: 22px;
     font-weight: 700;
     color: {INK};
     letter-spacing: 0.5px;
 }}
-QLabel.count {{
+QLabel.count, QLabel#count {{
     font-size: 14px;
     font-weight: 600;
     color: {BRASS};
+    letter-spacing: 0.4px;
 }}
 QComboBox {{
     background: #0d0d0d;
@@ -330,9 +335,6 @@ QComboBox QAbstractItemView::item:selected {{
 QComboBox QAbstractItemView::item:hover {{
     background: {SURFACE2};
     color: {INK};
-}}
-QFormLayout {{
-    font-size: 14px;
 }}
 QSplitter::handle {{
     background: {BORDER};
@@ -504,13 +506,18 @@ class CropPreviewWidget(QWidget):
 
             # Label
             painter.setPen(QColor(212, 168, 67))
-            font = QFont("Segoe UI", 11, QFont.Weight.Bold)
+            font = QFont("Segoe UI")
+            font.setPixelSize(14)
+            font.setWeight(QFont.Weight.DemiBold)
+            font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.4)
             painter.setFont(font)
             label = f"Crop: {int(self._ratio * 100)}%"
             painter.drawText(ox, line_y - 16, label)
         else:
             painter.setPen(QColor(136, 136, 136))
-            font = QFont("Segoe UI", 12)
+            font = QFont("Segoe UI")
+            font.setPixelSize(13)
+            font.setWeight(QFont.Weight.Normal)
             painter.setFont(font)
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
                              "Open a video to preview crop")
@@ -583,7 +590,7 @@ class DualHandleSeekBar(QWidget):
             "from the very beginning."
         )
         self.start_label = QLabel("")
-        self.start_label.setObjectName("muted")
+        _set_widget_class(self.start_label, "muted")
         self.start_label.setFixedWidth(88)
         ctrl.addWidget(self.start_cb)
         ctrl.addWidget(self.start_label)
@@ -595,10 +602,10 @@ class DualHandleSeekBar(QWidget):
             "skipping the closing tail (e.g. the camera being put down)."
         )
         self.end_label = QLabel("")
-        self.end_label.setObjectName("muted")
+        _set_widget_class(self.end_label, "muted")
         self.end_label.setFixedWidth(88)
         self.dur_label = QLabel("")
-        self.dur_label.setObjectName("muted")
+        _set_widget_class(self.dur_label, "muted")
         self.dur_label.setFixedWidth(80)
         ctrl.addStretch()
         ctrl.addWidget(self.end_cb)
@@ -829,7 +836,7 @@ class ReviewPagesDialog(QDialog):
         root.setSpacing(SPACE_MD)
 
         title = QLabel("Review before saving")
-        title.setObjectName("title")
+        _set_widget_class(title, "title")
         root.addWidget(title)
 
         hint = QLabel(
@@ -928,7 +935,7 @@ class ConfigTab(QWidget):
         layout.setSpacing(SPACE_MD)
 
         title = QLabel("Settings")
-        title.setObjectName("title")
+        _set_widget_class(title, "title")
         layout.addWidget(title)
 
         accent = QFrame()
@@ -941,7 +948,7 @@ class ConfigTab(QWidget):
         layout.addSpacing(SPACE_SM)
 
         desc = QLabel("Adjust extraction behavior. These apply to the next extraction.")
-        desc.setObjectName("muted")
+        _set_widget_class(desc, "muted")
         layout.addWidget(desc)
 
         # ── Detection group ──
@@ -1143,7 +1150,7 @@ class ConfigTab(QWidget):
     @staticmethod
     def _form_label(text: str) -> QLabel:
         lbl = QLabel(text)
-        lbl.setObjectName("muted")
+        _set_widget_class(lbl, "muted")
         lbl.setFixedWidth(115)
         lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         return lbl
@@ -1523,7 +1530,7 @@ class ExtractTab(QWidget):
 
         # ── Status line ──
         self.status_label = QLabel("Select a video source")
-        self.status_label.setObjectName("muted")
+        _set_widget_class(self.status_label, "muted")
         self.status_label.setWordWrap(True)
         self.status_label.setAccessibleName("Status")
         layout.addWidget(self.status_label)
@@ -1552,7 +1559,7 @@ class ExtractTab(QWidget):
         self.crop_spin.setValue(self._api.get_config().get("default_crop_ratio", 0.35))
         self.crop_spin.setFixedWidth(100)
         self.crop_original_label = QLabel("")
-        self.crop_original_label.setObjectName("muted")
+        _set_widget_class(self.crop_original_label, "muted")
 
         crop_row.addWidget(crop_label)
         crop_row.addWidget(self.crop_spin)
@@ -2012,11 +2019,7 @@ class ExtractTab(QWidget):
     def _set_status(self, text: str, peak: bool = False):
         self.status_label.setText(text)
         if peak != self._peak_style:
-            if peak:
-                self.status_label.setStyleSheet(
-                    f"color: {BRASS}; font-size: 15px; font-weight: 600;")
-            else:
-                self.status_label.setStyleSheet("")
+            _set_widget_class(self.status_label, "count" if peak else "muted")
             self._peak_style = peak
 
     def _update_state(self):

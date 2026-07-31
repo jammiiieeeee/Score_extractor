@@ -27,15 +27,22 @@ typography:
     fontSize: "13px"
     fontWeight: 400
     lineHeight: 1.4
+    letterSpacing: "0.3px"
   label:
     fontFamily: "Segoe UI, 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans', sans-serif"
     fontSize: "12px"
     fontWeight: 400
-    letterSpacing: "normal"
+    letterSpacing: "0.4px"
   tab:
     fontFamily: "Segoe UI, 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans', sans-serif"
     fontSize: "14px"
     fontWeight: 600
+    letterSpacing: "0.3px"
+  count:
+    fontFamily: "Segoe UI, 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans', sans-serif"
+    fontSize: "14px"
+    fontWeight: 600
+    letterSpacing: "0.4px"
   mono:
     fontFamily: "Consolas, 'Courier New', monospace"
     fontSize: "12px"
@@ -156,13 +163,14 @@ A restrained studio palette: deep blacks, warm brass accents, and desaturated fu
 **Body Font:** Segoe UI (with CJK fallbacks: Noto Sans SC, Noto Sans JP, Noto Sans)
 **Monospace Font:** Consolas / Courier New
 
-**Character:** Clean, legible, unexpressive. Segoe UI is the Microsoft ecosystem workhorse — familiar, neutral, precise. No display font competition. The body text is comfortable at 13px; hierarchy is achieved through weight (700 for headings) and size (22px for titles), never through decorative type choices.
+**Character:** Clean, legible, unexpressive. Segoe UI is the Microsoft ecosystem workhorse — familiar, neutral, precise. No display font competition. The body text is comfortable at 13px; hierarchy is achieved through weight (700 for headings) and size (22px for titles), never through decorative type choices. On the dark studio surfaces, every role carries a slight positive tracking (0.3–0.5px) so ink and brass letters hold their open counterforms against the near-black fields.
 
 ### Hierarchy
-- **Display** (700, 22px, 0.5px tracking): Screen titles — the "Settings" heading, the page count label. Used sparingly.
-- **Body** (400, 13px, 1.4 line-height): All primary interface text — button labels, form fields, status, descriptions. The workhorse.
-- **Tab / Emphasis** (600, 14px): Tab labels, page count indicators, emphasized numeric displays.
-- **Label** (400, 12px): Secondary information, metadata, muted status text. The `.muted` style.
+- **Display** (700, 22px, 0.5px tracking): Screen titles — the "Settings" heading, the "Review before saving" dialog title. Used sparingly.
+- **Body** (400, 13px, 0.3px tracking, 1.4 line-height): All primary interface text — button labels, form fields, status, descriptions. The workhorse.
+- **Tab / Emphasis** (600, 14px, 0.3px tracking): Tab labels, page count indicators, emphasized numeric displays.
+- **Count** (600, 14px, 0.4px tracking): Live data readouts in brass — the page badge, the completion peak status.
+- **Label** (400, 12px, 0.4px tracking): Secondary information, metadata, muted status text. The `.muted` style.
 - **Mono** (400, 12px): Log output, debug information, diagnostic text in QTextEdit.
 
 ### Named Rules
@@ -170,6 +178,8 @@ A restrained studio palette: deep blacks, warm brass accents, and desaturated fu
 **The Single-Size Rule.** Body text is 13px everywhere. Tab labels and count indicators may use 14px for visual hierarchy. No other size variation for body copy across contexts.
 
 **The No-Display-Font Rule.** No decorative or display face is used. Segoe UI carries all typographic weight. A second font would break the studio-instrument precision.
+
+**The Role-Selector Rule.** Type roles are applied through the Qt `class` property (`_set_widget_class`), matched by `.title`, `.muted`, `.count` selectors — never through `objectName`, which Qt QSS only matches via `#id` selectors and would silently drop the style.
 
 ## Layout
 

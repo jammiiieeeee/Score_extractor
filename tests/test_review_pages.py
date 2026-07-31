@@ -87,7 +87,7 @@ class TestCompletionPeak:
         tab.on_pdf_completed(7)
         assert tab.status_label.text() == "Score ready — 7 pages in the PDF"
         assert tab._peak_style is True
-        assert "#d4a843" in tab.status_label.styleSheet()
+        assert tab.status_label.property("class") == "count"
         assert not tab.review_btn.isHidden()
         assert tab.page_badge.text() == "Pages: 7"
 
@@ -95,7 +95,7 @@ class TestCompletionPeak:
         tab.on_pdf_completed(3)
         tab._set_status("back to work")
         assert tab._peak_style is False
-        assert tab.status_label.styleSheet() == ""
+        assert tab.status_label.property("class") == "muted"
 
 
 class TestGeneratingPdfFlag:
