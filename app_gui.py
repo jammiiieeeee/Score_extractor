@@ -1246,6 +1246,7 @@ class ExtractTab(QWidget):
         self._project_dir: str = ""
         self._has_existing_score = False
         self._reextract_mode = False
+        self._yt_video_paths: list[str] = []
 
         # Background preview seeker thread
         self._preview_thread = QThread(self)
@@ -1689,31 +1690,19 @@ class ExtractTab(QWidget):
         if not cur_name or cur_name == prev_title:
             self.project_edit.setText(title)
 
-        # Move video files into the project's video folder
-        project_dir = self.get_project_dir()
-        if project_dir:
-            video_dir = Path(project_dir) / "video"
-            video_dir.mkdir(parents=True, exist_ok=True)
-            import shutil
-            video_files = [Path(path)]
-            orig = self._api._original_video_path
-            if orig and os.path.exists(orig) and orig != path:
-                video_files.append(Path(orig))
-            for src in video_files:
-                dst = video_dir / src.name
-                if not dst.exists():
-                    shutil.move(str(src), str(dst))
-            # Update GUI + API paths to the new location
-            new_path = str(video_dir / Path(path).name)
-            self._video_path = new_path
-            self.video_path_edit.setText(new_path)
-            if self._api._video_info:
-                self._api._video_info.path = new_path
-            if orig:
-                self._api._original_video_path = str(video_dir / Path(orig).name)
-
-        self._log(f"Video saved: {new_path}")
+        self._log(f"Video saved: {preview_path}")
         self._load_preview()
+
+        # Remember downloaded videos (scan + full-res original) so they can be
+        # moved into the score folder once the final score name is known on extract.
+        self._yt_video_paths = []
+        if self._api._original_video_path and os.path.exists(self._api._original_video_path):
+            self._yt_video_paths.append(self._api._original_video_path)
+        if self._api._video_info and self._api._video_info.path and os.path.exists(self._api._video_info.path):
+            p = self._api._video_info.path
+            if p not in self._yt_video_paths:
+                self._yt_video_paths.append(p)
+
         self._busy = False
         self.download_btn.setEnabled(True)
         self.download_btn.setText("Download")
@@ -1743,6 +1732,7 @@ class ExtractTab(QWidget):
 
     def _load_preview(self):
         path = self.video_path_edit.text().strip()
+        self._yt_video_paths = []
         if not path or not os.path.exists(path):
             return
         try:
@@ -1994,12 +1984,50 @@ class ExtractTab(QWidget):
 
     # ── Callbacks from MainWindow ──
 
+    def _move_downloaded_videos(self):
+        """Move downloaded videos into the score folder once the final name is known."""
+        if not self._yt_video_paths:
+            return
+        project_dir = self.get_project_dir()
+        if not project_dir:
+            return
+        # Release open capture handles so Windows allows the files to be moved
+        self._preview_seeker.close()
+        svc = self._api._video_service
+        if svc is not None:
+            svc.close()
+        video_dir = Path(project_dir) / "video"
+        video_dir.mkdir(parents=True, exist_ok=True)
+        moved: dict[str, str] = {}
+        for src in self._yt_video_paths:
+            if not os.path.exists(src):
+                continue
+            dst = video_dir / Path(src).name
+            if not dst.exists():
+                shutil.move(src, str(dst))
+            moved[src] = str(dst)
+        if not moved:
+            return
+        # Point API + GUI paths at the moved files
+        if self._api._original_video_path in moved:
+            self._api._original_video_path = moved[self._api._original_video_path]
+        info = self._api._video_info
+        if info and info.path in moved:
+            info.path = moved[info.path]
+            self._video_path = info.path
+            self._api._video_path = info.path
+            self.video_path_edit.setText(info.path)
+        self._yt_video_paths = []
+        self._log(f"Video saved: {video_dir}")
+
     def on_completed(self, page_count: int):
         dbg(f"on_completed: page_count={page_count}")
         if page_count == 0:
             self._log("No pages — skipping PDF")
             self._reset_ui()
             return
+
+        self._move_downloaded_videos()
 
         output_path = self.get_output_path()
         title = self.pdf_name_edit.text().strip() or None
