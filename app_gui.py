@@ -155,8 +155,15 @@ QDoubleSpinBox, QSpinBox {{
     min-height: 26px;
     font-size: 14px;
 }}
+QDoubleSpinBox:hover, QSpinBox:hover {{
+    border-color: {BORDER2};
+}}
 QDoubleSpinBox:focus, QSpinBox:focus {{
     border-color: {BRASS};
+}}
+QDoubleSpinBox:disabled, QSpinBox:disabled {{
+    background: {SURFACE2};
+    color: {MUTED};
 }}
 QGroupBox {{
     background: {SURFACE};
@@ -408,6 +415,12 @@ def _generate_chevron_pixmap() -> str:
     p.end()
     pm.save(path)
     return path.replace("\\", "/")
+
+
+def _set_widget_class(widget, cls: str):
+    widget.setProperty("class", cls)
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
 
 
 # ── Crop Preview Widget ──────────────────────────────────────────────
@@ -761,6 +774,15 @@ class ConfigTab(QWidget):
         title.setObjectName("title")
         layout.addWidget(title)
 
+        accent = QFrame()
+        accent.setFrameShape(QFrame.Shape.HLine)
+        accent.setFixedHeight(1)
+        accent.setFixedWidth(60)
+        accent.setStyleSheet(f"background: {BRASS}; border: none;")
+        layout.addWidget(accent)
+
+        layout.addSpacing(SPACE_SM)
+
         desc = QLabel("Adjust extraction behavior. These apply to the next extraction.")
         desc.setObjectName("muted")
         layout.addWidget(desc)
@@ -769,7 +791,7 @@ class ConfigTab(QWidget):
         det_group = QGroupBox("Detection")
         det_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         det_form = QFormLayout(det_group)
-        det_form.setSpacing(10)
+        det_form.setSpacing(SPACE_MD)
 
         self.sensitivity = self._spin_float(0.0, 1.0, 0.01, 0.96)
         self.sensitivity.setToolTip(
@@ -803,18 +825,18 @@ class ConfigTab(QWidget):
             "Safe range: 1.0–8.0. Raise to 10+ if real content is being rejected."
         )
 
-        det_form.addRow("Page change sensitivity:", self.sensitivity)
-        det_form.addRow("Min seconds between captures:", self.min_interval)
-        det_form.addRow("Frame check interval (s):", self.frame_check)
-        det_form.addRow("Top analysis ratio:", self.top_ratio)
-        det_form.addRow("Blank content std threshold:", self.blank_std)
+        det_form.addRow(self._form_label("Page change sensitivity:"), self.sensitivity)
+        det_form.addRow(self._form_label("Min seconds between captures:"), self.min_interval)
+        det_form.addRow(self._form_label("Frame check interval (s):"), self.frame_check)
+        det_form.addRow(self._form_label("Top analysis ratio:"), self.top_ratio)
+        det_form.addRow(self._form_label("Blank content std threshold:"), self.blank_std)
         layout.addWidget(det_group)
 
         # ── Capture group ──
         cap_group = QGroupBox("Capture Timing")
         cap_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         cap_form = QFormLayout(cap_group)
-        cap_form.setSpacing(10)
+        cap_form.setSpacing(SPACE_MD)
 
         self.a_delay = self._spin_float(0.0, 5.0, 0.1, 0.3)
         self.a_delay.setToolTip(
@@ -835,16 +857,16 @@ class ConfigTab(QWidget):
             "Safe range: 0.3–0.7."
         )
 
-        cap_form.addRow("A-capture delay (s):", self.a_delay)
-        cap_form.addRow("B-capture delay (s):", self.b_delay)
-        cap_form.addRow("B overlay width ratio:", self.overlay_width)
+        cap_form.addRow(self._form_label("A-capture delay (s):"), self.a_delay)
+        cap_form.addRow(self._form_label("B-capture delay (s):"), self.b_delay)
+        cap_form.addRow(self._form_label("B overlay width ratio:"), self.overlay_width)
         layout.addWidget(cap_group)
 
         # ── Deduplication group ──
         dedup_group = QGroupBox("Deduplication")
         dedup_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         dedup_form = QFormLayout(dedup_group)
-        dedup_form.setSpacing(10)
+        dedup_form.setSpacing(SPACE_MD)
 
         self.dup_top = self._spin_float(0.0, 1.0, 0.01, 0.27)
         self.dup_top.setToolTip(
@@ -872,17 +894,17 @@ class ConfigTab(QWidget):
             "Safe range: 0.85–0.98."
         )
 
-        dedup_form.addRow("Duplicate top ratio:", self.dup_top)
-        dedup_form.addRow("Pixel similarity threshold:", self.pixel_sim)
-        dedup_form.addRow("Row similarity threshold:", self.row_sim)
-        dedup_form.addRow("Row coverage threshold:", self.row_cov)
+        dedup_form.addRow(self._form_label("Duplicate top ratio:"), self.dup_top)
+        dedup_form.addRow(self._form_label("Pixel similarity threshold:"), self.pixel_sim)
+        dedup_form.addRow(self._form_label("Row similarity threshold:"), self.row_sim)
+        dedup_form.addRow(self._form_label("Row coverage threshold:"), self.row_cov)
         layout.addWidget(dedup_group)
 
         # ── OCR group ──
         ocr_group = QGroupBox("OCR")
         ocr_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         ocr_form = QFormLayout(ocr_group)
-        ocr_form.setSpacing(10)
+        ocr_form.setSpacing(SPACE_MD)
 
         self.ocr_enabled = QCheckBox("Enable OCR")
         self.ocr_enabled.setChecked(False)
@@ -905,15 +927,15 @@ class ConfigTab(QWidget):
         )
 
         ocr_form.addRow("", self.ocr_enabled)
-        ocr_form.addRow("OCR confidence:", self.ocr_conf)
-        ocr_form.addRow("OCR horizontal ratio:", self.ocr_horiz)
+        ocr_form.addRow(self._form_label("OCR confidence:"), self.ocr_conf)
+        ocr_form.addRow(self._form_label("OCR horizontal ratio:"), self.ocr_horiz)
         layout.addWidget(ocr_group)
 
         # ── Advanced group ──
         self.advanced = QGroupBox("Advanced")
         self.advanced.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         adv_form = QFormLayout(self.advanced)
-        adv_form.setSpacing(10)
+        adv_form.setSpacing(SPACE_MD)
 
         self.bar_diff = self._spin_float(0.0, 50000.0, 100.0, 500.0)
         self.bar_diff.setToolTip(
@@ -928,8 +950,8 @@ class ConfigTab(QWidget):
             "Safe range: -50 to +50. Fine-tune when the bar position is slightly off."
         )
 
-        adv_form.addRow("Bar min diff threshold:", self.bar_diff)
-        adv_form.addRow("Bar overlay offset (px):", self.bar_pad)
+        adv_form.addRow(self._form_label("Bar min diff threshold:"), self.bar_diff)
+        adv_form.addRow(self._form_label("Bar overlay offset (px):"), self.bar_pad)
 
         self.debug_cb = QCheckBox("Debug mode (open temp folder on completion)")
         self.debug_cb.setToolTip(
@@ -951,7 +973,7 @@ class ConfigTab(QWidget):
         self.ocr_enabled.toggled.connect(self._on_change)
         self.debug_cb.toggled.connect(self._on_debug_toggled)
         self.reset_btn = QPushButton("Reset to Defaults")
-        self.reset_btn.setObjectName("secondary")
+        _set_widget_class(self.reset_btn, "secondary")
         self.reset_btn.setToolTip("Restore all parameters to their factory defaults")
         self.reset_btn.clicked.connect(self._reset_defaults)
         layout.addWidget(self.reset_btn)
@@ -961,20 +983,28 @@ class ConfigTab(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scroll)
 
+    @staticmethod
+    def _form_label(text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setObjectName("muted")
+        lbl.setFixedWidth(115)
+        lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        return lbl
+
     def _spin_float(self, min_v: float, max_v: float, step: float, default: float) -> QDoubleSpinBox:
         s = QDoubleSpinBox()
         s.setRange(min_v, max_v)
         s.setSingleStep(step)
         s.setValue(default)
         s.setDecimals(2)
-        s.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        s.setFixedWidth(110)
         return s
 
     def _spin_int(self, min_v: int, max_v: int, default: int) -> QSpinBox:
         s = QSpinBox()
         s.setRange(min_v, max_v)
         s.setValue(default)
-        s.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        s.setFixedWidth(110)
         return s
 
     def _all_spins(self):
@@ -1264,7 +1294,7 @@ class ExtractTab(QWidget):
         self.video_path_edit = QLineEdit()
         self.video_path_edit.setPlaceholderText("Select a video file (*.mp4, *.avi, *.mkv, *.mov)")
         self.browse_btn = QPushButton("Browse…")
-        self.browse_btn.setObjectName("secondary")
+        _set_widget_class(self.browse_btn, "secondary")
         input_grid.addWidget(self._local_label, 0, 0)
         input_grid.addWidget(self.video_path_edit, 0, 1)
         input_grid.addWidget(self.browse_btn, 0, 2)
@@ -1286,7 +1316,7 @@ class ExtractTab(QWidget):
         self.quality_combo.setFixedWidth(130)
 
         self.download_btn = QPushButton("Download")
-        self.download_btn.setObjectName("secondary")
+        _set_widget_class(self.download_btn, "secondary")
         self.download_btn.setEnabled(False)
 
         yt_action = QHBoxLayout()
@@ -1317,7 +1347,7 @@ class ExtractTab(QWidget):
         self.project_edit.setCompleter(self._completer)
 
         self.project_browse_btn = QPushButton("Browse…")
-        self.project_browse_btn.setObjectName("secondary")
+        _set_widget_class(self.project_browse_btn, "secondary")
 
         project_row = QHBoxLayout()
         project_row.addWidget(project_label)
@@ -1359,8 +1389,8 @@ class ExtractTab(QWidget):
         crop_row.addWidget(self.crop_spin)
         crop_row.addWidget(self.crop_original_label)
         crop_row.addStretch()
-        self.config_btn = QPushButton("⚙ Settings")
-        self.config_btn.setObjectName("secondary")
+        self.config_btn = QPushButton("Settings")
+        _set_widget_class(self.config_btn, "secondary")
         self.config_btn.setFixedWidth(80)
         self.config_btn.setToolTip("Open extraction settings")
         self.config_btn.clicked.connect(self.config_requested.emit)
@@ -1393,7 +1423,7 @@ class ExtractTab(QWidget):
         action_row = QHBoxLayout()
         action_row.addStretch()
         self.reextract_btn = QPushButton("Re-extract")
-        self.reextract_btn.setObjectName("secondary")
+        _set_widget_class(self.reextract_btn, "secondary")
         self.reextract_btn.setFixedWidth(110)
         self.reextract_btn.setVisible(False)
         self.reextract_btn.clicked.connect(self._on_reextract)
@@ -1411,7 +1441,7 @@ class ExtractTab(QWidget):
         self.open_pdf_btn.setVisible(False)
         self.open_pdf_btn.clicked.connect(self._open_pdf)
         self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.setObjectName("danger")
+        _set_widget_class(self.cancel_btn, "danger")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.setFixedWidth(90)
         action_row.addWidget(self.reextract_btn)
