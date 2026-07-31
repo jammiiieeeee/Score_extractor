@@ -55,6 +55,18 @@ class TestPrepareOutputDir:
         score_dir = fs.prepare_output_dir(out, long_name)
         assert len(score_dir.name) == 100
 
+    def test_reserved_device_names_appended_underscore(self, fs, tmp_path):
+        out = str(tmp_path / "output")
+        for name in ["CON", "con", "PRN", "AUX", "NUL", "COM1", "LPT9"]:
+            score_dir = fs.prepare_output_dir(out, name)
+            assert score_dir.name.startswith(name), name
+            assert score_dir.is_dir(), name
+
+    def test_reserved_name_with_extension(self, fs, tmp_path):
+        out = str(tmp_path / "output")
+        score_dir = fs.prepare_output_dir(out, "CON.pdf")
+        assert score_dir.name == "CON_.pdf"
+
 
 class TestSavePageImage:
 

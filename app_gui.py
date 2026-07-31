@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
 
 from gui_bridge import ExtractionSignals
 from src.api.gui_api import GuiApi, ScoreInfo
+from src.infrastructure.file_service import FileService
 
 
 # ── Debug logging ──────────────────────────────────────────────────────
@@ -99,7 +100,7 @@ QTabBar::tab:selected {{
 QPushButton {{
     background: {BRASS};
     color: {BG};
-    border: none;
+    border: 2px solid transparent;
     border-radius: 6px;
     padding: 8px 18px;
     font-weight: 700;
@@ -118,7 +119,7 @@ QPushButton:disabled {{
 QPushButton.secondary {{
     background: transparent;
     color: {INK};
-    border: 1px solid {BORDER2};
+    border: 2px solid {BORDER2};
     padding: 8px 14px;
 }}
 QPushButton.secondary:hover {{
@@ -128,11 +129,23 @@ QPushButton.secondary:hover {{
 QPushButton.danger {{
     background: transparent;
     color: {DANGER};
-    border: 1px solid {DANGER};
+    border: 2px solid {DANGER};
 }}
 QPushButton.danger:hover {{
     background: {DANGER};
     color: white;
+}}
+QPushButton:focus {{
+    border: 2px solid {INK};
+}}
+QPushButton.secondary:focus {{
+    border: 2px solid {BRASS};
+}}
+QPushButton.danger:focus {{
+    border: 2px solid {BRASS};
+}}
+QPushButton:focus:disabled {{
+    border: 2px solid transparent;
 }}
 QLineEdit {{
     background: #0d0d0d;
@@ -562,7 +575,7 @@ class DualHandleSeekBar(QWidget):
         self.start_cb.setChecked(True)
         self.start_label = QLabel("00:00.0")
         self.start_label.setObjectName("muted")
-        self.start_label.setFixedWidth(70)
+        self.start_label.setFixedWidth(88)
         ctrl.addWidget(self.start_cb)
         ctrl.addWidget(self.start_label)
 
@@ -570,9 +583,10 @@ class DualHandleSeekBar(QWidget):
         self.end_cb.setChecked(False)
         self.end_label = QLabel("00:00.0")
         self.end_label.setObjectName("muted")
-        self.end_label.setFixedWidth(70)
+        self.end_label.setFixedWidth(88)
         self.dur_label = QLabel("/ 00:00.0")
         self.dur_label.setObjectName("muted")
+        self.dur_label.setFixedWidth(80)
         ctrl.addStretch()
         ctrl.addWidget(self.end_cb)
         ctrl.addWidget(self.end_label)
@@ -1131,6 +1145,7 @@ class PreviewSeeker(QObject):
         self._width = 0
         self._height = 0
         self._seek_seq = 0
+        self._closing = False
         self._ffmpeg = self._find_ffmpeg()
         self._use_ffmpeg = False
         self.open_requested.connect(self.open)
@@ -1139,6 +1154,7 @@ class PreviewSeeker(QObject):
 
     def open(self, path: str):
         self.close()
+        self._closing = False
         self._path = path
         with self._cap_lock:
             self._cap = cv2.VideoCapture(path)
@@ -1147,6 +1163,8 @@ class PreviewSeeker(QObject):
             self._height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     def close(self):
+        self._closing = True
+        self._seek_seq += 1
         with self._cap_lock:
             if self._cap:
                 self._cap.release()
@@ -1205,7 +1223,7 @@ class PreviewSeeker(QObject):
         return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     def _do_seek(self, ts: float, fps_hint: float):
-        if self._path is None:
+        if self._path is None or self._closing:
             return
         self._seek_seq += 1
         seq = self._seek_seq
@@ -1216,11 +1234,10 @@ class PreviewSeeker(QObject):
             else:
                 rgb = self._read_frame_opencv(ts)
             elapsed = (time.time() - t0) * 1000
+            if self._closing or seq != self._seek_seq:
+                return
             if rgb is None:
                 print(f"[PreviewSeeker] frame miss ts={ts:.2f}ms={elapsed:.0f}")
-                return
-            if seq != self._seek_seq:
-                print(f"[PreviewSeeker] stale discard ts={ts:.2f}ms={elapsed:.0f}")
                 return
             h, w = rgb.shape[:2]
             qt_img = QImage(rgb.data, w, h, w * 3, QImage.Format.Format_RGB888)
@@ -1278,6 +1295,9 @@ class ExtractTab(QWidget):
         self.yt_radio = QRadioButton("YouTube URL")
         self.local_radio = QRadioButton("Local file")
         self.yt_radio.setChecked(True)
+        self._source_group = QButtonGroup(self)
+        self._source_group.addButton(self.local_radio)
+        self._source_group.addButton(self.yt_radio)
         toggle_row.addWidget(self.local_radio)
         toggle_row.addWidget(self.yt_radio)
         toggle_row.addStretch()
@@ -1341,6 +1361,7 @@ class ExtractTab(QWidget):
 
         self.project_edit = QLineEdit()
         self.project_edit.setPlaceholderText("Score name — type to search existing, or enter a new name")
+        self.project_edit.setMaxLength(100)
         self._completer_model = QStringListModel()
         self._completer = QCompleter(self._completer_model, self)
         self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -1360,16 +1381,19 @@ class ExtractTab(QWidget):
         self.status_label = QLabel("Select a video source")
         self.status_label.setObjectName("muted")
         self.status_label.setWordWrap(True)
+        self.status_label.setAccessibleName("Status")
         layout.addWidget(self.status_label)
 
         # ── Crop preview ──
         self.crop_widget = CropPreviewWidget()
         self.crop_widget.setMinimumHeight(240)
         self.crop_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.crop_widget.setAccessibleName("Crop preview")
         layout.addWidget(self.crop_widget)
 
         self.seek_bar = DualHandleSeekBar()
         self.seek_bar.setMinimumHeight(64)
+        self.seek_bar.setAccessibleName("Video seek bar with start and end handles")
         layout.addWidget(self.seek_bar)
 
         # ── Crop ratio row ──
@@ -1406,6 +1430,7 @@ class ExtractTab(QWidget):
         pdf_label.setFixedWidth(115)
         self.pdf_name_edit = QLineEdit()
         self.pdf_name_edit.setPlaceholderText("Auto-filled from project name")
+        self.pdf_name_edit.setMaxLength(100)
         pdf_row.addWidget(pdf_label)
         pdf_row.addWidget(self.pdf_name_edit, 1)
         layout.addLayout(pdf_row)
@@ -1418,6 +1443,7 @@ class ExtractTab(QWidget):
         self.log_edit = QTextEdit()
         self.log_edit.setReadOnly(True)
         self.log_edit.setMaximumHeight(140)
+        self.log_edit.document().setMaximumBlockCount(2000)
         layout.addWidget(self.log_edit)
 
         # ── Action bar ──
@@ -1477,11 +1503,7 @@ class ExtractTab(QWidget):
 
     @staticmethod
     def _sanitize(name: str) -> str:
-        import re
-        name = re.sub(r'[<>:"/\\|?*]', '', name)
-        name = name.strip('. ')
-        name = re.sub(r'\s+', ' ', name)
-        return name[:100] if name else "untitled"
+        return FileService._sanitize_path_name(name)
 
     def get_project_dir(self) -> str:
         project = self.project_edit.text().strip()
@@ -1645,13 +1667,22 @@ class ExtractTab(QWidget):
         self._api.update_config({"yt_quality_index": index})
 
     def _on_yt_download(self):
+        if self._busy:
+            return
         url = self.yt_url_edit.text().strip()
         if not url:
             return
         if not url.startswith("http"):
             QMessageBox.warning(self, "Invalid URL", "Please enter a valid YouTube URL starting with http")
             return
-        parsed = urlparse(url)
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            QMessageBox.warning(self, "Invalid URL", "Please enter a valid YouTube URL.")
+            return
+        if not parsed.scheme or not parsed.netloc:
+            QMessageBox.warning(self, "Invalid URL", "Please enter a valid YouTube URL.")
+            return
         params = parse_qs(parsed.query)
         if 'list' in params:
             reply = QMessageBox.question(
@@ -1670,6 +1701,8 @@ class ExtractTab(QWidget):
         self.quality_combo.setEnabled(False)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
+        self.status_label.setText("Downloading…")
+        self._update_state()
         try:
             fmt = self.quality_combo.currentData()
             self._api.download_youtube(url, fmt)
@@ -1679,7 +1712,7 @@ class ExtractTab(QWidget):
 
     def _on_yt_download_completed(self, path: str):
         if self._api._original_video_path is not None:
-            preview_path = self._api._video_info.path
+            preview_path = self._api._video_info.path if self._api._video_info else path
         else:
             preview_path = path
         self._video_path = preview_path
@@ -1716,6 +1749,8 @@ class ExtractTab(QWidget):
         self.download_btn.setText("Download")
         self.yt_url_edit.setEnabled(True)
         self.quality_combo.setEnabled(True)
+        self.cancel_btn.setVisible(False)
+        self.cancel_btn.setEnabled(False)
 
     def _browse_video(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -1862,6 +1897,8 @@ class ExtractTab(QWidget):
 
     def _start_extraction(self):
         dbg("_start_extraction")
+        if self._busy:
+            return
         video_path = self._video_path
         if not video_path or not os.path.exists(video_path):
             QMessageBox.warning(self, "Error", "Please select a valid video file.")
@@ -1870,6 +1907,17 @@ class ExtractTab(QWidget):
         project = self.project_edit.text().strip()
         if not project:
             QMessageBox.warning(self, "Error", "Please enter a project name.")
+            return
+
+        project_dir = self.get_project_dir()
+        if project_dir and len(project_dir) > 220:
+            QMessageBox.warning(
+                self, "Path Too Long",
+                "The project path is too long for Windows (near the 260-character "
+                "limit).\n\nUse a shorter score name or move the output folder to a "
+                "shorter location.\n\n"
+                f"Project path:\n{project_dir}",
+            )
             return
 
         project_dir = self.get_project_dir()
@@ -1928,6 +1976,8 @@ class ExtractTab(QWidget):
 
     def _regenerate_pdf(self):
         dbg("_regenerate_pdf")
+        if self._busy:
+            return
         output_path = self.get_output_path()
         if not output_path:
             QMessageBox.warning(self, "Error", "Please set a project name.")
@@ -1991,34 +2041,37 @@ class ExtractTab(QWidget):
         project_dir = self.get_project_dir()
         if not project_dir:
             return
-        # Release open capture handles so Windows allows the files to be moved
-        self._preview_seeker.close()
-        svc = self._api._video_service
-        if svc is not None:
-            svc.close()
-        video_dir = Path(project_dir) / "video"
-        video_dir.mkdir(parents=True, exist_ok=True)
-        moved: dict[str, str] = {}
-        for src in self._yt_video_paths:
-            if not os.path.exists(src):
-                continue
-            dst = video_dir / Path(src).name
-            if not dst.exists():
-                shutil.move(src, str(dst))
-            moved[src] = str(dst)
-        if not moved:
-            return
-        # Point API + GUI paths at the moved files
-        if self._api._original_video_path in moved:
-            self._api._original_video_path = moved[self._api._original_video_path]
-        info = self._api._video_info
-        if info and info.path in moved:
-            info.path = moved[info.path]
-            self._video_path = info.path
-            self._api._video_path = info.path
-            self.video_path_edit.setText(info.path)
-        self._yt_video_paths = []
-        self._log(f"Video saved: {video_dir}")
+        try:
+            # Release open capture handles so Windows allows the files to be moved
+            self._preview_seeker.close()
+            svc = self._api._video_service
+            if svc is not None:
+                svc.close()
+            video_dir = Path(project_dir) / "video"
+            video_dir.mkdir(parents=True, exist_ok=True)
+            moved: dict[str, str] = {}
+            for src in self._yt_video_paths:
+                if not os.path.exists(src):
+                    continue
+                dst = video_dir / Path(src).name
+                if not dst.exists():
+                    shutil.move(src, str(dst))
+                moved[src] = str(dst)
+            if not moved:
+                return
+            # Point API + GUI paths at the moved files
+            if self._api._original_video_path in moved:
+                self._api._original_video_path = moved[self._api._original_video_path]
+            info = self._api._video_info
+            if info and info.path in moved:
+                info.path = moved[info.path]
+                self._video_path = info.path
+                self._api._video_path = info.path
+                self.video_path_edit.setText(info.path)
+            self._yt_video_paths = []
+            self._log(f"Video saved: {video_dir}")
+        except Exception as e:
+            self._log(f"  [Warn] Could not move downloaded video into project: {e}")
 
     def on_completed(self, page_count: int):
         dbg(f"on_completed: page_count={page_count}")
@@ -2063,6 +2116,7 @@ class ExtractTab(QWidget):
         if not self._busy:
             QMessageBox.critical(self, "Error", message)
         self._reset_ui()
+        self.status_label.setText(f"Failed — {message}")
 
     def on_page_detected(self, idx: int, png_bytes: bytes):
         dbg(f"on_page_detected: idx={idx}")
@@ -2188,9 +2242,13 @@ class MainWindow(QMainWindow):
             self.config_tab.refresh_from_api()
 
     def closeEvent(self, event):
-        self.extract_tab._preview_seeker.close_requested.emit()
-        self.extract_tab._preview_thread.quit()
-        self.extract_tab._preview_thread.wait(2000)
+        seeker = self.extract_tab._preview_seeker
+        thread = self.extract_tab._preview_thread
+        seeker.close_requested.emit()
+        thread.quit()
+        if not thread.wait(6000):
+            thread.terminate()
+            thread.wait(1000)
         super().closeEvent(event)
 
 

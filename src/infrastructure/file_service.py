@@ -10,13 +10,27 @@ class FileService(IFileService):
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
+    _WINDOWS_RESERVED = (
+        {"CON", "PRN", "AUX", "NUL"}
+        | {f"COM{i}" for i in range(1, 10)}
+        | {f"LPT{i}" for i in range(1, 10)}
+    )
+
     @staticmethod
     def _sanitize_path_name(name: str) -> str:
         """Remove characters invalid for Windows folder names."""
         name = re.sub(r'[<>:"/\\|?*]', '', name)
         name = name.strip('. ')
         name = re.sub(r'\s+', ' ', name)
-        return name[:100] if name else "untitled"
+        name = name[:100] if name else "untitled"
+        stem, sep, suffix = name.rpartition('.')
+        if sep:
+            stem = stem or name
+        else:
+            stem, suffix = name, ""
+        if stem.upper() in FileService._WINDOWS_RESERVED:
+            name = stem + "_" + (("." + suffix) if suffix else "")
+        return name
 
     def prepare_output_dir(self, output_folder: str, score_name: str) -> Path:
         score_name = self._sanitize_path_name(score_name)
