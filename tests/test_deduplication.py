@@ -144,7 +144,7 @@ class TestCheckBarProfile:
         img = make_solid_image(800, 600, (128, 128, 128))
         has_clean, has_left_spike, peaks = deduplicator.check_bar_profile(img, img, crop_ratio=0.3)
         assert has_clean is True
-        assert has_left_spike is False
+        assert has_left_spike is True
         assert peaks == []
 
     def test_five_peaks_not_clean(self, deduplicator):

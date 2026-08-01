@@ -8,6 +8,7 @@ BarProfilePlotter – matplotlib diagnostic plots (optional, disabled by default
 import cv2
 import numpy as np
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, TextIO
 
@@ -15,6 +16,7 @@ from src.domain.value_objects.config import ScoreConfig
 from src.domain.models import Frame, PageManifestEntry
 from src.domain.interfaces import IVideoService, IOcrService, IFileService
 from src.domain.deduplication import Deduplicator
+from src.domain.bar_profile_calibrator import BarProfileCalibrator
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -216,6 +218,35 @@ class FrameStepper:
 #  PageCommitter – merge, deduplicate, persist
 # ═══════════════════════════════════════════════════════════════════════════
 
+@dataclass
+class _PendingCommit:
+    """A page transition held until the bar floor is calibrated."""
+    frame_a: Frame
+    frame_b: Frame
+    page_num: int
+    is_first: bool
+    ssim_score: Optional[float]
+    merged: np.ndarray
+
+
+@dataclass
+class _Analysis:
+    """Computed result of one page-transition analysis (side-effect free)."""
+    frame_a: Frame
+    frame_b: Frame
+    merged: np.ndarray
+    merge_x: int
+    spikes: list
+    col_sums: Optional[np.ndarray]
+    merged_number: Optional[int]
+    is_dup: bool
+    guard_rail_passed: bool
+    reject_reason: Optional[str]
+    bar_peaks: list
+    has_clean_profile: bool
+    has_left_spike: bool
+
+
 class PageCommitter:
     """Handles the commit pipeline for a detected page pair.
 
@@ -225,6 +256,12 @@ class PageCommitter:
     - Deduplication (OCR + pixel + row similarity)
     - Save to disk
     - Debug artifact writing (A/B frames, bar profile text)
+
+    When a ``BarProfileCalibrator`` is supplied, pages are held (not committed)
+    until a genuine two-spike profile calibrates the minimum-diff floor.  Held
+    pages are then re-judged with the learned floor so no page is ever decided
+    with a guess.  Without a calibrator, the legacy behavior applies (static
+    ``config.bar_min_diff_threshold``).
     """
 
     def __init__(
@@ -237,6 +274,7 @@ class PageCommitter:
         orig_w: int,
         orig_h: int,
         original_video_path: Optional[str] = None,
+        calibrator: Optional[BarProfileCalibrator] = None,
     ):
         self.video = video_service
         self.file_service = file_service
@@ -248,6 +286,9 @@ class PageCommitter:
         self._original_video_path = original_video_path
         self._original_cap = None
         self._original_fps = None
+        self.calibrator = calibrator
+        self._pending: List[_PendingCommit] = []
+        self._calibration_logged = False
 
         # If original (full-res) video is available, query its real dimensions
         # so the merge upscale targets the original resolution, not the scan video's
@@ -297,12 +338,66 @@ class PageCommitter:
         is_first: bool = False,
         plotter: Optional['BarProfilePlotter'] = None,
         ssim_score: Optional[float] = None,
-    ) -> Optional[PageManifestEntry]:
-        page_num = attempt_num
-        t_commit_start = time.time()
+    ) -> List[PageManifestEntry]:
+        """Commit a detected page pair.  Returns a list of manifest entries.
 
-        # Read full-res A/B frames from original video when available,
-        # so the merge operates on full-resolution data instead of scan-res
+        Without a calibrator this commits immediately (legacy behavior).
+        With a calibrator, uncalibrated pages are held until a genuine
+        two-spike profile calibrates the floor; the held pages are then
+        re-judged with the learned floor and returned in trigger order.
+        """
+        if self.calibrator is None:
+            analysis = self._analyze(
+                frame_a, frame_b, [f.image for f in unique_pages],
+                attempt_num, is_first, debug, output_dir, bar_mode="normal",
+            )
+            entry = self._commit_analyzed(
+                analysis, unique_pages, output_dir, attempt_num, debug, log,
+                on_page_detected, is_first, plotter, ssim_score,
+            )
+            return [entry] if entry is not None else []
+
+        # Calibrator path: hold until a genuine two-spike profile lands.
+        # The dedup pool includes already-committed pages AND held pages, so a
+        # duplicate of an earlier held page is never treated as a gold sample.
+        dedup_images = [f.image for f in unique_pages] + [p.merged for p in self._pending]
+        analysis = self._analyze(
+            frame_a, frame_b, dedup_images, attempt_num, is_first, debug,
+            output_dir, bar_mode="normal",
+        )
+        self._pending.append(_PendingCommit(
+            frame_a, frame_b, attempt_num, is_first, ssim_score, analysis.merged,
+        ))
+
+        if self._is_gold_sample(analysis):
+            self.calibrator.sample([s[1] for s in analysis.spikes])
+
+        if self.calibrator.is_calibrated:
+            if not self._calibration_logged:
+                log(f"  Bar profile calibrated: floor={self.calibrator.current_floor:.0f} from {self.calibrator.sample_count} sample(s)")
+                self._calibration_logged = True
+            return self._flush_pending(
+                unique_pages, output_dir, debug, log, on_page_detected, plotter,
+            )
+        return []
+
+    def _current_floor(self) -> float:
+        if self.calibrator is not None:
+            return self.calibrator.current_floor
+        return float(self.config.bar_min_diff_threshold)
+
+    def _is_gold_sample(self, analysis: _Analysis) -> bool:
+        """A profile is gold when it shows exactly two clean bar spikes and
+        would be committed (guard rail + dedup pass)."""
+        if len(analysis.spikes) != 2:
+            return False
+        if analysis.is_dup:
+            return False
+        if not analysis.has_left_spike:
+            return False
+        return True
+
+    def _read_full_frames(self, frame_a: Frame, frame_b: Frame, debug: bool):
         full_a = full_b = None
         if self._original_video_path:
             full_a = self._read_full_frame_from_original(frame_a.index, frame_a.timestamp)
@@ -310,6 +405,22 @@ class PageCommitter:
         elif self.ocr_service.is_enabled() or debug:
             full_a, _ = self.video.read_full_frame_at(frame_a.index)
             full_b, _ = self.video.read_full_frame_at(frame_b.index)
+        return full_a, full_b
+
+    def _analyze(
+        self,
+        frame_a: Frame,
+        frame_b: Frame,
+        dedup_images: List[np.ndarray],
+        page_num: int,
+        is_first: bool,
+        debug: bool,
+        output_dir: Path,
+        bar_mode: str = "normal",
+    ) -> _Analysis:
+        """Compute everything needed for one page transition, with no side
+        effects on page state (only debug artifact writing)."""
+        full_a, full_b = self._read_full_frames(frame_a, frame_b, debug)
 
         if debug:
             if full_a is not None:
@@ -324,23 +435,37 @@ class PageCommitter:
         # Merge frames — use full-res when available, scan-res as fallback
         merge_a = full_a if full_a is not None else frame_a.image
         merge_b = full_b if full_b is not None else frame_b.image
-        debug_profile_path = str(output_dir / "diagnostics" / f"bar_profile_page_{page_num:03d}.txt") if debug else None
-        mr = self.video.merge_frames(
-            merge_a, merge_b, self.config.b_overlay_width_ratio,
-            self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
-            self.config.bar_padding_px, debug_profile_path
-        )
-        full_img = mr.merged
-        merge_x = mr.merge_x
-        log(f"  Merge result: {len(mr.spikes)} spike(s), merge_x={merge_x} for page {page_num}")
+        floor = self._current_floor()
 
-        # Deduplication check
-        is_dup = False
+        merge_x = 0
+        spikes: list = []
+        col_sums = None
+        bar_peaks: list = []
+        has_clean_profile = True
+        has_left_spike = True
+        merged = merge_a.copy()
+
+        if bar_mode == "normal":
+            debug_profile_path = str(output_dir / "diagnostics" / f"bar_profile_page_{page_num:03d}.txt") if debug else None
+            mr = self.video.merge_frames(
+                merge_a, merge_b, self.config.b_overlay_width_ratio,
+                self.config.default_crop_ratio, floor,
+                self.config.bar_padding_px, debug_profile_path
+            )
+            merged = mr.merged
+            merge_x = mr.merge_x
+            spikes = mr.spikes
+            col_sums = mr.col_sums
+            has_clean_profile, has_left_spike, bar_peaks = self.deduplicator.check_bar_profile(
+                merge_a, merge_b, self.config.default_crop_ratio
+            )
+
+        # OCR number from a merged pair (dedup channel)
         merged_number = None
         if self.ocr_service.is_enabled() and full_a is not None and full_b is not None:
             ocr_mr = self.video.merge_frames(
                 full_a, full_b, self.config.b_overlay_width_ratio,
-                self.config.default_crop_ratio, self.config.bar_min_diff_threshold,
+                self.config.default_crop_ratio, floor,
                 self.config.bar_padding_px, None
             )
             merged_number = self.ocr_service.get_leftmost_number(
@@ -348,56 +473,90 @@ class PageCommitter:
                 self.config.ocr_horizontal_ratio, self.config.ocr_confidence_threshold
             )
 
-        # Guard rail: compute bar profile peaks once (skip for first page)
-        has_clean_profile, has_left_spike, bar_peaks = self.deduplicator.check_bar_profile(
-            frame_a.image, frame_b.image, self.config.default_crop_ratio
-        )
-        if bar_peaks:
-            sorted_peaks = sorted(bar_peaks, key=lambda p: p[0])
-            peak_str = ", ".join(f"col{p[0]}:{p[1]:.0f}" for p in sorted_peaks)
-            log(f"  Dedup peaks: [{peak_str}] (n={len(bar_peaks)}, clean={has_clean_profile})")
+        # Guard rail: bar profile validation (skipped for first page)
+        is_dup = False
         guard_rail_passed = True
+        reject_reason = None
         if not is_first:
-            if not is_dup and not has_clean_profile:
+            if not has_clean_profile:
                 is_dup = True
                 guard_rail_passed = False
-                log(f"  [SKIP] Page {page_num}: No clean bar profile, treated as duplicate")
-            if not is_dup and not has_left_spike:
+                reject_reason = "No clean bar profile"
+            elif not has_left_spike:
                 is_dup = True
                 guard_rail_passed = False
-                log(f"  [SKIP] Page {page_num}: Left spike outside margin, treated as duplicate")
+                reject_reason = "Left spike outside margin"
 
-        for existing in unique_pages:
-            if self.deduplicator.is_duplicate(existing.image, full_img, b_number=merged_number):
-                is_dup = True
-                break
+        # Deduplication against already-committed (and held) pages
+        if not is_dup:
+            for img in dedup_images:
+                if self.deduplicator.is_duplicate(img, merged, b_number=merged_number):
+                    is_dup = True
+                    break
+
+        return _Analysis(
+            frame_a=frame_a, frame_b=frame_b, merged=merged, merge_x=merge_x,
+            spikes=spikes, col_sums=col_sums, merged_number=merged_number,
+            is_dup=is_dup, guard_rail_passed=guard_rail_passed,
+            reject_reason=reject_reason, bar_peaks=bar_peaks,
+            has_clean_profile=has_clean_profile, has_left_spike=has_left_spike,
+        )
+
+    def _commit_analyzed(
+        self,
+        analysis: _Analysis,
+        unique_pages: List[Frame],
+        output_dir: Path,
+        page_num: int,
+        debug: bool,
+        log: Callable[[str], None],
+        on_page_detected: Optional[Callable[[int, np.ndarray], None]],
+        is_first: bool,
+        plotter: Optional['BarProfilePlotter'],
+        ssim_score: Optional[float],
+    ) -> PageManifestEntry:
+        """Persist an analyzed page: append, save, notify, plot, build entry."""
+        frame_a = analysis.frame_a
+        t_commit_start = time.time()
+
+        log(f"  Merge result: {len(analysis.spikes)} spike(s), merge_x={analysis.merge_x} for page {page_num}")
+
+        if analysis.bar_peaks:
+            sorted_peaks = sorted(analysis.bar_peaks, key=lambda p: p[0])
+            peak_str = ", ".join(f"col{p[0]}:{p[1]:.0f}" for p in sorted_peaks)
+            log(f"  Dedup peaks: [{peak_str}] (n={len(analysis.bar_peaks)}, clean={analysis.has_clean_profile})")
+
+        is_dup = analysis.is_dup
+        guard_rail_passed = analysis.guard_rail_passed
+        if analysis.reject_reason:
+            log(f"  [SKIP] Page {page_num}: {analysis.reject_reason}, treated as duplicate")
 
         if not is_dup:
-            frame = Frame(full_img.copy(), frame_a.timestamp, frame_a.index)
+            frame = Frame(analysis.merged.copy(), frame_a.timestamp, frame_a.index)
             unique_pages.append(frame)
-            self.file_service.save_page_image(output_dir, page_num, full_img)
+            self.file_service.save_page_image(output_dir, page_num, analysis.merged)
             log(f"  New page detected at {frame_a.timestamp:.2f}s (Index: {frame_a.index})")
             if on_page_detected:
-                on_page_detected(len(unique_pages) - 1, full_img)
+                on_page_detected(len(unique_pages) - 1, analysis.merged)
         else:
             log(f"  Duplicate page skipped at {frame_a.timestamp:.2f}s")
 
-        if plotter is not None:
+        if plotter is not None and analysis.col_sums is not None:
             plot_path = output_dir / "diagnostics" / f"bar_profile_page_{page_num:03d}.png"
             w_full = frame_a.image.shape[1]
-            merge_x_640 = int(mr.merge_x * (640 / w_full)) if w_full > 0 else 0
+            merge_x_640 = int(analysis.merge_x * (640 / w_full)) if w_full > 0 else 0
             left_spike_col = -1
-            if len(bar_peaks) >= 2:
-                sorted_ps = sorted(bar_peaks, key=lambda p: p[0])
+            if len(analysis.bar_peaks) >= 2:
+                sorted_ps = sorted(analysis.bar_peaks, key=lambda p: p[0])
                 left_spike_col = sorted_ps[0][0]
             plotter.plot(
-                col_sums=mr.col_sums,
-                spikes=mr.spikes,
+                col_sums=analysis.col_sums,
+                spikes=analysis.spikes,
                 merge_x_640=merge_x_640,
                 margin_col=int(640 * self.config.bar_left_margin),
                 left_spike_col=left_spike_col,
-                has_left_spike=has_left_spike,
-                has_clean=has_clean_profile,
+                has_left_spike=analysis.has_left_spike,
+                has_clean=analysis.has_clean_profile,
                 output_path=plot_path,
                 page_num=page_num,
             )
@@ -405,17 +564,63 @@ class PageCommitter:
         attempt_duration_ms = (time.time() - t_commit_start) * 1000
 
         return PageManifestEntry(
-            page=attempt_num,
+            page=page_num,
             timestamp=frame_a.timestamp,
             frame_index=frame_a.index,
-            bar_x=merge_x,
+            bar_x=analysis.merge_x,
             bar_width=0,
-            merge_x=merge_x,
+            merge_x=analysis.merge_x,
             is_duplicate=is_dup,
-            ocr_number=str(merged_number) if merged_number is not None else None,
+            ocr_number=str(analysis.merged_number) if analysis.merged_number is not None else None,
             ssim_score=ssim_score,
             guard_rail_passed=guard_rail_passed,
             attempt_duration_ms=round(attempt_duration_ms, 1),
+        )
+
+    def _flush_pending(
+        self,
+        unique_pages: List[Frame],
+        output_dir: Path,
+        debug: bool,
+        log: Callable[[str], None],
+        on_page_detected: Optional[Callable[[int, np.ndarray], None]],
+        plotter: Optional['BarProfilePlotter'],
+    ) -> List[PageManifestEntry]:
+        """Re-judge and commit all held pages with the current floor, in
+        trigger order."""
+        bar_mode = "normal" if (self.calibrator is None or self.calibrator.is_calibrated) else "raw"
+        entries: List[PageManifestEntry] = []
+        pending, self._pending = self._pending, []
+        for p in pending:
+            analysis = self._analyze(
+                p.frame_a, p.frame_b, [f.image for f in unique_pages],
+                p.page_num, p.is_first, debug, output_dir, bar_mode=bar_mode,
+            )
+            entry = self._commit_analyzed(
+                analysis, unique_pages, output_dir, p.page_num, debug, log,
+                on_page_detected, p.is_first, plotter, p.ssim_score,
+            )
+            if entry is not None:
+                entries.append(entry)
+        return entries
+
+    def flush_pending(
+        self,
+        unique_pages: List[Frame],
+        output_dir: Path,
+        debug: bool,
+        log: Callable[[str], None],
+        on_page_detected: Optional[Callable[[int, np.ndarray], None]],
+        plotter: Optional['BarProfilePlotter'] = None,
+    ) -> List[PageManifestEntry]:
+        """End-of-run flush.  If the floor was never calibrated, held pages are
+        committed raw (no bar logic) rather than guessed."""
+        if not self._pending:
+            return []
+        if self.calibrator is not None and not self.calibrator.is_calibrated:
+            log(f"  No bar profile calibration — committing {len(self._pending)} held page(s) without bar logic")
+        return self._flush_pending(
+            unique_pages, output_dir, debug, log, on_page_detected, plotter,
         )
 
 

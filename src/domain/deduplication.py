@@ -4,16 +4,24 @@ from typing import Optional
 from src.domain.value_objects.config import ScoreConfig
 from src.domain.interfaces import IOcrService
 from src.domain.bar_profile_service import BarProfileService
+from src.domain.bar_profile_calibrator import BarProfileCalibrator
 
 class Deduplicator:
-    def __init__(self, config: ScoreConfig, ocr_service: IOcrService):
+    def __init__(self, config: ScoreConfig, ocr_service: IOcrService,
+                 calibrator: Optional[BarProfileCalibrator] = None):
         self.config = config
         self.ocr_service = ocr_service
+        self.calibrator = calibrator
         self._number_cache: dict[int, Optional[int]] = {}
+
+    def _current_floor(self) -> float:
+        if self.calibrator is not None:
+            return self.calibrator.current_floor
+        return float(self.config.bar_min_diff_threshold)
 
     def _get_bar_profile_peaks(self, frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float) -> list:
         col_sums = BarProfileService.compute_column_sums(frame_a, frame_b, crop_ratio)
-        return BarProfileService.detect_spikes(col_sums)
+        return BarProfileService.detect_spikes(col_sums, self._current_floor())
 
     def has_clean_bar_profile(self, frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float) -> bool:
         n = len(self._get_bar_profile_peaks(frame_a, frame_b, crop_ratio))
@@ -31,7 +39,9 @@ class Deduplicator:
         """Returns (has_clean, has_left_spike, peaks) from a single peak computation."""
         peaks = self._get_bar_profile_peaks(frame_a, frame_b, crop_ratio)
         has_clean = len(peaks) == 0 or len(peaks) == 2
-        has_left_spike = False
+        # Left-spike check only applies when a bar is actually present (2+ spikes).
+        # A clean 0-spike profile (no bar detected) is never "misplaced".
+        has_left_spike = True
         if len(peaks) >= 2:
             left_col = sorted(peaks[:2], key=lambda p: p[0])[0][0]
             margin_col = int(640 * self.config.bar_left_margin)

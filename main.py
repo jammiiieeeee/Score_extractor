@@ -105,10 +105,10 @@ def main():
             
             # Map quality to format selector
             quality_map = {
-                "1080p": "bestvideo[height<=1080][fps<=30]",
-                "720p": "bestvideo[height<=720][fps<=30]",
-                "480p": "bestvideo[height<=480][fps<=30]",
-                "360p": "best[height<=360][fps<=30]",
+                "1080p": "bestvideo[height<=1080]",
+                "720p": "bestvideo[height<=720]",
+                "480p": "bestvideo[height<=480]",
+                "360p": "best[height<=360]",
             }
             fmt = quality_map.get(args.quality, "bestvideo[height<=1080]")
             
@@ -165,15 +165,8 @@ def main():
 
             if pages:
                 print(f"PDF: {output_pdf}")
-                cropped_images = []
-                for page in pages:
-                    img = page.image
-                    img_h = img.shape[0]
-                    y_start = 0
-                    y_end = int(img_h * config.default_crop_ratio)
-                    cropped_images.append(img[y_start:y_end, :])
                 pdf_service.create_pdf(
-                    cropped_images,
+                    [page.image for page in pages],
                     Path(output_pdf),
                     config,
                     title_hint=score_name,

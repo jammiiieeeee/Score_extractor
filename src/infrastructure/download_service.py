@@ -33,10 +33,13 @@ class DownloadService:
         path = shutil.which("ffmpeg")
         if path:
             return path
-        pattern = r"C:\Users\*\AppData\Local\Microsoft\WinGet\Packages\*ffmpeg*\bin\ffmpeg.exe"
-        matches = _glob.glob(pattern)
-        if matches:
-            return matches[0]
+        for pattern in (
+            r"C:\Users\*\AppData\Local\Microsoft\WinGet\Packages\**\ffmpeg.exe",
+            r"C:\ProgramData\WinGet\Packages\**\ffmpeg.exe",
+        ):
+            for match in _glob.glob(pattern, recursive=True):
+                if os.path.exists(match):
+                    return match
         manual = r"C:\ProgramData\ffmpeg\ffmpeg.exe"
         if os.path.exists(manual):
             return manual
@@ -90,7 +93,7 @@ class DownloadService:
     def download(
         self,
         url: str,
-        fmt: str = "bestvideo[height<=1080][fps<=30]",
+        fmt: str = "bestvideo[height<=1080]",
         scan_fmt: str = "",
         on_progress: Optional[Callable[[float, str], None]] = None,
         on_log: Optional[Callable[[str], None]] = None,

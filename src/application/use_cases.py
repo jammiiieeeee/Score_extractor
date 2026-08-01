@@ -7,6 +7,7 @@ from src.domain.value_objects.config import ScoreConfig
 from src.domain.models import Frame, PageManifestEntry
 from src.domain.interfaces import IVideoService, IOcrService, IPdfService, IFileService
 from src.domain.deduplication import Deduplicator
+from src.domain.bar_profile_calibrator import BarProfileCalibrator
 from src.application.extraction_components import FrameStepper, PageCommitter, BarProfilePlotter
 
 
@@ -53,10 +54,9 @@ class ExtractScoreUseCase:
             else:
                 effective_ocr = self.ocr_service
 
-        deduplicator = Deduplicator(self.config, effective_ocr)
-        ocr_available = effective_ocr.is_enabled()
-
-        # Write extraction log to diagnostics/ subfolder (always on)
+        calibrator = BarProfileCalibrator(bootstrap=self.config.bar_min_diff_threshold)
+        deduplicator = Deduplicator(self.config, effective_ocr, calibrator=calibrator)
+        ocr_available = effective_ocr.is_enabled()        # Write extraction log to diagnostics/ subfolder (always on)
         log_file: Optional[TextIO] = None
         try:
             log_path = output_dir / "diagnostics" / "extraction.log"
@@ -77,6 +77,7 @@ class ExtractScoreUseCase:
             self.video_service, self.file_service, effective_ocr,
             self.config, deduplicator, orig_w, orig_h,
             original_video_path=original_video_path,
+            calibrator=calibrator,
         )
         stepper = FrameStepper(
             self.video_service, self.config,
@@ -100,12 +101,11 @@ class ExtractScoreUseCase:
             a_frame, b_frame = start_pair
             attempt_num += 1
             log(f"Trim start: capturing first page at {a_frame.timestamp:.1f}s...")
-            entry = committer.commit(
+            entries = committer.commit(
                 a_frame, b_frame, unique_pages, output_dir, attempt_num,
                 debug, log, on_page_detected, is_first=True, plotter=plotter,
             )
-            if entry is not None:
-                manifest_entries.append(entry)
+            manifest_entries.extend(entries)
 
         log(f"Extracting from ~{stepper.current_idx / stepper.fps:.1f}s")
 
@@ -123,16 +123,20 @@ class ExtractScoreUseCase:
                 log(f"  Change at ~{current_frame.timestamp:.1f}s")
                 a_frame, b_frame = stepper.capture_a_b(current_frame)
                 attempt_num += 1
-                entry = committer.commit(
+                entries = committer.commit(
                     a_frame, b_frame, unique_pages, output_dir, attempt_num,
                     debug, log, on_page_detected, is_first=False, plotter=plotter,
                     ssim_score=ssim_score,
                 )
-                if entry is not None:
-                    manifest_entries.append(entry)
+                manifest_entries.extend(entries)
 
         # Tail scan for end-credits
         stepper.tail_scan(effective_ocr, unique_pages, stepper.current_idx, end_offset, debug, log_file)
+
+        # Flush any held pages (re-judged with the learned floor when available)
+        manifest_entries.extend(committer.flush_pending(
+            unique_pages, output_dir, debug, log, on_page_detected, plotter,
+        ))
 
         # Release original video capture if opened
         committer.release()

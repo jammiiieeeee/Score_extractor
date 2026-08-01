@@ -444,7 +444,7 @@ class GuiApi:
     #  YouTube Download
     # ═════════════════════════════════════════════════════════════════════
 
-    def download_youtube(self, url: str, fmt: str = "bestvideo[height<=1080][fps<=30]",
+    def download_youtube(self, url: str, fmt: str = "bestvideo[height<=1080]",
                          scan_fmt: str = "best[height<=640]") -> None:
         if self.is_busy():
             raise RuntimeError("Extraction or PDF generation already in progress")
@@ -460,7 +460,7 @@ class GuiApi:
         )
         self._download_thread.start()
 
-    def _run_youtube_download(self, url: str, fmt: str = "bestvideo[height<=1080][fps<=30]",
+    def _run_youtube_download(self, url: str, fmt: str = "bestvideo[height<=1080]",
                               scan_fmt: str = "best[height<=640]"):
         try:
             def on_progress(pct, detail):

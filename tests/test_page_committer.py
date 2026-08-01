@@ -18,10 +18,25 @@ from src.application.extraction_components import PageCommitter
 from src.domain.value_objects.config import ScoreConfig
 from src.domain.models import Frame
 from src.domain.deduplication import Deduplicator
+from src.domain.bar_profile_calibrator import BarProfileCalibrator
 from tests.conftest import (
     StubVideoService, StubOcrService, StubFileService,
     make_solid_image, make_bar_image, make_image_with_text,
 )
+
+
+def make_bar_frames(width=800, height=600, bar_a=100, bar_b=400,
+                    bg=60, bar_value=220, bar_width=30):
+    """Two frames identical except a vertical bar at different columns.
+
+    Produces a clean two-spike column-diff profile: the left spike (bar in A)
+    sits inside the left margin, the right spike far from it.
+    """
+    a = np.full((height, width, 3), bg, dtype=np.uint8)
+    b = np.full((height, width, 3), bg, dtype=np.uint8)
+    a[:, bar_a:bar_a + bar_width, :] = bar_value
+    b[:, bar_b:bar_b + bar_width, :] = bar_value
+    return a, b
 
 
 class MockOcrService:
@@ -81,13 +96,16 @@ class TestPageCommitterCommit:
         committer.commit(a, b, pages, out_dir, 1, False, lambda msg: None, None, is_first=True)
         assert len(pages) == 1
 
-    def test_bar_profile_guard_rejects_identical(self, tmp_path):
+    def test_unchanged_transition_rejected(self, tmp_path):
+        """A no-bar transition identical to an already-committed page is rejected
+        by pixel dedup (the guard rail only filters bar position, not no-bar
+        transitions)."""
         cfg = ScoreConfig(bar_min_diff_threshold=100.0)
         committer, _, _, _ = self._make_committer(config=cfg, work_dir=tmp_path)
         identical = make_solid_image(800, 600, (128, 128, 128))
         a1 = Frame(identical.copy(), 1.0, 30)
         b1 = Frame(identical.copy(), 2.0, 60)
-        pages = [Frame(make_solid_image(800, 600, (50, 50, 50)), 0.0, 0)]
+        pages = [Frame(identical.copy(), 0.0, 0)]
         out_dir = self._ensure_dirs(tmp_path)
         committer.commit(a1, b1, pages, out_dir, 2, False, lambda msg: None, None, is_first=False)
         assert len(pages) == 1
@@ -199,6 +217,131 @@ def _create_test_video(path, width, height, fps=30.0, n_frames=120):
     for _ in range(n_frames):
         out.write(img)
     out.release()
+
+
+@pytest.mark.unit
+class TestPageCommitterCalibration:
+    """Tests for the deferred-judgment path with a BarProfileCalibrator."""
+
+    def _make_committer(self, calibrator=None, config=None, work_dir=None,
+                        ocr_enabled=False, ocr_number=None):
+        cfg = config or ScoreConfig()
+        fps = 30.0
+        frames = [make_solid_image(800, 600) for _ in range(10)]
+        video_svc = StubVideoService(frames, fps=fps)
+        if ocr_number is not None:
+            ocr_svc = MockOcrService(number=ocr_number)
+        else:
+            ocr_svc = StubOcrService(enabled=ocr_enabled)
+        file_svc = StubFileService(work_dir or Path(os.environ.get("TEMP", ".")))
+        dedup = Deduplicator(cfg, ocr_svc, calibrator=calibrator)
+        committer = PageCommitter(
+            video_svc, file_svc, ocr_svc, cfg, dedup,
+            orig_w=800, orig_h=600, calibrator=calibrator,
+        )
+        return committer, file_svc, ocr_svc, dedup
+
+    def _ensure_dirs(self, tmp_path):
+        out_dir = tmp_path / "score"
+        out_dir.mkdir(exist_ok=True)
+        (out_dir / "photos").mkdir(exist_ok=True)
+        (out_dir / "debug").mkdir(exist_ok=True)
+        return out_dir
+
+    def test_without_calibrator_commits_immediately(self, tmp_path):
+        committer, _, _, _ = self._make_committer(config=ScoreConfig(), work_dir=tmp_path)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+        a = Frame(make_solid_image(800, 600, (50, 50, 50)), 1.0, 30)
+        b = Frame(make_solid_image(800, 600, (100, 100, 100)), 2.0, 60)
+        entries = committer.commit(a, b, pages, out_dir, 1, False, lambda m: None, None, is_first=True)
+        assert len(entries) == 1
+        assert len(pages) == 1
+
+    def test_uncalibrated_pages_held_then_flushed_in_order(self, tmp_path):
+        cfg = ScoreConfig(bar_min_diff_threshold=100.0)
+        cal = BarProfileCalibrator(bootstrap=100.0, min_samples=1)
+        committer, _, _, _ = self._make_committer(calibrator=cal, config=cfg, work_dir=tmp_path)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+        logs = []
+
+        # Page 1: no bar (0 spikes) — held, nothing committed yet
+        a1 = Frame(make_solid_image(800, 600, (30, 30, 30)), 1.0, 30)
+        b1 = Frame(make_solid_image(800, 600, (40, 40, 40)), 2.0, 60)
+        entries1 = committer.commit(a1, b1, pages, out_dir, 1, False, logs.append, None, is_first=True)
+        assert entries1 == []
+        assert len(pages) == 0
+
+        # Page 2: genuine two-spike bar profile — calibrates and flushes page 1
+        a2, b2 = make_bar_frames(bg=200, bar_value=30, bar_a=500, bar_b=200)
+        entries2 = committer.commit(
+            Frame(a2, 4.0, 120), Frame(b2, 5.0, 150), pages, out_dir, 2,
+            False, logs.append, None, is_first=False,
+        )
+        assert cal.is_calibrated
+        assert len(entries2) == 2
+        assert [e.page for e in entries2] == [1, 2]
+        assert len(pages) == 2
+        assert any("calibrated" in m for m in logs)
+
+    def test_callback_order_matches_trigger_order_on_flush(self, tmp_path):
+        cfg = ScoreConfig(bar_min_diff_threshold=100.0)
+        cal = BarProfileCalibrator(bootstrap=100.0, min_samples=1)
+        committer, _, _, _ = self._make_committer(calibrator=cal, config=cfg, work_dir=tmp_path)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+        cb = MagicMock()
+        a1 = Frame(make_solid_image(800, 600, (30, 30, 30)), 1.0, 30)
+        b1 = Frame(make_solid_image(800, 600, (40, 40, 40)), 2.0, 60)
+        committer.commit(a1, b1, pages, out_dir, 1, False, lambda m: None, cb, is_first=True)
+        a2, b2 = make_bar_frames(bg=200, bar_value=30, bar_a=500, bar_b=200)
+        committer.commit(
+            Frame(a2, 4.0, 120), Frame(b2, 5.0, 150), pages, out_dir, 2,
+            False, lambda m: None, cb, is_first=False,
+        )
+        assert cb.call_count == 2
+        assert cb.call_args_list[0][0][0] == 0
+        assert cb.call_args_list[1][0][0] == 1
+
+    def test_never_calibrated_flush_commits_raw(self, tmp_path):
+        cfg = ScoreConfig(bar_min_diff_threshold=100.0)
+        cal = BarProfileCalibrator(bootstrap=100.0, min_samples=3)
+        committer, _, _, _ = self._make_committer(calibrator=cal, config=cfg, work_dir=tmp_path)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+        logs = []
+        a1 = Frame(make_solid_image(800, 600, (50, 50, 50)), 1.0, 30)
+        b1 = Frame(make_solid_image(800, 600, (70, 70, 70)), 2.0, 60)
+        entries1 = committer.commit(a1, b1, pages, out_dir, 1, False, logs.append, None, is_first=True)
+        assert entries1 == []
+        assert not cal.is_calibrated
+
+        entries = committer.flush_pending(pages, out_dir, False, logs.append, None)
+        assert len(entries) == 1
+        assert len(pages) == 1
+        assert any("without bar logic" in m for m in logs)
+
+    def test_duplicate_2_spike_profile_not_sampled(self, tmp_path):
+        cfg = ScoreConfig(bar_min_diff_threshold=100.0)
+        cal = BarProfileCalibrator(bootstrap=100.0, min_samples=2)
+        committer, _, _, _ = self._make_committer(
+            calibrator=cal, config=cfg, work_dir=tmp_path, ocr_number=5,
+        )
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+        a1, b1 = make_bar_frames()
+        committer.commit(Frame(a1, 1.0, 30), Frame(b1, 2.0, 60), pages, out_dir, 1,
+                         False, lambda m: None, None, is_first=True)
+        assert cal.sample_count == 1
+
+        # Same bar + same OCR number -> duplicate -> must not calibrate
+        a2, b2 = make_bar_frames()
+        entries2 = committer.commit(Frame(a2, 4.0, 120), Frame(b2, 5.0, 150), pages, out_dir, 2,
+                                    False, lambda m: None, None, is_first=False)
+        assert cal.sample_count == 1
+        assert not cal.is_calibrated
+        assert entries2 == []
 
 
 @pytest.mark.unit

@@ -96,7 +96,7 @@ class VideoService(IVideoService):
         search_range = int(640 * overlay_width_ratio)
 
         # Detect spikes on the FULL profile — same data the deduplicator sees.
-        spikes = BarProfileService.detect_spikes(col_sums)
+        spikes = BarProfileService.detect_spikes(col_sums, min_diff_threshold)
 
         merge_x = 0
         if len(spikes) == 2:

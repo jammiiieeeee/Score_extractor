@@ -20,9 +20,9 @@ class BarProfileService:
         return np.sum(diff, axis=0)
 
     @staticmethod
-    def detect_spikes(col_sums: np.ndarray) -> list:
+    def detect_spikes(col_sums: np.ndarray, min_diff_threshold: float = 100.0) -> list:
         max_val = float(np.max(col_sums))
-        if max_val < 100:
+        if max_val < min_diff_threshold:
             return []
         threshold = max_val * 0.3
         min_dist = max(3, int(640 * 0.06))

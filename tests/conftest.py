@@ -228,7 +228,7 @@ class StubVideoService(IVideoService):
         from src.domain.models import MergeResult
         from src.domain.bar_profile_service import BarProfileService
         col_sums = BarProfileService.compute_column_sums(frame_a, frame_b, crop_ratio)
-        spikes = BarProfileService.detect_spikes(col_sums)
+        spikes = BarProfileService.detect_spikes(col_sums, min_diff_threshold)
         merge_x = frame_a.shape[1] // 2
         result = frame_a.copy()
         result[:, 0:merge_x] = frame_b[:, 0:merge_x]
