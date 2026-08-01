@@ -498,6 +498,12 @@ def _set_widget_class(widget, cls: str):
     widget.style().polish(widget)
 
 
+def _fit_button_width(button, padding: int = 40):
+    metrics = button.fontMetrics()
+    text_width = metrics.horizontalAdvance(button.text())
+    button.setMinimumWidth(text_width + padding)
+
+
 # ── Crop Preview Widget ──────────────────────────────────────────────
 
 class CropPreviewWidget(QWidget):
@@ -2104,7 +2110,7 @@ class ExtractTab(QWidget):
         crop_row.addStretch()
         self.config_btn = QPushButton("Settings")
         _set_widget_class(self.config_btn, "secondary")
-        self.config_btn.setFixedWidth(80)
+        self.config_btn.setMinimumWidth(100)
         self.config_btn.setToolTip("Open extraction settings")
         self.config_btn.clicked.connect(self.config_requested.emit)
 
@@ -2130,7 +2136,7 @@ class ExtractTab(QWidget):
         self.progress_bar.setValue(0)
         self.page_badge = QLabel("")
         _set_widget_class(self.page_badge, "count")
-        self.page_badge.setFixedWidth(110)
+        self.page_badge.setMinimumWidth(150)
         self.page_badge.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         progress_row.addWidget(self.progress_bar, 1)
         progress_row.addWidget(self.page_badge)
@@ -2143,15 +2149,16 @@ class ExtractTab(QWidget):
         layout.addLayout(progress_row)
 
         log_header = QHBoxLayout()
+        log_header.setSpacing(SPACE_SM)
         log_header.setContentsMargins(0, 0, 0, 0)
         log_label = QLabel("Log")
         _set_widget_class(log_label, "muted")
-        log_label.setFixedWidth(40)
+        log_label.setMinimumWidth(40)
         log_header.addWidget(log_label)
         log_header.addStretch()
         clear_log_btn = QPushButton("Clear")
         _set_widget_class(clear_log_btn, "secondary")
-        clear_log_btn.setFixedWidth(60)
+        clear_log_btn.setMinimumWidth(60)
         log_header.addWidget(clear_log_btn)
         layout.addLayout(log_header)
 
@@ -2164,34 +2171,35 @@ class ExtractTab(QWidget):
 
         # ── Action bar ──
         action_row = QHBoxLayout()
+        action_row.setSpacing(SPACE_SM)
         action_row.addStretch()
         self.reextract_btn = QPushButton("Re-extract")
         _set_widget_class(self.reextract_btn, "secondary")
-        self.reextract_btn.setFixedWidth(110)
         self.reextract_btn.setVisible(False)
         self.reextract_btn.clicked.connect(self._on_reextract)
+        _fit_button_width(self.reextract_btn)
         self.extract_btn = QPushButton("Start Extraction")
         self.extract_btn.setEnabled(False)
-        self.extract_btn.setFixedWidth(160)
+        _fit_button_width(self.extract_btn)
         self.regenerate_btn = QPushButton("Regenerate PDF")
         self.regenerate_btn.setEnabled(False)
-        self.regenerate_btn.setFixedWidth(160)
         self.regenerate_btn.setVisible(False)
         self.regenerate_btn.clicked.connect(self._regenerate_pdf)
+        _fit_button_width(self.regenerate_btn)
         self.review_btn = QPushButton("Review Pages")
         _set_widget_class(self.review_btn, "secondary")
-        self.review_btn.setFixedWidth(120)
         self.review_btn.setVisible(False)
         self.review_btn.clicked.connect(self._on_review_pages)
+        _fit_button_width(self.review_btn)
         self.open_pdf_btn = QPushButton("Open PDF")
         self.open_pdf_btn.setEnabled(False)
-        self.open_pdf_btn.setFixedWidth(120)
         self.open_pdf_btn.setVisible(False)
         self.open_pdf_btn.clicked.connect(self._open_pdf)
+        _fit_button_width(self.open_pdf_btn)
         self.cancel_btn = QPushButton("Cancel")
         _set_widget_class(self.cancel_btn, "danger")
         self.cancel_btn.setEnabled(False)
-        self.cancel_btn.setFixedWidth(90)
+        _fit_button_width(self.cancel_btn)
         action_row.addWidget(self.reextract_btn)
         action_row.addWidget(self.extract_btn)
         action_row.addWidget(self.regenerate_btn)
@@ -3041,7 +3049,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Score Extractor — Piano Score Video to PDF")
-        self.setMinimumSize(960, 760)
+        self.setMinimumSize(1040, 760)
         self.resize(1100, 780)
         self.setStyleSheet(
             STYLESHEET.replace("__CHECK_PLACEHOLDER__", CHECK_INDICATOR_PATH)
