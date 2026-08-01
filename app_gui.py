@@ -1957,6 +1957,27 @@ class ExtractTab(QWidget):
         self._refresh_completer()
         self._update_state()
 
+        self.setAcceptDrops(True)
+
+    # ── Drag-and-drop ──
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                path = url.toLocalFile()
+                if os.path.isfile(path):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event):
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if os.path.isfile(path):
+                self.local_radio.setChecked(True)
+                self.video_path_edit.setText(path)
+                break
+
     # ── Public accessors ──
 
     @staticmethod
@@ -2118,7 +2139,12 @@ class ExtractTab(QWidget):
     # ── Video / YouTube ──
 
     def _on_yt_url_changed(self):
-        valid = bool(self.yt_url_edit.text().strip())
+        url = self.yt_url_edit.text().strip()
+        try:
+            parsed = urlparse(url)
+            valid = bool(url) and parsed.scheme in ("http", "https") and bool(parsed.netloc)
+        except ValueError:
+            valid = False
         self.download_btn.setEnabled(valid and not self._busy)
 
     def _on_quality_changed(self, index: int):
@@ -2651,8 +2677,47 @@ class ExtractTab(QWidget):
 
     def on_cancelled(self):
         dbg("on_cancelled")
-        self._log("Cancelled")
+        self._log("Cancelled — no pages were captured")
         self._reset_ui()
+
+    def on_cancelled_with_pages(self, page_count: int):
+        dbg(f"on_cancelled_with_pages: {page_count}")
+        self._busy = False
+        self._watchdog.stop()
+        self.cancel_btn.setEnabled(False)
+        self.page_badge.setText(f"Pages: {page_count}")
+
+        reply = QMessageBox.question(
+            self, "Extraction Cancelled",
+            f"Extraction was stopped with {page_count} page(s) captured.\n\n"
+            "Would you like to keep these pages and review them, "
+            "or discard them and start over?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._move_downloaded_videos()
+            self._review_before_save()
+            if self._api.get_page_count() == 0:
+                self._log("All pages removed in review — no PDF generated")
+                self._busy = False
+                self._update_state()
+                self._set_status("No pages kept — extract again to try")
+                return
+            output_path = self.get_output_path()
+            title = self.pdf_name_edit.text().strip() or None
+            try:
+                self._api.generate_pdf(output_path, title=title)
+                main_win = self.window()
+                if hasattr(main_win, '_generating_pdf'):
+                    main_win._generating_pdf = True
+            except (RuntimeError, ValueError, PermissionError) as e:
+                QMessageBox.warning(self, "Error", str(e))
+                self._reset_ui()
+        else:
+            self._api.clear_pages()
+            self._reset_ui()
+            self._set_status("Pages discarded — start over")
 
     def on_error(self, message: str):
         dbg(f"on_error: {message}")
@@ -2842,6 +2907,7 @@ class MainWindow(QMainWindow):
         self.signals.error.connect(self._on_error)
         self.signals.completed.connect(self._on_completed)
         self.signals.cancelled.connect(self._on_cancelled)
+        self.signals.cancelled_with_pages.connect(self._on_cancelled_with_pages)
         self.signals.download_done.connect(self._on_yt_downloaded)
 
         self.extract_tab.config_requested.connect(lambda: self.tabs.setCurrentIndex(1))
@@ -2875,6 +2941,9 @@ class MainWindow(QMainWindow):
 
     def _on_cancelled(self):
         self.extract_tab.on_cancelled()
+
+    def _on_cancelled_with_pages(self, page_count: int):
+        self.extract_tab.on_cancelled_with_pages(page_count)
 
     def _on_yt_downloaded(self, path: str):
         self.extract_tab._on_yt_download_completed(path)

@@ -90,6 +90,8 @@ class CallbackCollector:
         self.errors = []
         self.completed_count = [0]
         self.cancelled = Event()
+        self.cancelled_with_pages = Event()
+        self.cancelled_page_count = [0]
 
         api.set_on_log(lambda m: self.logs.append(m))
         api.set_on_progress(lambda p, pc, d: self.progress_events.append((p, pc, d)))
@@ -97,6 +99,7 @@ class CallbackCollector:
         api.set_on_error(lambda m: self.errors.append(m))
         api.set_on_completed(lambda c: self.completed_count.__setitem__(0, c))
         api.set_on_cancelled(lambda: self.cancelled.set())
+        api.set_on_cancelled_with_pages(lambda c: (self.cancelled_with_pages.set(), self.cancelled_page_count.__setitem__(0, c)))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -246,11 +249,11 @@ class TestExtractionWorkflow:
         assert api.is_busy()
         api.cancel_extraction()
 
-        cancelled = cb.cancelled.wait(timeout=15.0)
-        assert cancelled, "on_cancelled should fire"
+        cancelled = cb.cancelled.wait(timeout=15.0) or cb.cancelled_with_pages.wait(timeout=15.0)
+        assert cancelled, "on_cancelled or on_cancelled_with_pages should fire"
 
         state = api.get_extraction_state()
-        assert state.phase == "idle"
+        assert state.phase in ("done", "idle")
         assert not api.is_busy()
 
     def test_extraction_rejects_while_busy(self, api, test_video, work_dir):

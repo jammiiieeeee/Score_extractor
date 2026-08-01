@@ -8,6 +8,7 @@ class ExtractionSignals(QObject):
     error         = pyqtSignal(str)
     completed       = pyqtSignal(int)
     cancelled       = pyqtSignal()
+    cancelled_with_pages = pyqtSignal(int)
     download_done   = pyqtSignal(str)
 
     def wire(self, api):
@@ -17,4 +18,5 @@ class ExtractionSignals(QObject):
         api.set_on_error(lambda m: self.error.emit(m))
         api.set_on_completed(lambda c: self.completed.emit(c))
         api.set_on_cancelled(lambda: self.cancelled.emit())
+        api.set_on_cancelled_with_pages(lambda c: self.cancelled_with_pages.emit(c))
         api.set_on_download_completed(lambda p: self.download_done.emit(p))

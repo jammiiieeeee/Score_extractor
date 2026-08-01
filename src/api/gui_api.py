@@ -95,6 +95,7 @@ class GuiApi:
         self._on_error: Optional[Callable] = None
         self._on_completed: Optional[Callable] = None
         self._on_cancelled: Optional[Callable] = None
+        self._on_cancelled_with_pages: Optional[Callable] = None
         self._on_download_completed: Optional[Callable] = None
         self._ocr_init_lock = threading.Lock()
 
@@ -167,6 +168,13 @@ class GuiApi:
         if self._on_cancelled:
             try:
                 self._on_cancelled()
+            except Exception:
+                pass
+
+    def _emit_cancelled_with_pages(self, page_count: int):
+        if self._on_cancelled_with_pages:
+            try:
+                self._on_cancelled_with_pages(page_count)
             except Exception:
                 pass
 
@@ -325,6 +333,9 @@ class GuiApi:
     def set_on_cancelled(self, fn: Optional[Callable]):
         self._on_cancelled = fn
 
+    def set_on_cancelled_with_pages(self, fn: Optional[Callable]):
+        self._on_cancelled_with_pages = fn
+
     def set_on_download_completed(self, fn: Optional[Callable]):
         self._on_download_completed = fn
 
@@ -426,11 +437,18 @@ class GuiApi:
                 self._emit_completed(len(self._pages))
                 self._emit_log(f"Extracted: {len(self._pages)} pages")
             else:
-                self._pages.clear()
-                self._state.phase = "idle"
-                import shutil
-                shutil.rmtree(score_dir, ignore_errors=True)
-                self._emit_cancelled()
+                if len(self._pages) > 0:
+                    self._state.phase = "done"
+                    self._state.pages_detected = len(self._pages)
+                    self._emit_progress("extracting", 100.0, "Extraction cancelled")
+                    self._emit_cancelled_with_pages(len(self._pages))
+                    self._emit_log(f"Extraction cancelled — {len(self._pages)} pages kept")
+                else:
+                    self._pages.clear()
+                    self._state.phase = "idle"
+                    import shutil
+                    shutil.rmtree(score_dir, ignore_errors=True)
+                    self._emit_cancelled()
 
         except Exception as e:
             self._state.phase = "error"
