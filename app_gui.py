@@ -1098,8 +1098,8 @@ class ReviewPagesDialog(QDialog):
         self._count = api.get_page_count()
         self._kept = [True] * self._count
 
-        self.setWindowTitle(f"Review Pages — {self._count} captured")
-        self.resize(960, 640)
+        self.setWindowTitle(f"Review Pages \u2014 {self._count} captured")
+        self.resize(1100, 750)
         self.setStyleSheet(
             STYLESHEET.replace("__CHECK_PLACEHOLDER__", CHECK_INDICATOR_PATH)
             .replace("__CHEVRON_PLACEHOLDER__", CHEVRON_PATH)
@@ -1111,21 +1111,35 @@ class ReviewPagesDialog(QDialog):
         root.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
         root.setSpacing(SPACE_MD)
 
+        header = QHBoxLayout()
         title = QLabel("Review before saving")
         _set_widget_class(title, "title")
-        root.addWidget(title)
+        header.addWidget(title)
+        header.addStretch()
+        select_all = QPushButton("Select All")
+        _set_widget_class(select_all, "secondary")
+        select_all.clicked.connect(self._select_all)
+        deselect_all = QPushButton("Deselect All")
+        _set_widget_class(deselect_all, "secondary")
+        deselect_all.clicked.connect(self._deselect_all)
+        header.addWidget(select_all)
+        header.addWidget(deselect_all)
+        root.addLayout(header)
 
         hint = QLabel(
             "Uncheck any page to keep it out of the PDF. "
-            "Click a thumbnail to inspect it up close.")
+            "Click a thumbnail to inspect it up close. "
+            "Arrow keys to navigate, Space to toggle.")
         _set_widget_class(hint, "muted")
         root.addWidget(hint)
 
         tiles = QWidget()
         grid = QGridLayout(tiles)
         grid.setSpacing(SPACE_MD)
-        cols = 4
+        cols = 2
         self._checks: list[QCheckBox] = []
+        self._thumbs: list[QLabel] = []
+        thumb_w = 400
         for i in range(self._count):
             tile = QWidget()
             tile.setObjectName("roundedWidget")
@@ -1133,16 +1147,21 @@ class ReviewPagesDialog(QDialog):
             box.setSpacing(SPACE_XS)
 
             thumb = QLabel()
-            thumb.setFixedWidth(200)
-            thumb.setMinimumHeight(120)
+            thumb.setFixedWidth(thumb_w)
+            thumb.setMinimumHeight(260)
             thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
             thumb.setCursor(Qt.CursorShape.PointingHandCursor)
+            thumb.setScaledContents(False)
             png = api.get_page_thumbnail(i)
             pix = QPixmap()
             if png and pix.loadFromData(png):
-                thumb.setPixmap(pix.scaledToWidth(
-                    190, Qt.TransformationMode.SmoothTransformation))
+                scaled = pix.scaledToWidth(
+                    thumb_w - 10, Qt.TransformationMode.SmoothTransformation)
+                if scaled.height() > 300:
+                    scaled = scaled.copy(0, 0, scaled.width(), min(scaled.height(), 300))
+                thumb.setPixmap(scaled)
             thumb.mousePressEvent = (lambda _e, idx=i: self._preview_page(idx))
+            self._thumbs.append(thumb)
 
             check = QCheckBox(f"Page {i + 1}")
             check.setChecked(True)
@@ -1156,6 +1175,7 @@ class ReviewPagesDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(tiles)
+        scroll.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         root.addWidget(scroll, 1)
 
         self._summary = QLabel("")
@@ -1173,6 +1193,25 @@ class ReviewPagesDialog(QDialog):
         root.addLayout(footer)
 
         self._update_summary()
+        scroll.setFocus()
+
+    def _select_all(self):
+        for c in self._checks:
+            c.setChecked(True)
+
+    def _deselect_all(self):
+        for c in self._checks:
+            c.setChecked(False)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.reject()
+        elif event.key() == Qt.Key.Key_Space:
+            focused = self.focusWidget()
+            if isinstance(focused, QCheckBox):
+                focused.toggle()
+        else:
+            super().keyPressEvent(event)
 
     def _update_summary(self):
         kept = sum(self._kept)
