@@ -137,7 +137,7 @@ QPushButton.danger:hover {{
     color: white;
 }}
 QPushButton:focus {{
-    border: 2px solid {INK};
+    border: 2px solid {BRASS};
 }}
 QPushButton.secondary:focus {{
     border: 2px solid {BRASS};
@@ -146,7 +146,7 @@ QPushButton.danger:focus {{
     border: 2px solid {BRASS};
 }}
 QPushButton:focus:disabled {{
-    border: 2px solid transparent;
+    border: 2px solid {BORDER};
 }}
 QLineEdit {{
     background: #0d0d0d;
@@ -440,13 +440,14 @@ def _generate_check_pixmap() -> str:
     from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen
     import tempfile
     path = os.path.join(tempfile.gettempdir(), f"score_extractor_check_{os.getpid()}.png")
-    pm = QPixmap(18, 18)
+    pm = QPixmap(36, 36)
+    pm.setDevicePixelRatio(2)
     pm.fill(QColor(Qt.GlobalColor.transparent))
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setPen(QPen(QColor("white"), 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-    p.drawLine(4, 10, 7, 13)
-    p.drawLine(7, 13, 14, 6)
+    p.setPen(QPen(QColor("white"), 4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    p.drawLine(8, 22, 16, 28)
+    p.drawLine(16, 28, 28, 10)
     p.end()
     pm.save(path)
     return path.replace("\\", "/")
@@ -456,13 +457,14 @@ def _generate_chevron_pixmap() -> str:
     from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen
     import tempfile
     path = os.path.join(tempfile.gettempdir(), f"score_extractor_chevron_{os.getpid()}.png")
-    pm = QPixmap(12, 12)
+    pm = QPixmap(24, 24)
+    pm.setDevicePixelRatio(2)
     pm.fill(QColor(Qt.GlobalColor.transparent))
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setPen(QPen(QColor(BRASS), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-    p.drawLine(2, 4, 6, 8)
-    p.drawLine(6, 8, 10, 4)
+    p.setPen(QPen(QColor(BRASS), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    p.drawLine(4, 8, 12, 16)
+    p.drawLine(12, 16, 20, 8)
     p.end()
     pm.save(path)
     return path.replace("\\", "/")
@@ -473,17 +475,18 @@ def _generate_spin_arrow_pixmap(up: bool) -> str:
     import tempfile
     name = "up" if up else "down"
     path = os.path.join(tempfile.gettempdir(), f"score_extractor_spin_{name}_{os.getpid()}.png")
-    pm = QPixmap(12, 12)
+    pm = QPixmap(24, 24)
+    pm.setDevicePixelRatio(2)
     pm.fill(QColor(Qt.GlobalColor.transparent))
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setPen(QPen(QColor(BRASS), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    p.setPen(QPen(QColor(BRASS), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     if up:
-        p.drawLine(2, 8, 6, 4)
-        p.drawLine(6, 4, 10, 8)
+        p.drawLine(4, 16, 12, 8)
+        p.drawLine(12, 8, 20, 16)
     else:
-        p.drawLine(2, 4, 6, 8)
-        p.drawLine(6, 8, 10, 4)
+        p.drawLine(4, 8, 12, 16)
+        p.drawLine(12, 16, 20, 8)
     p.end()
     pm.save(path)
     return path.replace("\\", "/")
@@ -2131,9 +2134,29 @@ class ExtractTab(QWidget):
         self.page_badge.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         progress_row.addWidget(self.progress_bar, 1)
         progress_row.addWidget(self.page_badge)
+        self._elapsed_label = QLabel("")
+        _set_widget_class(self._elapsed_label, "muted")
+        self._elapsed_label.setFixedWidth(100)
+        self._elapsed_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._elapsed_label.setVisible(False)
+        progress_row.addWidget(self._elapsed_label)
         layout.addLayout(progress_row)
 
+        log_header = QHBoxLayout()
+        log_header.setContentsMargins(0, 0, 0, 0)
+        log_label = QLabel("Log")
+        _set_widget_class(log_label, "muted")
+        log_label.setFixedWidth(40)
+        log_header.addWidget(log_label)
+        log_header.addStretch()
+        clear_log_btn = QPushButton("Clear")
+        _set_widget_class(clear_log_btn, "secondary")
+        clear_log_btn.setFixedWidth(60)
+        log_header.addWidget(clear_log_btn)
+        layout.addLayout(log_header)
+
         self.log_edit = QTextEdit()
+        clear_log_btn.clicked.connect(self.log_edit.clear)
         self.log_edit.setReadOnly(True)
         self.log_edit.setMaximumHeight(140)
         self.log_edit.document().setMaximumBlockCount(2000)
@@ -2976,6 +2999,11 @@ class ExtractTab(QWidget):
         dbg(f"on_progress: phase={phase}, percent={percent:.0f}%, detail={detail}")
         self.progress_bar.setValue(int(percent))
         self._watchdog.start(300000)
+        self._elapsed_label.setVisible(True)
+        elapsed = self._api.get_extraction_state().elapsed_seconds
+        mins = int(elapsed // 60)
+        secs = int(elapsed % 60)
+        self._elapsed_label.setText(f"{mins}:{secs:02d}")
         phase_text = phase.replace("_", " ").title()
         if detail:
             self._set_status(f"{phase_text}: {detail}")
@@ -3255,7 +3283,7 @@ def main():
     SPIN_DOWN_PATH = _generate_spin_arrow_pixmap(up=False)
 
     # Set app-wide font
-    font = QFont("Segoe UI", 10)
+    font = QFont("Segoe UI", 9)
     app.setFont(font)
 
     window = MainWindow()
