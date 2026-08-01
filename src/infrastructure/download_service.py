@@ -76,7 +76,12 @@ class DownloadService:
         if not dl_dir.exists():
             return None
 
-        main_files = sorted(dl_dir.glob(f"{video_id}.*"), key=lambda f: f.stat().st_mtime, reverse=True)
+        title_path = self._title_path(self.base_dir, video_id)
+        main_files = sorted(
+            (f for f in dl_dir.glob(f"{video_id}.*")
+             if f != title_path and f.suffix != ".title"),
+            key=lambda f: f.stat().st_mtime, reverse=True,
+        )
         if not main_files:
             return None
 
@@ -84,11 +89,42 @@ class DownloadService:
         scan_path = main_path
 
         if scan_fmt:
-            scan_files = sorted(dl_dir.glob(f"{video_id}_scan.*"), key=lambda f: f.stat().st_mtime, reverse=True)
+            scan_files = sorted(
+                (f for f in dl_dir.glob(f"{video_id}_scan.*")
+                 if f.suffix != ".title"),
+                key=lambda f: f.stat().st_mtime, reverse=True,
+            )
             if scan_files:
                 scan_path = str(scan_files[0])
 
-        return DownloadResult(video_path=main_path, video_title=video_id, scan_path=scan_path)
+        return DownloadResult(video_path=main_path, video_title=self._read_title(video_id), scan_path=scan_path)
+
+    @staticmethod
+    def _title_path(base_dir: Path, video_id: str) -> Path:
+        return base_dir / "yt_dl" / f"{video_id}.title"
+
+    def _save_title(self, video_id: str, title: str) -> None:
+        """Persist the video title to a UTF-8 sidecar file for cache retrieval."""
+        if not video_id or not title:
+            return
+        path = self._title_path(self.base_dir, video_id)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(title, encoding="utf-8")
+        except OSError:
+            pass
+
+    def _read_title(self, video_id: str) -> str:
+        """Read the cached video title. Falls back to video_id if missing or unreadable."""
+        path = self._title_path(self.base_dir, video_id)
+        try:
+            if path.exists():
+                title = path.read_text(encoding="utf-8").lstrip("\ufeff").strip()
+                if title:
+                    return title
+        except (OSError, UnicodeDecodeError):
+            pass
+        return video_id
 
     def download(
         self,
@@ -156,6 +192,15 @@ class DownloadService:
             'no_warnings': True,
             'noplaylist': True,
             'playlistend': 1,
+            'http_headers': {
+                'User-Agent': (
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                    'AppleWebKit/537.36 (KHTML, like Gecko) '
+                    'Chrome/131.0.0.0 Safari/537.36'
+                ),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+            },
         }
         if has_ffmpeg:
             ydl_opts['ffmpeg_location'] = ffmpeg_path
@@ -223,6 +268,9 @@ class DownloadService:
         if on_log:
             on_log(f"  Title: {video_title}")
             on_log(f"  Saved to: {video_path}")
+
+        # Persist the title so a future cache hit can recover it
+        self._save_title(video_id, video_title)
 
         if is_cancelled and is_cancelled():
             raise Exception("Download cancelled by user")
