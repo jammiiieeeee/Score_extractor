@@ -1256,21 +1256,21 @@ class ConfigTab(QWidget):
         self.top_ratio.setToolTip(
             "How much of the frame's top portion is compared between frames.\n"
             "Only this region is checked for page changes, ignoring the bottom\n"
-            "(typically a static piano keyboard or player UI).\n"
-            "Safe range: 0.20–0.50."
+            "(typically the piano keyboard or a player UI).\n"
+            "Safe range: 0.20\u20130.50."
         )
         self.blank_std = self._spin_float(0.0, 50.0, 0.5, 3.0)
         self.blank_std.setToolTip(
-            "Pixel standard deviation below which a frame is considered blank\n"
-            "(white/black screen, no content). Blank frames are skipped.\n"
-            "Safe range: 1.0–8.0. Raise to 10+ if real content is being rejected."
+            "Pixel variation below which a frame is considered blank\n"
+            "(white/black screen, no sheet music visible). Blank pages are skipped.\n"
+            "Safe range: 1.0\u20138.0. Raise above 10 if real pages are being rejected."
         )
 
         det_form.addRow(self._form_label("Page change sensitivity:"), self.sensitivity)
-        det_form.addRow(self._form_label("Min seconds between captures:"), self.min_interval)
+        det_form.addRow(self._form_label("Pause after page turn (s):"), self.min_interval)
         det_form.addRow(self._form_label("Frame check interval (s):"), self.frame_check)
-        det_form.addRow(self._form_label("Top analysis ratio:"), self.top_ratio)
-        det_form.addRow(self._form_label("Blank content std threshold:"), self.blank_std)
+        det_form.addRow(self._form_label("Content detection region:"), self.top_ratio)
+        det_form.addRow(self._form_label("Blank page threshold:"), self.blank_std)
         layout.addWidget(det_group)
 
         # ── Capture group ──
@@ -1281,26 +1281,28 @@ class ConfigTab(QWidget):
 
         self.a_delay = self._spin_float(0.0, 5.0, 0.1, 0.3)
         self.a_delay.setToolTip(
-            "Seconds to wait after detecting a change before capturing the\n"
-            "'before' frame (clean page). Gives the page time to settle.\n"
-            "Safe range: 0.0–1.0. Increase if captures show a partial page turn."
+            "Seconds to wait after detecting a page turn before capturing\n"
+            "the clean page image. Gives the page time to settle flat.\n"
+            "Safe range: 0.0\u20131.0. Increase if captures show a partial turn."
         )
         self.b_delay = self._spin_float(0.0, 10.0, 0.1, 3.0)
         self.b_delay.setToolTip(
-            "Seconds to wait after A-capture before capturing the 'after' frame\n"
-            "(page with overlay bar). Controls how much of the new page is visible.\n"
-            "Safe range: 1.0–6.0. Increase if the bar overlaps content."
+            "Seconds to wait after the clean capture before capturing the\n"
+            "new page with its turn-line still visible. Longer reveals more\n"
+            "of the incoming page for better merge results.\n"
+            "Safe range: 1.0\u20136.0. Increase if the turn-line overlaps content."
         )
         self.overlay_width = self._spin_float(0.0, 1.0, 0.01, 0.5)
         self.overlay_width.setToolTip(
-            "Width of the vertical overlay bar on the B-frame, as a fraction\n"
-            "of the image width. The bar marks where the page transition occurred.\n"
-            "Safe range: 0.3–0.7."
+            "Width of the vertical turn-line on the second capture,\n"
+            "as a fraction of the image width. Marks where the page\n"
+            "transition occurred during the turn.\n"
+            "Safe range: 0.3\u20130.7."
         )
 
-        cap_form.addRow(self._form_label("A-capture delay (s):"), self.a_delay)
-        cap_form.addRow(self._form_label("B-capture delay (s):"), self.b_delay)
-        cap_form.addRow(self._form_label("B overlay width ratio:"), self.overlay_width)
+        cap_form.addRow(self._form_label("Page settle time (s):"), self.a_delay)
+        cap_form.addRow(self._form_label("New page reveal (s):"), self.b_delay)
+        cap_form.addRow(self._form_label("Turn-line width:"), self.overlay_width)
         layout.addWidget(cap_group)
 
         # ── Deduplication group ──
@@ -1311,34 +1313,35 @@ class ConfigTab(QWidget):
 
         self.dup_top = self._spin_float(0.0, 1.0, 0.01, 0.27)
         self.dup_top.setToolTip(
-            "How much of the top area is compared when deduplicating pages.\n"
-            "Only this portion is checked for visual similarity between captures.\n"
-            "Safe range: 0.15–0.40."
+            "How much of the top area is compared when checking\n"
+            "for duplicate pages. Only this portion is examined\n"
+            "for visual similarity between captures.\n"
+            "Safe range: 0.15\u20130.40."
         )
         self.pixel_sim = self._spin_float(0.0, 1.0, 0.01, 0.95)
         self.pixel_sim.setToolTip(
-            "Minimum pixel-level similarity (0–1) for two pages to be\n"
-            "considered duplicates. Higher = stricter matching.\n"
-            "Safe range: 0.90–0.99. Lower to 0.90 if near-duplicates slip through."
+            "Minimum visual similarity (0\u20131) for two pages to\n"
+            "be considered the same. Higher values mean stricter matching.\n"
+            "Safe range: 0.90\u20130.99. Lower toward 0.90 if duplicate pages slip through."
         )
         self.row_sim = self._spin_float(0.0, 1.0, 0.01, 0.98)
         self.row_sim.setToolTip(
-            "Minimum row-by-row similarity for deduplication. Checks each\n"
-            "horizontal strip independently. Higher = stricter.\n"
-            "Safe range: 0.95–0.99."
+            "Minimum row-by-row similarity to treat two pages as\n"
+            "duplicates. Checks each horizontal strip independently.\n"
+            "Safe range: 0.95\u20130.99."
         )
         self.row_cov = self._spin_float(0.0, 1.0, 0.01, 0.94)
         self.row_cov.setToolTip(
-            "Fraction of rows that must be similar for pages to be considered\n"
-            "duplicates. Allows minor differences (e.g., page numbers) while\n"
-            "catching truly identical content.\n"
-            "Safe range: 0.85–0.98."
+            "Fraction of rows that must match for two pages to be\n"
+            "counted as duplicates. Allows minor differences like\n"
+            "page numbers while catching identical content.\n"
+            "Safe range: 0.85\u20130.98."
         )
 
-        dedup_form.addRow(self._form_label("Duplicate top ratio:"), self.dup_top)
-        dedup_form.addRow(self._form_label("Pixel similarity threshold:"), self.pixel_sim)
-        dedup_form.addRow(self._form_label("Row similarity threshold:"), self.row_sim)
-        dedup_form.addRow(self._form_label("Row coverage threshold:"), self.row_cov)
+        dedup_form.addRow(self._form_label("Similarity check region:"), self.dup_top)
+        dedup_form.addRow(self._form_label("Visual match threshold:"), self.pixel_sim)
+        dedup_form.addRow(self._form_label("Row match threshold:"), self.row_sim)
+        dedup_form.addRow(self._form_label("Row coverage required:"), self.row_cov)
         layout.addWidget(dedup_group)
 
         # ── OCR group ──
@@ -1350,26 +1353,27 @@ class ConfigTab(QWidget):
         self.ocr_enabled = QCheckBox("Enable OCR")
         self.ocr_enabled.setChecked(False)
         self.ocr_enabled.setToolTip(
-            "Use OCR to compare page text for deduplication.\n"
-            "Requires PaddleOCR (adds startup time). Recommended for scores\n"
-            "where visual similarity alone may confuse similar-looking pages."
+            "Compare page text to help catch duplicate pages that\n"
+            "look visually similar but have different content.\n"
+            "Requires PaddleOCR (slightly slower startup).\n"
+            "Recommended when visual-only matching misses duplicates."
         )
         self.ocr_conf = self._spin_int(0, 100, 40)
         self.ocr_conf.setToolTip(
-            "Minimum OCR confidence score (0–100) to accept recognized text.\n"
-            "Used to deduplicate pages by comparing text content.\n"
-            "Safe range: 30–70. Set to 0 to disable OCR entirely."
+            "Minimum confidence (0\u2013100) a recognized word must have\n"
+            "to be used for page comparison.\n"
+            "Safe range: 30\u201370. Set to 0 to skip OCR entirely."
         )
         self.ocr_horiz = self._spin_float(0.0, 1.0, 0.01, 0.30)
         self.ocr_horiz.setToolTip(
-            "How far across the page (from the left) OCR text is extracted.\n"
-            "Useful for scores where the title/header sits on the left side.\n"
-            "Safe range: 0.20–0.50. Set to 1.0 for full-width OCR."
+            "How far across the page (from the left) text is read.\n"
+            "Useful for scores where the title sits on the left.\n"
+            "Safe range: 0.20\u20130.50. Set to 1.0 for full-width."
         )
 
         ocr_form.addRow("", self.ocr_enabled)
         ocr_form.addRow(self._form_label("OCR confidence:"), self.ocr_conf)
-        ocr_form.addRow(self._form_label("OCR horizontal ratio:"), self.ocr_horiz)
+        ocr_form.addRow(self._form_label("OCR scan width:"), self.ocr_horiz)
         layout.addWidget(ocr_group)
 
         # ── Advanced group ──
@@ -1380,19 +1384,20 @@ class ConfigTab(QWidget):
 
         self.bar_diff = self._spin_float(0.0, 50000.0, 100.0, 500.0)
         self.bar_diff.setToolTip(
-            "Minimum pixel intensity difference required to detect the black\n"
-            "bar overlay on the B-frame. Higher = less sensitive to the bar.\n"
-            "Safe range: 200–2000. Raise if the bar isn't being detected."
+            "Minimum intensity difference needed to detect the turn-line\n"
+            "on the captured frame. Higher = less sensitive.\n"
+            "Safe range: 200\u20132000. Raise if the turn-line is not being found."
         )
         self.bar_pad = self._spin_int(-200, 200, -15)
         self.bar_pad.setToolTip(
-            "Pixel offset applied to the bar detection position.\n"
-            "Negative = shift left, positive = shift right.\n"
-            "Safe range: -50 to +50. Fine-tune when the bar position is slightly off."
+            "Pixel offset for the turn-line detection position.\n"
+            "Negative shifts left, positive shifts right.\n"
+            "Safe range: -50 to +50. Fine-tune when the turn-line\n"
+            "appears slightly off from the actual page boundary."
         )
 
-        adv_form.addRow(self._form_label("Bar min diff threshold:"), self.bar_diff)
-        adv_form.addRow(self._form_label("Bar overlay offset (px):"), self.bar_pad)
+        adv_form.addRow(self._form_label("Turn-line sensitivity:"), self.bar_diff)
+        adv_form.addRow(self._form_label("Turn-line position (px):"), self.bar_pad)
 
         self.debug_cb = QCheckBox("Debug mode (open temp folder on completion)")
         self.debug_cb.setToolTip(
@@ -2076,7 +2081,7 @@ class ExtractTab(QWidget):
             self._refresh_completer()
             self._update_state()
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Could not load score:\n{e}")
+            QMessageBox.warning(self, "Error", "Could not load score:\n{e}")
 
     def _switch_to_new_project(self):
         dbg("_switch_to_new_project")
@@ -2247,7 +2252,7 @@ class ExtractTab(QWidget):
             self._preview_seeker.open_requested.emit(path)
             self._log(f"Video loaded: {info.duration:.1f}s  {info.width}x{info.height}  {info.fps:.2f}fps")
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Could not open video:\n{e}")
+            QMessageBox.warning(self, "Error", f"Could not open video:\n{e}\n\nMake sure the file is a supported video format and is not corrupted.")
 
     @staticmethod
     def _img_to_pixmap(img: np.ndarray) -> QPixmap:
@@ -2382,17 +2387,17 @@ class ExtractTab(QWidget):
 
         project = self.project_edit.text().strip()
         if not project:
-            QMessageBox.warning(self, "Error", "Please enter a project name.")
+            QMessageBox.warning(self, "Error", "Please enter a score name.")
             return
 
         project_dir = self.get_project_dir()
         if project_dir and len(project_dir) > 220:
             QMessageBox.warning(
                 self, "Path Too Long",
-                "The project path is too long for Windows (near the 260-character "
+                "The score path is too long for Windows (near the 260-character "
                 "limit).\n\nUse a shorter score name or move the output folder to a "
                 "shorter location.\n\n"
-                f"Project path:\n{project_dir}",
+                f"Score path:\n{project_dir}",
             )
             return
 
@@ -2403,9 +2408,9 @@ class ExtractTab(QWidget):
             if existing:
                 reply = QMessageBox.question(
                     self,
-                    "Overwrite Existing Project",
-                    f"Project \"{project}\" already exists with {len(existing)} pages.\n\n"
-                    f"Extraction will overwrite the existing pages. Continue?",
+                    "Score Already Exists",
+                    f"\"{project}\" already has {len(existing)} pages saved.\n\n"
+                    f"Extracting again will overwrite them. Continue?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No,
                 )
@@ -2457,7 +2462,7 @@ class ExtractTab(QWidget):
             return
         output_path = self.get_output_path()
         if not output_path:
-            QMessageBox.warning(self, "Error", "Please set a project name.")
+            QMessageBox.warning(self, "Error", "Please enter a score name.")
             return
 
         main_win = self.window()
@@ -2554,7 +2559,7 @@ class ExtractTab(QWidget):
         """Finish extraction. Returns True if PDF generation was started."""
         dbg(f"on_completed: page_count={page_count}")
         if page_count == 0:
-            self._log("No pages — skipping PDF")
+            self._log("No pages captured \u2014 check that the video contains visible sheet music and the crop region covers the score. Try lowering sensitivity in Settings.")
             self._reset_ui()
             return False
 

@@ -434,7 +434,15 @@ class GuiApi:
 
         except Exception as e:
             self._state.phase = "error"
-            self._emit_error(f"Extraction failed: {e}")
+            msg = str(e)
+            hint = ""
+            if "NoneType" in msg and "shape" in msg:
+                hint = "\nThe video may be corrupted or in an unsupported format. Try converting it with HandBrake or re-downloading."
+            elif "Permission" in msg:
+                hint = "\nThe output folder may be read-only or in use by another program. Close other applications and try again."
+            elif "ffmpeg" in msg.lower():
+                hint = "\nffmpeg is required for video reading. Install it from ffmpeg.org or via WinGet: winget install ffmpeg"
+            self._emit_error(f"Extraction failed: {msg}{hint}")
             self._emit_log(f"  [Error] {e}")
 
         finally:
@@ -494,7 +502,13 @@ class GuiApi:
 
         except Exception as e:
             self._state.phase = "error"
-            self._emit_error(f"YouTube download failed: {e}")
+            msg = str(e)
+            hint = ""
+            if "cancelled" in msg.lower():
+                hint = ""
+            elif "yt-dlp" in msg.lower() or "youtube" in msg.lower():
+                hint = "\nCheck that the video is still available and not region-restricted. Ensure yt-dlp is up to date: pip install -U yt-dlp"
+            self._emit_error(f"YouTube download failed: {msg}{hint}")
             self._emit_log(f"  [Error] {e}")
 
         finally:
@@ -602,7 +616,13 @@ class GuiApi:
                     self._emit_log(f"  [Warn] Diagnostics HTML failed: {e}")
 
         except Exception as e:
-            self._emit_error(f"PDF generation failed: {e}")
+            msg = str(e)
+            hint = ""
+            if "Permission" in msg:
+                hint = "\nThe output file may be open in another program (e.g. a PDF viewer). Close it and try Regenerate PDF."
+            elif "No pages" in msg:
+                hint = "\nExtract pages first before generating a PDF."
+            self._emit_error(f"PDF generation failed: {msg}{hint}")
             self._emit_log(f"  [Error] {e}")
 
         finally:
