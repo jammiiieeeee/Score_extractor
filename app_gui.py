@@ -1228,6 +1228,91 @@ class ConfigTab(QWidget):
         _set_widget_class(desc, "muted")
         layout.addWidget(desc)
 
+        layout.addSpacing(SPACE_SM)
+
+        # ── Basic / Advanced toggle ──
+        self._settings = QSettings("ScoreExtractor", "App")
+        self._config_mode = self._settings.value("config_mode", "basic")
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(0)
+        self._basic_toggle = QPushButton("Basic")
+        self._basic_toggle.setCheckable(True)
+        self._basic_toggle.setFlat(True)
+        self._basic_toggle.setStyleSheet(self._toggle_style(True, True))
+        self._advanced_toggle = QPushButton("Advanced")
+        self._advanced_toggle.setCheckable(True)
+        self._advanced_toggle.setFlat(True)
+        self._advanced_toggle.setStyleSheet(self._toggle_style(False, True))
+        self._basic_toggle.clicked.connect(lambda: self._set_mode("basic"))
+        self._advanced_toggle.clicked.connect(lambda: self._set_mode("advanced"))
+        mode_row.addWidget(self._basic_toggle)
+        mode_row.addWidget(self._advanced_toggle)
+        mode_row.addStretch()
+        if self._config_mode == "advanced":
+            self._advanced_toggle.setChecked(True)
+            self._advanced_toggle.setStyleSheet(self._toggle_style(False, True))
+            self._basic_toggle.setStyleSheet(self._toggle_style(True, False))
+        layout.addLayout(mode_row)
+
+        # ── Basic settings widget ──
+        self.basic_widget = QWidget()
+        basic_layout = QVBoxLayout(self.basic_widget)
+        basic_layout.setSpacing(SPACE_MD)
+        basic_layout.setContentsMargins(0, SPACE_SM, 0, 0)
+
+        basic_group = QGroupBox("Quick Tuning")
+        basic_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        basic_form = QFormLayout(basic_group)
+        basic_form.setSpacing(SPACE_MD)
+
+        self.basic_sensitivity = self._spin_float(0.0, 1.0, 0.01, 0.96)
+        self.basic_sensitivity.setToolTip("Higher values detect only clearer page turns.\nLower to 0.90 if pages are missed.")
+        basic_form.addRow(self._form_label("Detection sensitivity:"), self.basic_sensitivity)
+
+        self.basic_speed = QComboBox()
+        self.basic_speed.addItem("Slow turner (~5 s pause)", 5.0)
+        self.basic_speed.addItem("Medium (~3 s pause)", 3.0)
+        self.basic_speed.addItem("Fast turner (~1 s pause)", 1.0)
+        self.basic_speed.setToolTip("How quickly pages are turned in your video.\nChoose Slow for deliberate page-turns; Fast for quick flips.")
+        basic_form.addRow(self._form_label("Page-turn speed:"), self.basic_speed)
+
+        self.basic_ocr = QCheckBox("Enable text recognition for better dedup")
+        self.basic_ocr.setToolTip("Compares the text on each page to catch duplicates.\nRequires PaddleOCR (slightly longer startup).")
+        basic_form.addRow("", self.basic_ocr)
+
+        basic_layout.addWidget(basic_group)
+
+        basic_layout.addStretch()
+        self.basic_widget.setVisible(self._config_mode == "basic")
+        layout.addWidget(self.basic_widget)
+
+        # ── Advanced groups wrapper ──
+        self.advanced_widget = QWidget()
+        adv_outer = QVBoxLayout(self.advanced_widget)
+        adv_outer.setSpacing(SPACE_MD)
+        adv_outer.setContentsMargins(0, SPACE_SM, 0, 0)
+
+        # Presets row
+        preset_row = QHBoxLayout()
+        preset_label = QLabel("Preset:")
+        _set_widget_class(preset_label, "param")
+        self._preset_combo = QComboBox()
+        self._preset_combo.addItem("Custom", None)
+        self._preset_combo.addItem("Standard", "standard")
+        self._preset_combo.addItem("Concert recording", "concert")
+        self._preset_combo.addItem("Phone video", "phone")
+        self._preset_combo.setToolTip(
+            "Standard: balanced defaults for well-lit tripod recordings.\n"
+            "Concert recording: higher sensitivity for dim lighting and slower turns.\n"
+            "Phone video: faster detection for hand-held phone footage."
+        )
+        self._preset_combo.currentIndexChanged.connect(self._on_preset_changed)
+        preset_row.addWidget(preset_label)
+        preset_row.addWidget(self._preset_combo, 1)
+        adv_outer.addLayout(preset_row)
+
+        adv_outer.addSpacing(SPACE_SM)
+
         # ── Detection group ──
         det_group = QGroupBox("Detection")
         det_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -1407,16 +1492,25 @@ class ConfigTab(QWidget):
         )
         adv_form.addRow(self.debug_cb)
 
-        layout.addWidget(self.advanced)
+        adv_outer.addWidget(self.advanced)
 
         if self._param_labels:
             label_w = max(lbl.sizeHint().width() for lbl in self._param_labels) + 12
             for lbl in self._param_labels:
                 lbl.setFixedWidth(label_w)
 
+        self.reset_btn = QPushButton("Reset to Defaults")
+        _set_widget_class(self.reset_btn, "secondary")
+        self.reset_btn.setToolTip("Restore all parameters to their factory defaults")
+        self.reset_btn.clicked.connect(self._reset_defaults)
+        adv_outer.addWidget(self.reset_btn)
+
+        self.advanced_widget.setVisible(self._config_mode == "advanced")
+        layout.addWidget(self.advanced_widget)
+
         layout.addStretch()
 
-        # Connect all signals
+        # Connect signals
         for widget in self._all_spins():
             if isinstance(widget, QDoubleSpinBox):
                 widget.valueChanged.connect(self._on_change)
@@ -1424,11 +1518,9 @@ class ConfigTab(QWidget):
                 widget.valueChanged.connect(self._on_change)
         self.ocr_enabled.toggled.connect(self._on_change)
         self.debug_cb.toggled.connect(self._on_debug_toggled)
-        self.reset_btn = QPushButton("Reset to Defaults")
-        _set_widget_class(self.reset_btn, "secondary")
-        self.reset_btn.setToolTip("Restore all parameters to their factory defaults")
-        self.reset_btn.clicked.connect(self._reset_defaults)
-        layout.addWidget(self.reset_btn)
+        self.basic_sensitivity.valueChanged.connect(self._on_basic_sensitivity_changed)
+        self.basic_speed.currentIndexChanged.connect(self._on_basic_speed_changed)
+        self.basic_ocr.toggled.connect(self._on_basic_ocr_toggled)
 
         scroll.setWidget(inner)
         outer = QVBoxLayout(self)
@@ -1441,6 +1533,116 @@ class ConfigTab(QWidget):
         lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self._param_labels.append(lbl)
         return lbl
+
+    @staticmethod
+    def _toggle_style(left: bool, selected: bool) -> str:
+        if not selected:
+            return (f"background: transparent; color: {MUTED}; border: 1px solid {BORDER}; "
+                    f"border-radius: {6 if left else 6}px {0 if left else 6}px {0 if left else 6}px {6 if left else 6}px; "
+                    "padding: 4px 14px; font-weight: 600; font-size: 13px;")
+        return (f"background: {SURFACE2}; color: {BRASS}; border: 1px solid {BRASS}; "
+                f"border-radius: {6 if left else 6}px {0 if left else 6}px {0 if left else 6}px {6 if left else 6}px; "
+                "padding: 4px 14px; font-weight: 600; font-size: 13px;")
+
+    def _set_mode(self, mode: str):
+        self._config_mode = mode
+        self._settings.setValue("config_mode", mode)
+        self._basic_toggle.setChecked(mode == "basic")
+        self._advanced_toggle.setChecked(mode == "advanced")
+        self._basic_toggle.setStyleSheet(self._toggle_style(True, mode == "basic"))
+        self._advanced_toggle.setStyleSheet(self._toggle_style(False, mode == "advanced"))
+        self.basic_widget.setVisible(mode == "basic")
+        self.advanced_widget.setVisible(mode == "advanced")
+        if mode == "basic":
+            self._sync_basic_from_advanced()
+
+    def _sync_basic_from_advanced(self):
+        self._updating = True
+        try:
+            self.basic_sensitivity.setValue(self.sensitivity.value())
+            v = self.min_interval.value()
+            idx = 0
+            if v <= 2.0:
+                idx = 2
+            elif v <= 4.0:
+                idx = 1
+            self.basic_speed.setCurrentIndex(idx)
+            self.basic_ocr.setChecked(self.ocr_enabled.isChecked())
+        finally:
+            self._updating = False
+
+    def _on_basic_sensitivity_changed(self, val: float):
+        if not self._updating:
+            self.sensitivity.setValue(val)
+            self.apply_to_api()
+
+    def _on_basic_speed_changed(self, _idx: int):
+        if not self._updating:
+            self.min_interval.setValue(self.basic_speed.currentData())
+            self.apply_to_api()
+
+    def _on_basic_ocr_toggled(self, checked: bool):
+        if not self._updating:
+            self.ocr_enabled.setChecked(checked)
+            self.apply_to_api()
+
+    def _on_preset_changed(self, idx: int):
+        data = self._preset_combo.itemData(idx)
+        if data is None:
+            return
+        self._updating = True
+        try:
+            if data == "standard":
+                self.sensitivity.setValue(0.96)
+                self.min_interval.setValue(3.0)
+                self.frame_check.setValue(0.8)
+                self.top_ratio.setValue(0.34)
+                self.blank_std.setValue(3.0)
+                self.a_delay.setValue(0.3)
+                self.b_delay.setValue(3.0)
+                self.overlay_width.setValue(0.5)
+                self.dup_top.setValue(0.27)
+                self.pixel_sim.setValue(0.95)
+                self.row_sim.setValue(0.98)
+                self.row_cov.setValue(0.94)
+                self.bar_diff.setValue(500.0)
+                self.bar_pad.setValue(-15)
+            elif data == "concert":
+                self.sensitivity.setValue(0.94)
+                self.min_interval.setValue(5.0)
+                self.frame_check.setValue(1.0)
+                self.top_ratio.setValue(0.40)
+                self.blank_std.setValue(5.0)
+                self.a_delay.setValue(0.5)
+                self.b_delay.setValue(4.0)
+                self.overlay_width.setValue(0.55)
+                self.dup_top.setValue(0.30)
+                self.pixel_sim.setValue(0.93)
+                self.row_sim.setValue(0.97)
+                self.row_cov.setValue(0.92)
+                self.bar_diff.setValue(800.0)
+                self.bar_pad.setValue(-10)
+            elif data == "phone":
+                self.sensitivity.setValue(0.90)
+                self.min_interval.setValue(2.0)
+                self.frame_check.setValue(0.5)
+                self.top_ratio.setValue(0.30)
+                self.blank_std.setValue(2.0)
+                self.a_delay.setValue(0.2)
+                self.b_delay.setValue(2.5)
+                self.overlay_width.setValue(0.45)
+                self.dup_top.setValue(0.25)
+                self.pixel_sim.setValue(0.92)
+                self.row_sim.setValue(0.96)
+                self.row_cov.setValue(0.90)
+                self.bar_diff.setValue(400.0)
+                self.bar_pad.setValue(-20)
+            self.apply_to_api()
+            self._preset_combo.blockSignals(True)
+            self._preset_combo.setCurrentIndex(0)
+            self._preset_combo.blockSignals(False)
+        finally:
+            self._updating = False
 
     def _spin_float(self, min_v: float, max_v: float, step: float, default: float) -> QDoubleSpinBox:
         s = QDoubleSpinBox()
