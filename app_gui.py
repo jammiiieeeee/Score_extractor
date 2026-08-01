@@ -1282,7 +1282,7 @@ class ConfigTab(QWidget):
         self._settings = QSettings("ScoreExtractor", "App")
         self._config_mode = self._settings.value("config_mode", "basic")
         mode_row = QHBoxLayout()
-        mode_row.setSpacing(0)
+        mode_row.setSpacing(SPACE_SM)
         self._basic_toggle = QPushButton("Basic")
         self._basic_toggle.setCheckable(True)
         self._basic_toggle.setFlat(True)
@@ -1585,11 +1585,11 @@ class ConfigTab(QWidget):
     @staticmethod
     def _toggle_style(left: bool, selected: bool) -> str:
         if not selected:
-            return (f"background: transparent; color: {MUTED}; border: 1px solid {BORDER}; "
-                    f"border-radius: {6 if left else 6}px {0 if left else 6}px {0 if left else 6}px {6 if left else 6}px; "
+            return (f"background: transparent; color: {MUTED}; "
+                    f"border: 1px solid {BORDER}; border-radius: 6px; "
                     "padding: 4px 14px; font-weight: 600; font-size: 13px;")
-        return (f"background: {SURFACE2}; color: {BRASS}; border: 1px solid {BRASS}; "
-                f"border-radius: {6 if left else 6}px {0 if left else 6}px {0 if left else 6}px {6 if left else 6}px; "
+        return (f"background: {SURFACE2}; color: {BRASS}; "
+                f"border: 1px solid {BRASS}; border-radius: 6px; "
                 "padding: 4px 14px; font-weight: 600; font-size: 13px;")
 
     def _set_mode(self, mode: str):
@@ -2543,7 +2543,10 @@ class ExtractTab(QWidget):
 
             ratio = self.crop_spin.value()
             self.crop_widget.set_ratio(ratio)
-            img = self._api.read_frame_at(0.0)
+            start_ts = self.seek_bar.get_start()
+            if start_ts < 0:
+                start_ts = 0.0
+            img = self._api.read_frame_at(start_ts)
             if img is not None:
                 self.crop_widget.set_frame(self._img_to_pixmap(img))
 
