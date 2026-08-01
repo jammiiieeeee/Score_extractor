@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox, QSpinBox, QCheckBox, QSlider, QScrollArea,
     QListWidget, QListWidgetItem, QDialog, QComboBox,
     QRadioButton, QButtonGroup,
-    QFrame, QSizePolicy, QSplitter, QGridLayout,
+    QFrame, QSizePolicy, QSplitter, QGridLayout, QMenu,
 )
 
 from gui_bridge import ExtractionSignals
@@ -577,7 +577,7 @@ class CropPreviewWidget(QWidget):
             font.setWeight(QFont.Weight.Normal)
             painter.setFont(font)
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
-                             "Open a video to preview crop")
+                             "Open a video to preview the crop overlay")
 
     def mousePressEvent(self, event):
         if self._image_rect and self._pixmap:
@@ -841,6 +841,223 @@ class DualHandleSeekBar(QWidget):
     def _groove_release(self, event):
         self._dragging = None
         self.groove.setCursor(Qt.CursorShape.ArrowCursor)
+
+
+# ── Welcome / Onboarding Widget ─────────────────────────────────────
+
+class WelcomeWidget(QWidget):
+    dismissed = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("roundedWidget")
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet(f"QScrollArea {{ background: {SURFACE}; border-radius: 8px; }}")
+
+        inner = QWidget()
+        inner.setStyleSheet(f"background: {SURFACE};")
+        layout = QVBoxLayout(inner)
+        layout.setSpacing(SPACE_LG)
+        layout.setContentsMargins(SPACE_XL, SPACE_XL, SPACE_XL, SPACE_XL)
+
+        title = QLabel("Welcome to Score Extractor")
+        _set_widget_class(title, "title")
+        layout.addWidget(title)
+
+        accent = QFrame()
+        accent.setFrameShape(QFrame.Shape.HLine)
+        accent.setFixedHeight(1)
+        accent.setFixedWidth(60)
+        accent.setStyleSheet(f"background: {BRASS}; border: none;")
+        layout.addWidget(accent)
+
+        subtitle = QLabel(
+            "Turn your sheet music videos into a clean, printable PDF "
+            "\u2014 no screenshots, no manual cropping."
+        )
+        _set_widget_class(subtitle, "muted")
+        subtitle.setWordWrap(True)
+        layout.addWidget(subtitle)
+
+        steps = QVBoxLayout()
+        steps.setSpacing(SPACE_MD)
+        steps.setContentsMargins(0, 0, 0, 0)
+        steps.addWidget(self._step_card(
+            "1", "Choose your video",
+            "Load a local file or paste a YouTube URL. "
+            "Film from directly above the music stand with the score filling the frame."
+        ))
+        steps.addWidget(self._step_card(
+            "2", "Name your score",
+            "The name appears in the PDF title and helps you find it later. "
+            "Start typing to pick up an existing score."
+        ))
+        steps.addWidget(self._step_card(
+            "3", "Extract and review",
+            "The tool finds every page turn automatically. "
+            "Review the captured pages and your PDF is ready."
+        ))
+        layout.addLayout(steps)
+
+        layout.addSpacing(SPACE_SM)
+
+        footer = QHBoxLayout()
+        self._dont_show = QCheckBox("Do not show on next launch")
+        self._dont_show.setStyleSheet("background: transparent;")
+        footer.addWidget(self._dont_show)
+        footer.addStretch()
+        dismiss_btn = QPushButton("Start using Score Extractor")
+        dismiss_btn.clicked.connect(self._on_dismiss)
+        footer.addWidget(dismiss_btn)
+        layout.addLayout(footer)
+
+        scroll.setWidget(inner)
+        outer.addWidget(scroll)
+
+    def _step_card(self, number: str, heading: str, description: str) -> QWidget:
+        card = QWidget()
+        card.setStyleSheet(f"""
+            background: {SURFACE2};
+            border-radius: 8px;
+            border: 1px solid {BORDER};
+        """)
+        hbox = QHBoxLayout(card)
+        hbox.setContentsMargins(SPACE_MD, SPACE_MD, SPACE_MD, SPACE_MD)
+        hbox.setSpacing(SPACE_MD)
+
+        badge = QLabel(number)
+        badge.setFixedSize(32, 32)
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setStyleSheet(f"""
+            background: {BRASS};
+            color: {BG};
+            border-radius: 16px;
+            font-size: 16px;
+            font-weight: 700;
+            border: none;
+        """)
+        hbox.addWidget(badge, 0, Qt.AlignmentFlag.AlignTop)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(SPACE_XXS)
+        head = QLabel(heading)
+        head.setStyleSheet(
+            f"font-weight: 600; font-size: 14px; color: {INK}; "
+            "border: none; background: transparent;"
+        )
+        text_col.addWidget(head)
+        desc = QLabel(description)
+        desc.setWordWrap(True)
+        desc.setStyleSheet(
+            f"color: {MUTED}; font-size: 12px; "
+            "font-weight: 400; border: none; background: transparent;"
+        )
+        text_col.addWidget(desc)
+        hbox.addLayout(text_col, 1)
+
+        return card
+
+    def _on_dismiss(self):
+        settings = QSettings("ScoreExtractor", "App")
+        if self._dont_show.isChecked():
+            settings.setValue("onboarding_welcome_seen", True)
+        self.dismissed.emit()
+
+
+class GettingStartedDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Getting Started \u2014 Score Extractor")
+        self.resize(580, 520)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(SPACE_MD)
+        layout.setContentsMargins(SPACE_XL, SPACE_XL, SPACE_XL, SPACE_LG)
+
+        title = QLabel("Getting Started")
+        _set_widget_class(title, "title")
+        layout.addWidget(title)
+
+        accent = QFrame()
+        accent.setFrameShape(QFrame.Shape.HLine)
+        accent.setFixedHeight(1)
+        accent.setFixedWidth(60)
+        accent.setStyleSheet(f"background: {BRASS}; border: none;")
+        layout.addWidget(accent)
+
+        sections = [
+            ("1. Choose your video",
+             "Score Extractor works with local video files (.mp4, .avi, .mkv, "
+             ".mov) and YouTube URLs. The video should show a piano score with "
+             "pages being turned \u2014 ideally filmed from directly above the "
+             "music stand in steady lighting."),
+            ("2. Adjust the crop",
+             "Drag the brass overlay line on the video preview to select which "
+             "portion of the frame contains sheet music. Everything above the "
+             "line is considered content; below is ignored."),
+            ("3. Set trim points",
+             "Drag the brass handles on the seek bar to skip unwanted sections "
+             "at the start or end of your video. The first 2\u00a0seconds are "
+             "skipped by default so camera-settling frames are not captured."),
+            ("4. Extract pages",
+             "Click Start Extraction. The tool automatically finds page turns "
+             "and captures each page. You will see pages appear in real time "
+             "in the log area."),
+            ("5. Review and export",
+             "After extraction, review the captured pages \u2014 uncheck any "
+             "you do not want. When you are satisfied, your PDF is saved "
+             "automatically."),
+        ]
+
+        for heading, body in sections:
+            head = QLabel(heading)
+            head.setStyleSheet(
+                f"font-weight: 600; color: {BRASS}; font-size: 13px; "
+                "border: none; background: transparent;"
+            )
+            layout.addWidget(head)
+            body_label = QLabel(body)
+            body_label.setWordWrap(True)
+            body_label.setStyleSheet(
+                f"color: {MUTED}; font-size: 12px; font-weight: 400; "
+                "border: none; background: transparent;"
+            )
+            layout.addWidget(body_label)
+            layout.addSpacing(SPACE_XS)
+
+        tips_head = QLabel("Tips for best results")
+        tips_head.setStyleSheet(
+            f"font-weight: 600; color: {INK}; font-size: 13px; "
+            "margin-top: 8px; border: none; background: transparent;"
+        )
+        layout.addWidget(tips_head)
+        tips = QLabel(
+            "\u2022  Film in landscape orientation with the score filling the frame\n"
+            "\u2022  Keep the camera steady \u2014 a tripod or phone stand works best\n"
+            "\u2022  Ensure even lighting without glare on the pages\n"
+            "\u2022  Turn pages cleanly without blocking the camera\n"
+            "\u2022  If pages go undetected, lower the sensitivity in Settings"
+        )
+        tips.setWordWrap(True)
+        tips.setStyleSheet(
+            f"color: {MUTED}; font-size: 12px; font-weight: 400; "
+            "border: none; background: transparent;"
+        )
+        layout.addWidget(tips)
+
+        layout.addStretch()
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
 
 # ── Page Preview Dialog ──────────────────────────────────────────────
@@ -1501,6 +1718,7 @@ class ExtractTab(QWidget):
 
         self._settings = QSettings("ScoreExtractor", "App")
         self._parent_dir = self._settings.value("parent_dir", str(Path(__file__).resolve().parent / "output"))
+        self._welcome_seen = bool(self._settings.value("onboarding_welcome_seen", False))
 
         layout = QVBoxLayout(self)
         layout.setSpacing(SPACE_SM)
@@ -1529,7 +1747,7 @@ class ExtractTab(QWidget):
         self._local_label = QLabel("Video file:")
         self._local_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.video_path_edit = QLineEdit()
-        self.video_path_edit.setPlaceholderText("Select a video file (*.mp4, *.avi, *.mkv, *.mov)")
+        self.video_path_edit.setPlaceholderText("Location of your sheet-music video (*.mp4, *.avi, *.mkv, *.mov)")
         self.browse_btn = QPushButton("Browse…")
         _set_widget_class(self.browse_btn, "secondary")
         input_grid.addWidget(self._local_label, 0, 0)
@@ -1576,7 +1794,7 @@ class ExtractTab(QWidget):
         project_label.setFixedWidth(115)
 
         self.project_edit = QLineEdit()
-        self.project_edit.setPlaceholderText("Score name — type to search existing, or enter a new name")
+        self.project_edit.setPlaceholderText("Score name \u2014 type to find an existing score, or enter a new name")
         self.project_edit.setMaxLength(100)
         self._completer_model = QStringListModel()
         self._completer = QCompleter(self._completer_model, self)
@@ -1594,7 +1812,7 @@ class ExtractTab(QWidget):
         layout.addLayout(project_row)
 
         # ── Status line ──
-        self.status_label = QLabel("Select a video source")
+        self.status_label = QLabel("Choose a video to extract your score")
         _set_widget_class(self.status_label, "muted")
         self.status_label.setWordWrap(True)
         self.status_label.setAccessibleName("Status")
@@ -1611,6 +1829,11 @@ class ExtractTab(QWidget):
         self.seek_bar.setMinimumHeight(64)
         self.seek_bar.setAccessibleName("Video seek bar with start and end handles")
         layout.addWidget(self.seek_bar)
+
+        self.welcome_widget = WelcomeWidget()
+        self.welcome_widget.setVisible(not self._welcome_seen and not self._has_existing_score)
+        self.welcome_widget.dismissed.connect(self._on_welcome_dismissed)
+        layout.addWidget(self.welcome_widget)
 
         # ── Crop ratio row ──
         crop_row = QHBoxLayout()
@@ -1868,7 +2091,7 @@ class ExtractTab(QWidget):
         if not self.pdf_name_edit.text():
             self.pdf_name_edit.setText(self.project_edit.text())
         self._set_video_controls_enabled(True)
-        self.status_label.setText("Select a video source")
+        self.status_label.setText("Choose a video to extract your score")
         self._update_state()
 
     # ── Source toggle ──
@@ -2081,6 +2304,12 @@ class ExtractTab(QWidget):
 
     # ── State management ──
 
+    def _on_welcome_dismissed(self):
+        self._welcome_seen = True
+        self.welcome_widget.setVisible(False)
+        self.crop_widget.setVisible(True)
+        self.seek_bar.setVisible(True)
+
     def _set_status(self, text: str, peak: bool = False):
         self.status_label.setText(text)
         if peak != self._peak_style:
@@ -2092,6 +2321,14 @@ class ExtractTab(QWidget):
         has_video = bool(self._video_path and os.path.exists(self._video_path))
         has_pages = self._api.get_page_count() > 0
         can_act = not self._busy
+
+        show_welcome = (not self._welcome_seen
+                        and not has_video
+                        and not self._has_existing_score
+                        and not has_pages)
+        self.welcome_widget.setVisible(show_welcome)
+        self.crop_widget.setVisible(not show_welcome)
+        self.seek_bar.setVisible(not show_welcome)
 
         dbg(f"_update_state: busy={self._busy}, reextract={self._reextract_mode}, has_existing={self._has_existing_score}, has_pages={has_pages}, has_project={has_project}, has_video={has_video}")
 
@@ -2122,13 +2359,13 @@ class ExtractTab(QWidget):
             self.extract_btn.setVisible(True)
             self.extract_btn.setEnabled(can_act)
             self.extract_btn.setText("Start Extraction")
-            self._set_status("Ready — start extraction")
+            self._set_status("Ready \u2014 start extraction")
         else:
             self.extract_btn.setVisible(True)
             self.extract_btn.setEnabled(False)
             self.extract_btn.setText("Start Extraction")
             if not has_video:
-                self._set_status("Select a video source")
+                self._set_status("Choose a video to extract your score")
             elif not has_project:
                 self._set_status("Enter a score name")
             else:
@@ -2496,6 +2733,98 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(self.tabs, 1)
 
+        # ── Menu bar ──
+        menu = self.menuBar()
+        menu.setStyleSheet(f"""
+            QMenuBar {{
+                background: {BG};
+                color: {INK};
+                border-bottom: 1px solid {BORDER};
+                padding: 2px 0;
+                font-size: 13px;
+            }}
+            QMenuBar::item {{
+                padding: 4px 10px;
+                background: transparent;
+            }}
+            QMenuBar::item:selected {{
+                background: {SURFACE2};
+                border-radius: 4px;
+            }}
+            QMenu {{
+                background: {SURFACE};
+                border: 1px solid {BORDER2};
+                border-radius: 4px;
+                padding: 4px 0;
+            }}
+            QMenu::item {{
+                padding: 6px 24px 6px 20px;
+                color: {INK};
+            }}
+            QMenu::item:selected {{
+                background: {SURFACE2};
+            }}
+            QMenu::item:disabled {{
+                color: {MUTED};
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background: {BORDER};
+                margin: 4px 8px;
+            }}
+        """)
+
+        file_menu = menu.addMenu("&File")
+        open_video_action = QAction("&Open Video...\tCtrl+O", self)
+        open_video_action.triggered.connect(self.extract_tab._browse_video)
+        file_menu.addAction(open_video_action)
+
+        open_project_action = QAction("Open &Project...\tCtrl+Shift+O", self)
+        open_project_action.triggered.connect(self.extract_tab._browse_project)
+        file_menu.addAction(open_project_action)
+
+        file_menu.addSeparator()
+
+        exit_action = QAction("E&xit\tAlt+F4", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        extraction_menu = menu.addMenu("E&xtraction")
+        start_action = QAction("&Start Extraction\tCtrl+E", self)
+        start_action.triggered.connect(self.extract_tab._start_extraction)
+        extraction_menu.addAction(start_action)
+
+        cancel_action = QAction("&Cancel\tEscape", self)
+        cancel_action.triggered.connect(self.extract_tab._cancel)
+        extraction_menu.addAction(cancel_action)
+
+        settings_action = QAction("&Settings...\tCtrl+,", self)
+        settings_action.triggered.connect(lambda: self.tabs.setCurrentIndex(1))
+        extraction_menu.addAction(settings_action)
+
+        help_menu = menu.addMenu("&Help")
+        getting_started_action = QAction("&Getting Started\tF1", self)
+        getting_started_action.triggered.connect(self._show_getting_started)
+        help_menu.addAction(getting_started_action)
+
+        shortcuts_action = QAction("&Keyboard Shortcuts", self)
+        shortcuts_action.triggered.connect(self._show_shortcuts)
+        help_menu.addAction(shortcuts_action)
+
+        help_menu.addSeparator()
+
+        about_action = QAction("&About Score Extractor", self)
+        about_action.triggered.connect(self._show_about)
+        help_menu.addAction(about_action)
+
+        # ── Keyboard shortcuts (window-level) ──
+        open_video_action.setShortcut("Ctrl+O")
+        open_project_action.setShortcut("Ctrl+Shift+O")
+        start_action.setShortcut("Ctrl+E")
+        cancel_action.setShortcut("Escape")
+        settings_action.setShortcut("Ctrl+,")
+        getting_started_action.setShortcut("F1")
+
         # Status bar
         self.status_bar = self.statusBar()
         self.status_bar.setStyleSheet(f"color: {MUTED}; font-size: 12px;")
@@ -2548,6 +2877,40 @@ class MainWindow(QMainWindow):
     def _on_tab_changed(self, index: int):
         if index == 1:
             self.config_tab.refresh_from_api()
+
+    def _show_getting_started(self):
+        dlg = GettingStartedDialog(self)
+        dlg.setStyleSheet(
+            STYLESHEET.replace("__CHECK_PLACEHOLDER__", CHECK_INDICATOR_PATH)
+            .replace("__CHEVRON_PLACEHOLDER__", CHEVRON_PATH)
+            .replace("__SPIN_UP_PLACEHOLDER__", SPIN_UP_PATH)
+            .replace("__SPIN_DOWN_PLACEHOLDER__", SPIN_DOWN_PATH)
+        )
+        dlg.exec()
+
+    def _show_shortcuts(self):
+        text = (
+            "Ctrl+O          Open video file\n"
+            "Ctrl+Shift+O    Open existing project\n"
+            "Ctrl+E          Start extraction\n"
+            "Ctrl+,          Open Settings\n"
+            "Escape          Cancel extraction\n"
+            "F1              Getting Started guide\n"
+            "Ctrl+Tab        Switch tab\n"
+            "Alt+F4          Exit"
+        )
+        QMessageBox.information(self, "Keyboard Shortcuts", text)
+
+    def _show_about(self):
+        QMessageBox.about(
+            self, "About Score Extractor",
+            "<h3>Score Extractor</h3>"
+            "<p>Convert videos of page-turning sheet music into clean, "
+            "printable PDFs.</p>"
+            "<p>Built with PyQt6, OpenCV, and PaddleOCR.</p>"
+            "<p><a href='https://github.com/anomalyco/Score_extractor'>"
+            "github.com/anomalyco/Score_extractor</a></p>"
+        )
 
     def closeEvent(self, event):
         seeker = self.extract_tab._preview_seeker
