@@ -12,3 +12,5 @@ matplotlib
 pytest
 pytest-cov
 pytest-timeout
+pytest-qt
+Pillow
