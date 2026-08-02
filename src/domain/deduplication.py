@@ -13,6 +13,11 @@ class Deduplicator:
         self.ocr_service = ocr_service
         self.calibrator = calibrator
         self._number_cache: dict[int, Optional[int]] = {}
+        # Cache of preprocessed (crop+resize+cvtColor) 256x256 grayscale
+        # images keyed by image id. Existing pages are compared many
+        # times across detections; preprocessing them once saves a
+        # resize+cvtColor per comparison after the first.
+        self._gray_cache: dict[int, np.ndarray] = {}
 
     def _current_floor(self) -> float:
         if self.calibrator is not None:
@@ -47,6 +52,19 @@ class Deduplicator:
             margin_col = int(640 * self.config.bar_left_margin)
             has_left_spike = left_col < margin_col
         return has_clean, has_left_spike, peaks
+
+    def check_bar_profile_from_spikes(self, spikes: list):
+        """Same guard-rail verdict as check_bar_profile, but reuses spikes
+        already computed by merge_frames rather than recomputing column
+        sums. Output is identical when spikes were produced with the same
+        floor (the only caller — _analyze — satisfies this)."""
+        has_clean = len(spikes) == 0 or len(spikes) == 2
+        has_left_spike = True
+        if len(spikes) >= 2:
+            left_col = sorted(spikes[:2], key=lambda p: p[0])[0][0]
+            margin_col = int(640 * self.config.bar_left_margin)
+            has_left_spike = left_col < margin_col
+        return has_clean, has_left_spike, spikes
 
     def _get_cached_number(self, image: np.ndarray) -> Optional[int]:
         key = id(image)
@@ -87,13 +105,23 @@ class Deduplicator:
         is_row_dup = self._check_row_similarity(frame_a, frame_b)
         return is_row_dup
 
-    def _get_global_similarity(self, img1: np.ndarray, img2: np.ndarray) -> float:
-        h = img1.shape[0]
+    def _preprocess_gray(self, img: np.ndarray) -> np.ndarray:
+        """Crop top region, resize to 256x256, convert to grayscale.
+        Cached by image id so existing pages are preprocessed once."""
+        key = id(img)
+        cached = self._gray_cache.get(key)
+        if cached is not None:
+            return cached
+        h = img.shape[0]
         max_row = int(h * self.config.duplicate_top_ratio)
+        g = cv2.cvtColor(cv2.resize(img[:max_row, :], (256, 256)), cv2.COLOR_BGR2GRAY)
+        self._gray_cache[key] = g
+        return g
+
+    def _get_global_similarity(self, img1: np.ndarray, img2: np.ndarray) -> float:
         # Crop to top region, resize to 256x256 grayscale for fast comparison
-        g1 = cv2.cvtColor(cv2.resize(img1[:max_row, :], (256, 256)), cv2.COLOR_BGR2GRAY)
-        g2 = cv2.cvtColor(cv2.resize(img2[:max_row, :], (256, 256)), cv2.COLOR_BGR2GRAY)
-        
+        g1 = self._preprocess_gray(img1)
+        g2 = self._preprocess_gray(img2)
         # Calculate correlation coefficient
         res = cv2.matchTemplate(g1, g2, cv2.TM_CCOEFF_NORMED)
         return res[0][0]
@@ -101,26 +129,36 @@ class Deduplicator:
     def _check_row_similarity(self, img1: np.ndarray, img2: np.ndarray) -> bool:
         height = img1.shape[0]
         max_row = int(height * self.config.duplicate_top_ratio)
-        
+
         g1 = cv2.cvtColor(img1[:max_row, :], cv2.COLOR_BGR2GRAY).astype(np.float64)
         g2 = cv2.cvtColor(img2[:max_row, :], cv2.COLOR_BGR2GRAY).astype(np.float64)
-        
-        similar_rows = 0
-        
-        for i in range(max_row):
-            row1 = g1[i, :]
-            row2 = g2[i, :]
-            
-            std1 = np.std(row1)
-            std2 = np.std(row2)
-            
-            if std1 < 0.1 and std2 < 0.1:
-                similar_rows += 1
-                continue
-                
-            corr = np.corrcoef(row1, row2)[0, 1]
-            if not np.isnan(corr) and corr > self.config.row_similarity_threshold:
-                similar_rows += 1
-                
-        coverage = similar_rows / max_row
+
+        # Per-row std to detect blank rows
+        std1 = g1.std(axis=1)
+        std2 = g2.std(axis=1)
+        blank_mask = (std1 < 0.1) & (std2 < 0.1)
+
+        # Pearson correlation, vectorized across all rows at once.
+        # Center each row, then r = sum(x*y) / sqrt(sum(x^2) * sum(y^2)).
+        g1_centered = g1 - g1.mean(axis=1, keepdims=True)
+        g2_centered = g2 - g2.mean(axis=1, keepdims=True)
+        numer = np.sum(g1_centered * g2_centered, axis=1)
+        denom = np.sqrt(np.sum(g1_centered ** 2, axis=1) * np.sum(g2_centered ** 2, axis=1))
+        # np.divide with where= keeps NaN where denom == 0, matching np.corrcoef
+        corrs = np.divide(
+            numer, denom,
+            out=np.full_like(numer, np.nan),
+            where=denom != 0,
+        )
+
+        # Same decision rule as the original loop:
+        #   blank rows => always similar
+        #   non-blank  => similar iff corr is finite and > threshold
+        similar_mask = blank_mask.copy()
+        need_check = ~blank_mask
+        if need_check.any():
+            sub = corrs[need_check]
+            similar_mask[need_check] = (~np.isnan(sub)) & (sub > self.config.row_similarity_threshold)
+
+        coverage = float(similar_mask.sum()) / max_row
         return coverage > self.config.row_coverage_threshold

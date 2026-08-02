@@ -33,3 +33,9 @@ Load the following specification files via `@reference` depending on the module 
 4. **Deduplicate**: OCR-first verification (OCR → Global → Row).
 5. **Compile**: Layout merged strips and generate PDF in output directory.
 6. **Finalize**: Release handles, save metadata.
+
+## Extraction Quality Rules
+- **Always use at least 1080p** (`bestvideo[height<=1080]`) for YouTube downloads. Lower resolutions produce blurry bar profiles and unreliable merge cutoffs.
+- Use `--start-time 2.0` to skip camera settling.
+- Enable debug mode on first runs to verify bar profile alignment.
+- Blank frames, end credits, and duplicate pages are rejected automatically.

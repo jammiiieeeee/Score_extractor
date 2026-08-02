@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, TextIO
 
+from skimage.metrics import structural_similarity as ssim
+
 from src.domain.value_objects.config import ScoreConfig
 from src.domain.models import Frame, PageManifestEntry
 from src.domain.interfaces import IVideoService, IOcrService, IFileService
@@ -56,6 +58,7 @@ class FrameStepper:
 
         self.last_trigger_idx = -self.cooldown_frames
         self.last_stable_frame: Optional[Frame] = None
+        self.last_stable_roi: Optional[np.ndarray] = None
         self.current_idx = 0
         self._n_frames = 0
         self._t_loop = time.time()
@@ -130,14 +133,20 @@ class FrameStepper:
                 self.on_log("  End of score detected (blank content).")
                 return None
 
-        # Page change detection
+        # Page change detection — reuse previous frame's ROI when available
         ssim_score = None
         if (
             (current_idx - self.last_trigger_idx) > self.cooldown_frames
             and self.last_stable_frame is not None
         ):
-            from skimage.metrics import structural_similarity as ssim
-            ssim_score = ssim(self._get_roi(self.last_stable_frame.image), self._get_roi(current_frame.image))
+            current_roi = self._get_roi(current_frame.image)
+            last_roi = self.last_stable_roi
+            if last_roi is None:
+                last_roi = self._get_roi(self.last_stable_frame.image)
+            ssim_score = ssim(last_roi, current_roi)
+            self.last_stable_roi = current_roi
+        else:
+            self.last_stable_roi = None
 
         self.last_stable_frame = current_frame
         return current_frame, ssim_score
@@ -350,6 +359,7 @@ class PageCommitter:
             analysis = self._analyze(
                 frame_a, frame_b, [f.image for f in unique_pages],
                 attempt_num, is_first, debug, output_dir, bar_mode="normal",
+                ssim_score=ssim_score,
             )
             entry = self._commit_analyzed(
                 analysis, unique_pages, output_dir, attempt_num, debug, log,
@@ -363,7 +373,7 @@ class PageCommitter:
         dedup_images = [f.image for f in unique_pages] + [p.merged for p in self._pending]
         analysis = self._analyze(
             frame_a, frame_b, dedup_images, attempt_num, is_first, debug,
-            output_dir, bar_mode="normal",
+            output_dir, bar_mode="normal", ssim_score=ssim_score,
         )
         self._pending.append(_PendingCommit(
             frame_a, frame_b, attempt_num, is_first, ssim_score, analysis.merged,
@@ -417,6 +427,7 @@ class PageCommitter:
         debug: bool,
         output_dir: Path,
         bar_mode: str = "normal",
+        ssim_score: Optional[float] = None,
     ) -> _Analysis:
         """Compute everything needed for one page transition, with no side
         effects on page state (only debug artifact writing)."""
@@ -456,20 +467,27 @@ class PageCommitter:
             merge_x = mr.merge_x
             spikes = mr.spikes
             col_sums = mr.col_sums
-            has_clean_profile, has_left_spike, bar_peaks = self.deduplicator.check_bar_profile(
-                merge_a, merge_b, self.config.default_crop_ratio
-            )
+            # Reuse the spikes already computed inside merge_frames instead of
+            # recomputing column sums. The floor passed to merge_frames is
+            # self._current_floor() (same value the deduplicator would use),
+            # so the spikes are identical to what check_bar_profile would yield.
+            has_clean_profile, has_left_spike, bar_peaks = self.deduplicator.check_bar_profile_from_spikes(spikes)
 
         # OCR number from a merged pair (dedup channel)
+        # Reuse the merge result computed above when full-res frames were used;
+        # only recompute if the merge fell back to scan-res frames.
         merged_number = None
         if self.ocr_service.is_enabled() and full_a is not None and full_b is not None:
-            ocr_mr = self.video.merge_frames(
-                full_a, full_b, self.config.b_overlay_width_ratio,
-                self.config.default_crop_ratio, floor,
-                self.config.bar_padding_px, None
-            )
+            ocr_input = mr.merged if (merge_a is full_a and merge_b is full_b) else None
+            if ocr_input is None:
+                ocr_mr = self.video.merge_frames(
+                    full_a, full_b, self.config.b_overlay_width_ratio,
+                    self.config.default_crop_ratio, floor,
+                    self.config.bar_padding_px, None
+                )
+                ocr_input = ocr_mr.merged
             merged_number = self.ocr_service.get_leftmost_number(
-                ocr_mr.merged, self.config.duplicate_top_ratio,
+                ocr_input, self.config.duplicate_top_ratio,
                 self.config.ocr_horizontal_ratio, self.config.ocr_confidence_threshold
             )
 
@@ -487,8 +505,13 @@ class PageCommitter:
                 guard_rail_passed = False
                 reject_reason = "Left spike outside margin"
 
-        # Deduplication against already-committed (and held) pages
-        if not is_dup:
+        # Deduplication against already-committed (and held) pages.
+        # When the change-detection SSIM is well below the trigger
+        # threshold (0.9), the content is clearly different from the
+        # previous page.  Skip the expensive pixel dedup to avoid
+        # false rejections caused by similar staff-line layouts
+        # across unrelated pages.
+        if not is_dup and (ssim_score is None or ssim_score >= 0.65):
             for img in dedup_images:
                 if self.deduplicator.is_duplicate(img, merged, b_number=merged_number):
                     is_dup = True
@@ -530,6 +553,18 @@ class PageCommitter:
         guard_rail_passed = analysis.guard_rail_passed
         if analysis.reject_reason:
             log(f"  [SKIP] Page {page_num}: {analysis.reject_reason}, treated as duplicate")
+
+        if not is_dup:
+            # Reject pages that are mostly white (blank-ish frames that slipped
+            # past the blank detector).  A real score page has substantial
+            # ink content; a blank frame has high mean and low std.
+            merged_std = float(np.std(analysis.merged))
+            merged_mean = float(np.mean(analysis.merged))
+            if merged_mean > 220 and merged_std < 60:
+                is_dup = True
+                guard_rail_passed = False
+                reject_reason = "Blank page (mostly white)"
+                log(f"  [SKIP] Page {page_num}: Blank page (mean={merged_mean:.0f}, std={merged_std:.0f})")
 
         if not is_dup:
             frame = Frame(analysis.merged.copy(), frame_a.timestamp, frame_a.index)
@@ -595,6 +630,7 @@ class PageCommitter:
             analysis = self._analyze(
                 p.frame_a, p.frame_b, [f.image for f in unique_pages],
                 p.page_num, p.is_first, debug, output_dir, bar_mode=bar_mode,
+                ssim_score=p.ssim_score,
             )
             entry = self._commit_analyzed(
                 analysis, unique_pages, output_dir, p.page_num, debug, log,

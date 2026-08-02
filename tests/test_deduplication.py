@@ -157,6 +157,46 @@ class TestCheckBarProfile:
 
 
 @pytest.mark.unit
+class TestCheckBarProfileFromSpikes:
+    """Pre-computed spikes path used by PageCommitter._analyze."""
+
+    def _peaks(self, deduplicator, a, b):
+        return deduplicator._get_bar_profile_peaks(a, b, crop_ratio=0.3)
+
+    def test_matches_check_bar_profile_for_two_peaks_left(self, deduplicator):
+        a = _vertical_stripe_image(stripes=[(60, 80), (400, 420)])
+        b = _vertical_stripe_image(stripes=[])
+        spikes = self._peaks(deduplicator, a, b)
+        ref_c, ref_l, ref_p = deduplicator.check_bar_profile(a, b, crop_ratio=0.3)
+        got_c, got_l, got_p = deduplicator.check_bar_profile_from_spikes(spikes)
+        assert got_c == ref_c and got_l == ref_l and got_p == ref_p
+
+    def test_matches_check_bar_profile_for_two_peaks_right(self, deduplicator):
+        a = _vertical_stripe_image(stripes=[(300, 320), (500, 520)])
+        b = _vertical_stripe_image(stripes=[])
+        spikes = self._peaks(deduplicator, a, b)
+        ref_c, ref_l, ref_p = deduplicator.check_bar_profile(a, b, crop_ratio=0.3)
+        got_c, got_l, got_p = deduplicator.check_bar_profile_from_spikes(spikes)
+        assert got_c == ref_c and got_l == ref_l and got_p == ref_p
+
+    def test_matches_check_bar_profile_for_zero_peaks(self, deduplicator):
+        img = make_solid_image(800, 600, (128, 128, 128))
+        spikes: list = []
+        ref_c, ref_l, ref_p = deduplicator.check_bar_profile(img, img, crop_ratio=0.3)
+        got_c, got_l, got_p = deduplicator.check_bar_profile_from_spikes(spikes)
+        assert got_c is True and got_l is True and got_p == []
+
+    def test_matches_check_bar_profile_for_five_peaks(self, deduplicator):
+        stripes = [(50, 70), (170, 190), (290, 310), (410, 430), (530, 550)]
+        a = _vertical_stripe_image(stripes=stripes)
+        b = _vertical_stripe_image(stripes=[])
+        spikes = self._peaks(deduplicator, a, b)
+        ref_c, ref_l, ref_p = deduplicator.check_bar_profile(a, b, crop_ratio=0.3)
+        got_c, got_l, got_p = deduplicator.check_bar_profile_from_spikes(spikes)
+        assert got_c == ref_c and got_l == ref_l and got_p == ref_p
+
+
+@pytest.mark.unit
 class TestGetCachedNumber:
     def test_same_image_returns_cached(self, deduplicator):
         img = make_solid_image(800, 600, (100, 100, 100))

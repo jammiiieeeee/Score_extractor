@@ -51,7 +51,8 @@ class VideoService(IVideoService):
     def read_frame_at(self, frame_idx: int):
         if not self.cap:
             return None, None
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        if self._seq_idx != frame_idx:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, frame = self.cap.read()
         if not ret:
             return None, None
@@ -102,6 +103,14 @@ class VideoService(IVideoService):
         if len(spikes) == 2:
             sorted_spikes = sorted(spikes, key=lambda p: p[0])
             midpoint_640 = (sorted_spikes[0][0] + sorted_spikes[1][0]) // 2
+            merge_x = int(midpoint_640 * (w / 640))
+        elif len(spikes) > 2:
+            # More than 2 spikes — pick the 2 strongest by value and use
+            # their midpoint.  This handles noisy profiles (e.g. first page
+            # with progress-bar artefacts) without falling back to merge_x=0.
+            top2 = sorted(spikes, key=lambda p: p[1], reverse=True)[:2]
+            sorted_top2 = sorted(top2, key=lambda p: p[0])
+            midpoint_640 = (sorted_top2[0][0] + sorted_top2[1][0]) // 2
             merge_x = int(midpoint_640 * (w / 640))
 
         result = frame_a.copy()
