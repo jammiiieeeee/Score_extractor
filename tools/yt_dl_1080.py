@@ -3,7 +3,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 import yt_dlp
 
 opts = {
-    "format": "best[height<=1080]",
+    "format": "bestvideo[height<=1080]",
     "outtmpl": "yt_dl/%(id)s.%(ext)s",
     "quiet": False,
     "noplaylist": True,

@@ -108,7 +108,7 @@ def main():
                 "1080p": "bestvideo[height<=1080]",
                 "720p": "bestvideo[height<=720]",
                 "480p": "bestvideo[height<=480]",
-                "360p": "best[height<=360]",
+                "360p": "bestvideo[height<=360]",
             }
             fmt = quality_map.get(args.quality, "bestvideo[height<=1080]")
             

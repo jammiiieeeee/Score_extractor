@@ -471,7 +471,7 @@ class GuiApi:
     # ═════════════════════════════════════════════════════════════════════
 
     def download_youtube(self, url: str, fmt: str = "bestvideo[height<=1080]",
-                         scan_fmt: str = "best[height<=640]") -> None:
+                         scan_fmt: str = "bestvideo[height<=640]") -> None:
         if self.is_busy():
             raise RuntimeError("Extraction or PDF generation already in progress")
 
@@ -487,7 +487,7 @@ class GuiApi:
         self._download_thread.start()
 
     def _run_youtube_download(self, url: str, fmt: str = "bestvideo[height<=1080]",
-                              scan_fmt: str = "best[height<=640]"):
+                              scan_fmt: str = "bestvideo[height<=640]"):
         try:
             def on_progress(pct, detail):
                 self._state.current_timestamp = pct
@@ -521,11 +521,19 @@ class GuiApi:
         except Exception as e:
             self._state.phase = "error"
             msg = str(e)
+            import re
+            msg = re.sub(r'\x1b\[[0-9;]*m', '', msg)
             hint = ""
             if "cancelled" in msg.lower():
                 hint = ""
+            elif "403" in msg or "Forbidden" in msg:
+                hint = ("\nYouTube blocked the request. Update yt-dlp (pip install -U yt-dlp) "
+                        "and if the problem persists, try passing browser cookies:\n"
+                        '  python -c "from yt_dlp import YoutubeDL; '
+                        "YoutubeDL({'cookiesfrombrowser': ('chrome',)}).download('URL')\"")
             elif "yt-dlp" in msg.lower() or "youtube" in msg.lower():
-                hint = "\nCheck that the video is still available and not region-restricted. Ensure yt-dlp is up to date: pip install -U yt-dlp"
+                hint = ("\nCheck that the video is still available and not region-restricted. "
+                        "Ensure yt-dlp is up to date: pip install -U yt-dlp")
             self._emit_error(f"YouTube download failed: {msg}{hint}")
             self._emit_log(f"  [Error] {e}")
 

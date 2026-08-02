@@ -36,6 +36,7 @@ Load the following specification files via `@reference` depending on the module 
 
 ## Extraction Quality Rules
 - **Always use at least 1080p** (`bestvideo[height<=1080]`) for YouTube downloads. Lower resolutions produce blurry bar profiles and unreliable merge cutoffs.
+- **Video-only only**: use `bestvideo[...]` selectors (no `+bestaudio`, no combined `best`), so downloads carry no audio stream. The scan format is also video-only (e.g. `bestvideo[height<=640]`).
 - Use `--start-time 2.0` to skip camera settling.
 - Enable debug mode on first runs to verify bar profile alignment.
 - Blank frames, end credits, and duplicate pages are rejected automatically.

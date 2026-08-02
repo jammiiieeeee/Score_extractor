@@ -137,7 +137,9 @@ class DownloadService:
     ) -> DownloadResult:
         """Download a YouTube video. Returns DownloadResult with path and title.
 
-        If scan_fmt is provided, downloads a lower-resolution version for scanning.
+        Only video streams are requested (no audio) — formats should use
+        ``bestvideo[...]`` selectors. If scan_fmt is provided, downloads a
+        lower-resolution video-only version for scanning.
         Raises on cancellation or failure.
         """
         import yt_dlp
@@ -178,11 +180,8 @@ class DownloadService:
         if on_log and ffmpeg_path and not has_ffmpeg:
             on_log("  ffmpeg blocked, skipping merge")
 
-        # bestvideo requires ffmpeg for merging — fall back to best (combined) when unavailable
-        if not has_ffmpeg and fmt.startswith("bestvideo"):
-            fmt = fmt.replace("bestvideo", "best")
-            if on_log:
-                on_log("  No ffmpeg, using combined format")
+        # Video-only formats (bestvideo) need no ffmpeg merge; only combined
+        # formats such as bestvideo+bestaudio would require it.
 
         ydl_opts = {
             'format': fmt,
