@@ -250,7 +250,7 @@ class StubOcrService(IOcrService):
         self._keywords_found = False
         self._texts = []
 
-    def set_leftmost_number(self, img_id: int, number: Optional[int]):
+    def set_leftmost_number(self, img_id: bytes, number: Optional[int]):
         self._leftmost_numbers[img_id] = number
 
     def set_keywords_found(self, found: bool):
@@ -266,10 +266,8 @@ class StubOcrService(IOcrService):
         return self._enabled
 
     def get_leftmost_number(self, image, vertical_range, horizontal_ratio=1.0, confidence_threshold=0):
-        key = id(image)
-        if key in self._leftmost_numbers:
-            return self._leftmost_numbers[key]
-        return None
+        key = image.tobytes()
+        return self._leftmost_numbers.get(key, None)
 
     def detect_keywords(self, image, keywords):
         return self._keywords_found

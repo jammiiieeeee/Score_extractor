@@ -234,7 +234,7 @@ class TestPageCommitterCalibration:
         else:
             ocr_svc = StubOcrService(enabled=ocr_enabled)
         file_svc = StubFileService(work_dir or Path(os.environ.get("TEMP", ".")))
-        dedup = Deduplicator(cfg, ocr_svc, calibrator=calibrator)
+        dedup = Deduplicator(cfg, ocr_svc)
         committer = PageCommitter(
             video_svc, file_svc, ocr_svc, cfg, dedup,
             orig_w=800, orig_h=600, calibrator=calibrator,
@@ -376,7 +376,8 @@ class TestPageCommitterOriginalResolution:
             original_video_path=str(orig_video),
         )
 
-        # After init, orig_w/h should be overridden to original video dims
+        # Dimensions probed lazily on first read — trigger the probe
+        committer._ensure_original_dims()
         assert committer.orig_w == orig_w
         assert committer.orig_h == orig_h
 

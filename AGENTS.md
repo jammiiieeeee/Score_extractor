@@ -36,3 +36,14 @@ Co-Authored-By: opencode <noreply@opencode.ai>
 - Use `--start-time 2.0` to skip the camera settling at the beginning.
 - Enable debug mode (`--debug` or `debug=True`) on first runs to verify bar profile alignment.
 - The output PDF should contain only clean score pages — blank frames, end credits, and duplicate pages are rejected automatically.
+
+## Agent skills
+
+### Issue tracker
+Issues live as GitHub issues on this repo. External PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+Five canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+Single-context layout: `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.

@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.application.use_cases import ExtractScoreUseCase, GeneratePdfUseCase
+from src.application.use_cases import ExtractScoreUseCase, GeneratePdfUseCase, ExtractRequest
 from src.domain.value_objects.config import ScoreConfig
 from src.domain.models import Frame
 from src.domain.interfaces import _NoopOcrService
@@ -51,7 +51,9 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         (out / "photos").mkdir()
-        pages, manifest = uc.execute("fake.mp4", out, no_ocr=True)
+        result = uc.execute(ExtractRequest("fake.mp4", out, no_ocr=True))
+        pages = result.pages
+        manifest = result.manifest
         assert isinstance(pages, list)
         assert isinstance(manifest, list)
         assert len(pages) >= 0
@@ -62,7 +64,9 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         (out / "photos").mkdir()
-        pages, manifest = uc.execute("fake.mp4", out, no_ocr=True)
+        result = uc.execute(ExtractRequest("fake.mp4", out, no_ocr=True))
+        pages = result.pages
+        manifest = result.manifest
         assert isinstance(pages, list)
         assert isinstance(manifest, list)
 
@@ -73,7 +77,9 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         (out / "photos").mkdir()
-        pages, manifest = uc.execute("fake.mp4", out, no_ocr=False)
+        result = uc.execute(ExtractRequest("fake.mp4", out, no_ocr=False))
+        pages = result.pages
+        manifest = result.manifest
         assert isinstance(pages, list)
         assert isinstance(manifest, list)
 
@@ -87,7 +93,9 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         (out / "photos").mkdir()
-        pages, manifest = uc.execute("fake.mp4", out, no_ocr=True, is_cancelled=cancel)
+        result = uc.execute(ExtractRequest("fake.mp4", out, no_ocr=True, is_cancelled=cancel))
+        pages = result.pages
+        manifest = result.manifest
         assert isinstance(pages, list)
         assert isinstance(manifest, list)
 
@@ -97,7 +105,9 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         (out / "photos").mkdir()
-        pages, manifest = uc.execute("fake.mp4", out, no_ocr=True, start_time=1.0)
+        result = uc.execute(ExtractRequest("fake.mp4", out, no_ocr=True, start_time=1.0))
+        pages = result.pages
+        manifest = result.manifest
         assert isinstance(pages, list)
         assert isinstance(manifest, list)
 
@@ -107,7 +117,9 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         (out / "photos").mkdir()
-        pages, manifest = uc.execute("fake.mp4", out, no_ocr=True, end_offset=5.0)
+        result = uc.execute(ExtractRequest("fake.mp4", out, no_ocr=True, end_offset=5.0))
+        pages = result.pages
+        manifest = result.manifest
         assert isinstance(pages, list)
         assert isinstance(manifest, list)
 
@@ -119,7 +131,7 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         (out / "photos").mkdir()
-        uc.execute("fake.mp4", out, no_ocr=True, on_log=log_cb, on_progress=prog_cb)
+        uc.execute(ExtractRequest("fake.mp4", out, no_ocr=True, on_log=log_cb, on_progress=prog_cb))
         assert log_cb.call_count > 0
 
     def test_empty_video(self, tmp_path):
@@ -131,7 +143,7 @@ class TestExtractScoreUseCase:
         out = tmp_path / "output"
         out.mkdir()
         with pytest.raises(RuntimeError):
-            uc.execute("fake.mp4", out, no_ocr=True)
+            uc.execute(ExtractRequest("fake.mp4", out, no_ocr=True))
 
 
 @pytest.mark.unit

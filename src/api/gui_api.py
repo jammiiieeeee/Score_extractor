@@ -20,7 +20,7 @@ from src.infrastructure.pdf_service import PdfService
 from src.infrastructure.file_service import FileService
 from src.infrastructure.download_service import DownloadService
 from src.infrastructure.diagnostics_service import generate_html_report
-from src.application.use_cases import ExtractScoreUseCase
+from src.application.use_cases import ExtractScoreUseCase, ExtractRequest
 
 
 @dataclass
@@ -405,8 +405,8 @@ class GuiApi:
             use_case = ExtractScoreUseCase(self._video_service, effective_ocr,
                                            self._file_service, self._config)
 
-            pages, manifest_entries = use_case.execute(
-                extraction_video_path,
+            result = use_case.execute(ExtractRequest(
+                video_path=extraction_video_path,
                 output_dir=score_dir,
                 no_ocr=no_ocr,
                 start_time=start_time,
@@ -417,7 +417,9 @@ class GuiApi:
                 on_progress=lambda pct, d: self._emit_progress("extracting", pct, d),
                 is_cancelled=lambda: self._cancel_flag,
                 original_video_path=original_video_path,
-            )
+            ))
+            pages = result.pages
+            manifest_entries = result.manifest
 
             self._pages.set_pages(pages)
             self._pages.set_originals([

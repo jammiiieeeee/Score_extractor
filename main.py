@@ -11,7 +11,7 @@ from src.infrastructure.video_service import VideoService
 from src.infrastructure.pdf_service import PdfService
 from src.infrastructure.file_service import FileService
 from src.infrastructure.download_service import DownloadService
-from src.application.use_cases import ExtractScoreUseCase, GeneratePdfUseCase
+from src.application.use_cases import ExtractScoreUseCase, GeneratePdfUseCase, ExtractRequest
 from src.domain.models import Frame
 
 
@@ -152,15 +152,17 @@ def main():
         extract_use_case = ExtractScoreUseCase(video_service, ocr_service, file_service, config)
 
         try:
-            pages, manifest = extract_use_case.execute(
-                video_path,
+            result = extract_use_case.execute(ExtractRequest(
+                video_path=video_path,
                 output_dir=output_dir,
                 no_ocr=not args.ocr,
                 start_time=args.start_time,
                 debug=args.debug,
                 end_offset=args.end_offset,
                 on_progress=lambda pct, msg: print(f"\r  [{pct:5.1f}%] {msg}", end="", flush=True),
-            )
+            ))
+            pages = result.pages
+            manifest = result.manifest
             print(f"\nExtracted: {len(pages)} pages")
 
             if pages:

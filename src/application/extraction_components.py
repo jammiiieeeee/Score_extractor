@@ -19,6 +19,7 @@ from src.domain.models import Frame, PageManifestEntry
 from src.domain.interfaces import IVideoService, IOcrService, IFileService
 from src.domain.deduplication import Deduplicator
 from src.domain.bar_profile_calibrator import BarProfileCalibrator
+from src.domain.bar_profile_guard import BarProfileGuard
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -194,9 +195,9 @@ class FrameStepper:
             return
         try:
             total_frames = self.video.get_total_frames()
-            last_20s_frame = total_frames - int(20 * self.fps)
-            tail_start = max(last_20s_frame, current_idx)
-            tail_step = int(2.0 * self.fps)
+            last_frame = total_frames - int(self.config.tail_scan_window * self.fps)
+            tail_start = max(last_frame, current_idx)
+            tail_step = int(self.config.tail_scan_step * self.fps)
 
             if tail_start < total_frames and ocr_service.is_enabled():
                 self.on_log("  Scanning final 20 seconds for end-credits...")
@@ -295,32 +296,29 @@ class PageCommitter:
         self._original_video_path = original_video_path
         self._original_cap = None
         self._original_fps = None
+        self._original_dim_probed = False
         self.calibrator = calibrator
         self._pending: List[_PendingCommit] = []
         self._calibration_logged = False
 
-        # If original (full-res) video is available, query its real dimensions
-        # so the merge upscale targets the original resolution, not the scan video's
-        if original_video_path:
-            import cv2
-            probe = cv2.VideoCapture(original_video_path)
-            if probe.isOpened():
-                self.orig_w = int(probe.get(cv2.CAP_PROP_FRAME_WIDTH))
-                self.orig_h = int(probe.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                self._original_fps = probe.get(cv2.CAP_PROP_FPS)
-                self._original_cap = probe
-            else:
-                probe.release()
+    def _ensure_original_dims(self):
+        if self._original_dim_probed or not self._original_video_path:
+            return
+        self._original_dim_probed = True
+        import cv2
+        probe = cv2.VideoCapture(self._original_video_path)
+        if probe.isOpened():
+            self.orig_w = int(probe.get(cv2.CAP_PROP_FRAME_WIDTH))
+            self.orig_h = int(probe.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            self._original_fps = probe.get(cv2.CAP_PROP_FPS)
+            self._original_cap = probe
+        else:
+            probe.release()
 
     def _read_full_frame_from_original(self, frame_idx: int, timestamp: float):
-        """Read a frame from the original (full-res) video using timestamp for accurate seek."""
-        import cv2
-        if not self._original_video_path:
-            return None
+        self._ensure_original_dims()
         if self._original_cap is None:
-            self._original_cap = cv2.VideoCapture(self._original_video_path)
-            self._original_fps = self._original_cap.get(cv2.CAP_PROP_FPS)
-        # Use timestamp for frame index to handle different fps between scan and original
+            return None
         orig_idx = int(round(timestamp * self._original_fps))
         self._original_cap.set(cv2.CAP_PROP_POS_FRAMES, orig_idx)
         ret, frame = self._original_cap.read()
@@ -329,7 +327,6 @@ class PageCommitter:
         return None
 
     def release(self):
-        """Release the original video capture if opened."""
         if self._original_cap:
             self._original_cap.release()
             self._original_cap = None
@@ -397,19 +394,14 @@ class PageCommitter:
         return float(self.config.bar_min_diff_threshold)
 
     def _is_gold_sample(self, analysis: _Analysis) -> bool:
-        """A profile is gold when it shows exactly two clean bar spikes and
-        would be committed (guard rail + dedup pass)."""
-        if len(analysis.spikes) != 2:
-            return False
-        if analysis.is_dup:
-            return False
-        if not analysis.has_left_spike:
-            return False
-        return True
+        return BarProfileGuard.is_gold_sample(
+            analysis.spikes, analysis.is_dup, analysis.has_left_spike,
+        )
 
     def _read_full_frames(self, frame_a: Frame, frame_b: Frame, debug: bool):
         full_a = full_b = None
-        if self._original_video_path:
+        self._ensure_original_dims()
+        if self._original_cap is not None:
             full_a = self._read_full_frame_from_original(frame_a.index, frame_a.timestamp)
             full_b = self._read_full_frame_from_original(frame_b.index, frame_b.timestamp)
         elif self.ocr_service.is_enabled() or debug:
@@ -467,11 +459,10 @@ class PageCommitter:
             merge_x = mr.merge_x
             spikes = mr.spikes
             col_sums = mr.col_sums
-            # Reuse the spikes already computed inside merge_frames instead of
-            # recomputing column sums. The floor passed to merge_frames is
-            # self._current_floor() (same value the deduplicator would use),
-            # so the spikes are identical to what check_bar_profile would yield.
-            has_clean_profile, has_left_spike, bar_peaks = self.deduplicator.check_bar_profile_from_spikes(spikes)
+            verdict = BarProfileGuard.from_spikes(spikes, self.config.bar_left_margin)
+            has_clean_profile = verdict.is_clean
+            has_left_spike = verdict.has_left_spike
+            bar_peaks = list(spikes)
 
         # OCR number from a merged pair (dedup channel)
         # Reuse the merge result computed above when full-res frames were used;
@@ -511,7 +502,7 @@ class PageCommitter:
         # previous page.  Skip the expensive pixel dedup to avoid
         # false rejections caused by similar staff-line layouts
         # across unrelated pages.
-        if not is_dup and (ssim_score is None or ssim_score >= 0.65):
+        if not is_dup and (ssim_score is None or ssim_score >= self.config.dedup_skip_ssim):
             for img in dedup_images:
                 if self.deduplicator.is_duplicate(img, merged, b_number=merged_number):
                     is_dup = True
@@ -560,7 +551,7 @@ class PageCommitter:
             # ink content; a blank frame has high mean and low std.
             merged_std = float(np.std(analysis.merged))
             merged_mean = float(np.mean(analysis.merged))
-            if merged_mean > 220 and merged_std < 60:
+            if merged_mean > self.config.blank_page_mean_threshold and merged_std < self.config.blank_page_std_threshold:
                 is_dup = True
                 guard_rail_passed = False
                 reject_reason = "Blank page (mostly white)"

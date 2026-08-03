@@ -1,6 +1,7 @@
 import time
 import numpy as np
 from pathlib import Path
+from dataclasses import dataclass, field as dc_field
 from typing import Callable, List, Optional, TextIO
 
 from src.domain.value_objects.config import ScoreConfig
@@ -9,6 +10,27 @@ from src.domain.interfaces import IVideoService, IOcrService, IPdfService, IFile
 from src.domain.deduplication import Deduplicator
 from src.domain.bar_profile_calibrator import BarProfileCalibrator
 from src.application.extraction_components import FrameStepper, PageCommitter, BarProfilePlotter
+
+
+@dataclass
+class ExtractRequest:
+    video_path: str
+    output_dir: Path
+    no_ocr: bool = False
+    start_time: float = -1.0
+    debug: bool = False
+    end_offset: float = 0.0
+    on_log: Callable[[str], None] = print
+    on_progress: Optional[Callable[[float, str], None]] = None
+    on_page_detected: Optional[Callable[[int, np.ndarray], None]] = None
+    is_cancelled: Callable[[], bool] = dc_field(default_factory=lambda: lambda: False)
+    original_video_path: Optional[str] = None
+
+
+@dataclass
+class ExtractResult:
+    pages: List[Frame]
+    manifest: List[PageManifestEntry]
 
 
 class ExtractScoreUseCase:
@@ -24,49 +46,38 @@ class ExtractScoreUseCase:
         self.file_service = file_service
         self.config = config
 
-    def execute(
-        self,
-        video_path: str,
-        output_dir: Path,
-        no_ocr: bool = False,
-        start_time: float = -1.0,
-        debug: bool = False,
-        end_offset: float = 0.0,
-        on_log: Callable[[str], None] = print,
-        on_progress: Optional[Callable[[float, str], None]] = None,
-        on_page_detected: Optional[Callable[[int, np.ndarray], None]] = None,
-        is_cancelled: Callable[[], bool] = lambda: False,
-        original_video_path: Optional[str] = None,
-    ) -> tuple[List[Frame], List[PageManifestEntry]]:
+    def execute(self, req: ExtractRequest) -> ExtractResult:
+        video_path = req.video_path
         self.video_service.open_video(video_path)
         orig_w, orig_h = self.video_service.get_original_size()
 
         # Resolve effective OCR
+        r = req
         effective_ocr: IOcrService
-        if no_ocr:
+        if r.no_ocr:
             from src.domain.interfaces import _NoopOcrService
             effective_ocr = _NoopOcrService()
         else:
             if not self.ocr_service.initialize():
-                on_log("[WARN] OCR unavailable")
+                r.on_log("[WARN] OCR unavailable")
                 from src.domain.interfaces import _NoopOcrService
                 effective_ocr = _NoopOcrService()
             else:
                 effective_ocr = self.ocr_service
 
         calibrator = BarProfileCalibrator(bootstrap=self.config.bar_min_diff_threshold)
-        deduplicator = Deduplicator(self.config, effective_ocr, calibrator=calibrator)
+        deduplicator = Deduplicator(self.config, effective_ocr)
         ocr_available = effective_ocr.is_enabled()        # Write extraction log to diagnostics/ subfolder (always on)
         log_file: Optional[TextIO] = None
         try:
-            log_path = output_dir / "diagnostics" / "extraction.log"
+            log_path = r.output_dir / "diagnostics" / "extraction.log"
             log_path.parent.mkdir(parents=True, exist_ok=True)
             log_file = open(log_path, "w", encoding="utf-8")
         except Exception:
             pass
 
         def log(msg: str):
-            on_log(msg)
+            r.on_log(msg)
             if log_file:
                 log_file.write(msg + "\n")
                 log_file.flush()
@@ -76,47 +87,44 @@ class ExtractScoreUseCase:
         committer = PageCommitter(
             self.video_service, self.file_service, effective_ocr,
             self.config, deduplicator, orig_w, orig_h,
-            original_video_path=original_video_path,
+            original_video_path=r.original_video_path,
             calibrator=calibrator,
         )
         stepper = FrameStepper(
             self.video_service, self.config,
-            on_log=log, on_progress=on_progress, is_cancelled=is_cancelled,
+            on_log=log, on_progress=r.on_progress, is_cancelled=r.is_cancelled,
         )
 
         unique_pages: List[Frame] = []
         manifest_entries: List[PageManifestEntry] = []
         stepper.set_unique_pages_ref(unique_pages)
 
-        log(f"Processing {video_path}")
+        log(f"Processing {r.video_path}")
         log(f"Video resolution: {orig_w}x{orig_h} (scale 640→{640/orig_w:.3f})")
 
-        # Get video duration for end_offset calculation
         video_duration = self.video_service.get_total_frames() / self.video_service.get_fps() if self.video_service.get_fps() > 0 else 0.0
 
-        # Initialize: handle start-time capture
         attempt_num = 0
-        start_pair = stepper.initialize(start_time)
+        start_pair = stepper.initialize(r.start_time)
         if start_pair is not None:
             a_frame, b_frame = start_pair
             attempt_num += 1
             log(f"Trim start: capturing first page at {a_frame.timestamp:.1f}s...")
             entries = committer.commit(
-                a_frame, b_frame, unique_pages, output_dir, attempt_num,
-                debug, log, on_page_detected, is_first=True, plotter=plotter,
+                a_frame, b_frame, unique_pages, r.output_dir, attempt_num,
+                r.debug, log, r.on_page_detected, is_first=True, plotter=plotter,
             )
             manifest_entries.extend(entries)
 
         log(f"Extracting from ~{stepper.current_idx / stepper.fps:.1f}s")
 
-        # Main loop
         while True:
             result = stepper.step()
             if result is None:
                 break
             current_frame, ssim_score = result
 
-            if stepper.check_end_offset(current_frame.timestamp, end_offset, video_duration):
+            if stepper.check_end_offset(current_frame.timestamp, r.end_offset, video_duration):
                 break
 
             if stepper.should_trigger(ssim_score):
@@ -124,27 +132,24 @@ class ExtractScoreUseCase:
                 a_frame, b_frame = stepper.capture_a_b(current_frame)
                 attempt_num += 1
                 entries = committer.commit(
-                    a_frame, b_frame, unique_pages, output_dir, attempt_num,
-                    debug, log, on_page_detected, is_first=False, plotter=plotter,
+                    a_frame, b_frame, unique_pages, r.output_dir, attempt_num,
+                    r.debug, log, r.on_page_detected, is_first=False, plotter=plotter,
                     ssim_score=ssim_score,
                 )
                 manifest_entries.extend(entries)
 
-        # Tail scan for end-credits
-        stepper.tail_scan(effective_ocr, unique_pages, stepper.current_idx, end_offset, debug, log_file)
+        stepper.tail_scan(effective_ocr, unique_pages, stepper.current_idx, r.end_offset, r.debug, log_file)
 
-        # Flush any held pages (re-judged with the learned floor when available)
         manifest_entries.extend(committer.flush_pending(
-            unique_pages, output_dir, debug, log, on_page_detected, plotter,
+            unique_pages, r.output_dir, r.debug, log, r.on_page_detected, plotter,
         ))
 
-        # Release original video capture if opened
         committer.release()
 
         if log_file:
             log_file.close()
 
-        return unique_pages, manifest_entries
+        return ExtractResult(pages=unique_pages, manifest=manifest_entries)
 
 
 class GeneratePdfUseCase:

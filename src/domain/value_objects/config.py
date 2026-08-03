@@ -19,6 +19,16 @@ class ScoreConfig:
     pixel_similarity_threshold: float = 0.95     # Step 1: global pixel similarity
     row_similarity_threshold: float = 0.98       # Step 2: per-row similarity
     row_coverage_threshold: float = 0.94         # Step 2: % of rows must be similar
+    force_duplicate_similarity: float = 0.995    # Global similarity above which = forced duplicate
+
+    # Extraction Tweaks
+    dedup_skip_ssim: float = 0.65                # Skip pixel dedup when change SSIM is below this
+    tail_scan_window: float = 20.0               # End-credits scan: seconds before end to examine
+    tail_scan_step: float = 2.0                  # End-credits scan: step interval in seconds
+
+    # Page Quality
+    blank_page_mean_threshold: float = 220.0     # Mean pixel above which = mostly white
+    blank_page_std_threshold: float = 60.0       # Std pixel below which = uniform (blank with mean check)
 
     # OCR
     ocr_confidence_threshold: int = 40           # Minimum confidence (0-100)
