@@ -427,6 +427,63 @@ QRadioButton::indicator:checked {{
 QRadioButton::indicator:hover {{
     border-color: {BRASS};
 }}
+QWidget#titleBar {{
+    background: {BG};
+}}
+QPushButton#hamburgerBtn {{
+    background: transparent;
+    color: {MUTED};
+    border: none;
+    font-size: 18px;
+    padding: 0;
+}}
+QPushButton#hamburgerBtn:hover {{
+    background: {SURFACE2};
+    color: {BRASS};
+}}
+QPushButton#winMinBtn, QPushButton#winMaxBtn {{
+    background: transparent;
+    color: {MUTED};
+    border: none;
+    font-size: 14px;
+    padding: 0;
+}}
+QPushButton#winMinBtn:hover, QPushButton#winMaxBtn:hover {{
+    background: {SURFACE2};
+    color: {INK};
+}}
+QPushButton#winCloseBtn {{
+    background: transparent;
+    color: {MUTED};
+    border: none;
+    font-size: 16px;
+    padding: 0;
+}}
+QPushButton#winCloseBtn:hover {{
+    background: {BRASS};
+    color: {BG};
+}}
+QMenu {{
+    background: {SURFACE};
+    border: 1px solid {BORDER2};
+    border-radius: 4px;
+    padding: 4px 0;
+}}
+QMenu::item {{
+    padding: 6px 24px 6px 20px;
+    color: {INK};
+}}
+QMenu::item:selected {{
+    background: {SURFACE2};
+}}
+QMenu::item:disabled {{
+    color: {MUTED};
+}}
+QMenu::separator {{
+    height: 1px;
+    background: {BORDER};
+    margin: 4px 8px;
+}}
 """
 
 
@@ -3045,10 +3102,89 @@ class ExtractTab(QWidget):
 
 # ── Main Window ──────────────────────────────────────────────────────
 
+class TitleBar(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("titleBar")
+        self.setFixedHeight(40)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.hamburger = QPushButton("\u2630")
+        self.hamburger.setObjectName("hamburgerBtn")
+        self.hamburger.setFixedSize(46, 40)
+        layout.addWidget(self.hamburger)
+
+        layout.addStretch()
+
+        self.min_btn = QPushButton("\u2014")
+        self.min_btn.setObjectName("winMinBtn")
+        self.min_btn.setFixedSize(46, 40)
+        self.min_btn.clicked.connect(lambda: self.window().showMinimized())
+        layout.addWidget(self.min_btn)
+
+        self.max_btn = QPushButton("\u25a1")
+        self.max_btn.setObjectName("winMaxBtn")
+        self.max_btn.setFixedSize(46, 40)
+        self.max_btn.clicked.connect(self._toggle_maximize)
+        layout.addWidget(self.max_btn)
+
+        self.close_btn = QPushButton("\u2715")
+        self.close_btn.setObjectName("winCloseBtn")
+        self.close_btn.setFixedSize(46, 40)
+        self.close_btn.clicked.connect(self.window().close)
+        layout.addWidget(self.close_btn)
+
+        self._drag_pos = None
+        self._dragging = False
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.window().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj is self.window() and event.type() == event.Type.WindowStateChange:
+            if self.window().isMaximized():
+                self.max_btn.setText("\u2750")
+            else:
+                self.max_btn.setText("\u25a1")
+        return super().eventFilter(obj, event)
+
+    def _toggle_maximize(self):
+        win = self.window()
+        if win.isMaximized():
+            win.showNormal()
+        else:
+            win.showMaximized()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint()
+            self._dragging = True
+
+    def mouseMoveEvent(self, event):
+        if self._dragging and self._drag_pos is not None:
+            win = self.window()
+            delta = event.globalPosition().toPoint() - self._drag_pos
+            win.move(win.pos() + delta)
+            self._drag_pos = event.globalPosition().toPoint()
+
+    def mouseReleaseEvent(self, event):
+        self._dragging = False
+        self._drag_pos = None
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._toggle_maximize()
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Score Extractor — Piano Score Video to PDF")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setMinimumSize(1040, 760)
         self.resize(1100, 780)
         self.setStyleSheet(
@@ -3068,7 +3204,18 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # ── Custom title bar ──
+        self.title_bar = TitleBar()
+        main_layout.addWidget(self.title_bar)
+
+        # Content area with padding
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(12, 12, 12, 12)
+        content_layout.setSpacing(0)
 
         # Tabs
         self.tabs = QTabWidget()
@@ -3078,99 +3225,11 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.extract_tab, "Extract")
         self.tabs.addTab(self.config_tab, "Settings")
 
-        main_layout.addWidget(self.tabs, 1)
+        content_layout.addWidget(self.tabs, 1)
+        main_layout.addWidget(content, 1)
 
-        # ── Menu bar ──
-        menu = self.menuBar()
-        menu.setStyleSheet(f"""
-            QMenuBar {{
-                background: {BG};
-                color: {INK};
-                border-bottom: 1px solid {BORDER};
-                padding: 2px 0;
-                font-size: 13px;
-            }}
-            QMenuBar::item {{
-                padding: 4px 10px;
-                background: transparent;
-            }}
-            QMenuBar::item:selected {{
-                background: {SURFACE2};
-                border-radius: 4px;
-            }}
-            QMenu {{
-                background: {SURFACE};
-                border: 1px solid {BORDER2};
-                border-radius: 4px;
-                padding: 4px 0;
-            }}
-            QMenu::item {{
-                padding: 6px 24px 6px 20px;
-                color: {INK};
-            }}
-            QMenu::item:selected {{
-                background: {SURFACE2};
-            }}
-            QMenu::item:disabled {{
-                color: {MUTED};
-            }}
-            QMenu::separator {{
-                height: 1px;
-                background: {BORDER};
-                margin: 4px 8px;
-            }}
-        """)
-
-        file_menu = menu.addMenu("&File")
-        open_video_action = QAction("&Open Video...\tCtrl+O", self)
-        open_video_action.triggered.connect(self.extract_tab._browse_video)
-        file_menu.addAction(open_video_action)
-
-        open_project_action = QAction("Open &Project...\tCtrl+Shift+O", self)
-        open_project_action.triggered.connect(self.extract_tab._browse_project)
-        file_menu.addAction(open_project_action)
-
-        file_menu.addSeparator()
-
-        exit_action = QAction("E&xit\tAlt+F4", self)
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-
-        extraction_menu = menu.addMenu("E&xtraction")
-        start_action = QAction("&Start Extraction\tCtrl+E", self)
-        start_action.triggered.connect(self.extract_tab._start_extraction)
-        extraction_menu.addAction(start_action)
-
-        cancel_action = QAction("&Cancel\tEscape", self)
-        cancel_action.triggered.connect(self.extract_tab._cancel)
-        extraction_menu.addAction(cancel_action)
-
-        settings_action = QAction("&Settings...\tCtrl+,", self)
-        settings_action.triggered.connect(lambda: self.tabs.setCurrentIndex(1))
-        extraction_menu.addAction(settings_action)
-
-        help_menu = menu.addMenu("&Help")
-        getting_started_action = QAction("&Getting Started\tF1", self)
-        getting_started_action.triggered.connect(self._show_getting_started)
-        help_menu.addAction(getting_started_action)
-
-        shortcuts_action = QAction("&Keyboard Shortcuts", self)
-        shortcuts_action.triggered.connect(self._show_shortcuts)
-        help_menu.addAction(shortcuts_action)
-
-        help_menu.addSeparator()
-
-        about_action = QAction("&About Score Extractor", self)
-        about_action.triggered.connect(self._show_about)
-        help_menu.addAction(about_action)
-
-        # ── Keyboard shortcuts (window-level) ──
-        open_video_action.setShortcut("Ctrl+O")
-        open_project_action.setShortcut("Ctrl+Shift+O")
-        start_action.setShortcut("Ctrl+E")
-        cancel_action.setShortcut("Escape")
-        settings_action.setShortcut("Ctrl+,")
-        getting_started_action.setShortcut("F1")
+        # ── Hamburger menu ──
+        self._setup_hamburger_menu()
 
         # Status bar
         self.status_bar = self.statusBar()
@@ -3228,6 +3287,67 @@ class MainWindow(QMainWindow):
     def _on_tab_changed(self, index: int):
         if index == 1:
             self.config_tab.refresh_from_api()
+
+    def _setup_hamburger_menu(self):
+        menu = QMenu(self.title_bar.hamburger)
+
+        file_menu = menu.addMenu("File")
+        open_video_action = QAction("Open Video...\tCtrl+O", self)
+        open_video_action.triggered.connect(self.extract_tab._browse_video)
+        file_menu.addAction(open_video_action)
+        self.addAction(open_video_action)
+
+        open_project_action = QAction("Open Project...\tCtrl+Shift+O", self)
+        open_project_action.triggered.connect(self.extract_tab._browse_project)
+        file_menu.addAction(open_project_action)
+        self.addAction(open_project_action)
+
+        file_menu.addSeparator()
+
+        exit_action = QAction("Exit\tAlt+F4", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        extract_menu = menu.addMenu("Extraction")
+        start_action = QAction("Start Extraction\tCtrl+E", self)
+        start_action.triggered.connect(self.extract_tab._start_extraction)
+        extract_menu.addAction(start_action)
+        self.addAction(start_action)
+
+        cancel_action = QAction("Cancel\tEscape", self)
+        cancel_action.triggered.connect(self.extract_tab._cancel)
+        extract_menu.addAction(cancel_action)
+        self.addAction(cancel_action)
+
+        settings_action = QAction("Settings...\tCtrl+,", self)
+        settings_action.triggered.connect(lambda: self.tabs.setCurrentIndex(1))
+        extract_menu.addAction(settings_action)
+        self.addAction(settings_action)
+
+        help_menu = menu.addMenu("Help")
+        getting_started_action = QAction("Getting Started\tF1", self)
+        getting_started_action.triggered.connect(self._show_getting_started)
+        help_menu.addAction(getting_started_action)
+        self.addAction(getting_started_action)
+
+        shortcuts_action = QAction("Keyboard Shortcuts", self)
+        shortcuts_action.triggered.connect(self._show_shortcuts)
+        help_menu.addAction(shortcuts_action)
+
+        help_menu.addSeparator()
+
+        about_action = QAction("About Score Extractor", self)
+        about_action.triggered.connect(self._show_about)
+        help_menu.addAction(about_action)
+
+        open_video_action.setShortcut("Ctrl+O")
+        open_project_action.setShortcut("Ctrl+Shift+O")
+        start_action.setShortcut("Ctrl+E")
+        cancel_action.setShortcut("Escape")
+        settings_action.setShortcut("Ctrl+,")
+        getting_started_action.setShortcut("F1")
+
+        self.title_bar.hamburger.setMenu(menu)
 
     def _show_getting_started(self):
         dlg = GettingStartedDialog(self)
