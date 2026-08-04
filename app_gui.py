@@ -164,9 +164,9 @@ QDoubleSpinBox, QSpinBox {{
     background: #0d0d0d;
     border: 1px solid {BORDER};
     border-radius: 6px;
-    padding: 5px 12px;
+    padding: 5px 34px 5px 12px;
     color: {INK};
-    min-height: 28px;
+    min-height: 30px;
     font-size: 14px;
     selection-background-color: {BRASS};
     selection-color: {BG};
@@ -440,14 +440,13 @@ def _generate_check_pixmap() -> str:
     from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen
     import tempfile
     path = os.path.join(tempfile.gettempdir(), f"score_extractor_check_{os.getpid()}.png")
-    pm = QPixmap(36, 36)
-    pm.setDevicePixelRatio(2)
+    pm = QPixmap(24, 24)
     pm.fill(QColor(Qt.GlobalColor.transparent))
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setPen(QPen(QColor("white"), 4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-    p.drawLine(8, 22, 16, 28)
-    p.drawLine(16, 28, 28, 10)
+    p.setPen(QPen(QColor("white"), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    p.drawLine(5, 13, 10, 18)
+    p.drawLine(10, 18, 18, 6)
     p.end()
     pm.save(path)
     return path.replace("\\", "/")
@@ -457,14 +456,13 @@ def _generate_chevron_pixmap() -> str:
     from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen
     import tempfile
     path = os.path.join(tempfile.gettempdir(), f"score_extractor_chevron_{os.getpid()}.png")
-    pm = QPixmap(24, 24)
-    pm.setDevicePixelRatio(2)
+    pm = QPixmap(20, 20)
     pm.fill(QColor(Qt.GlobalColor.transparent))
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setPen(QPen(QColor(BRASS), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-    p.drawLine(4, 8, 12, 16)
-    p.drawLine(12, 16, 20, 8)
+    p.setPen(QPen(QColor(BRASS), 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    p.drawLine(5, 7, 10, 13)
+    p.drawLine(10, 13, 15, 7)
     p.end()
     pm.save(path)
     return path.replace("\\", "/")
@@ -475,18 +473,17 @@ def _generate_spin_arrow_pixmap(up: bool) -> str:
     import tempfile
     name = "up" if up else "down"
     path = os.path.join(tempfile.gettempdir(), f"score_extractor_spin_{name}_{os.getpid()}.png")
-    pm = QPixmap(24, 24)
-    pm.setDevicePixelRatio(2)
+    pm = QPixmap(20, 20)
     pm.fill(QColor(Qt.GlobalColor.transparent))
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setPen(QPen(QColor(BRASS), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    p.setPen(QPen(QColor(BRASS), 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     if up:
-        p.drawLine(4, 16, 12, 8)
-        p.drawLine(12, 8, 20, 16)
+        p.drawLine(5, 13, 10, 7)
+        p.drawLine(10, 7, 15, 13)
     else:
-        p.drawLine(4, 8, 12, 16)
-        p.drawLine(12, 16, 20, 8)
+        p.drawLine(5, 7, 10, 13)
+        p.drawLine(10, 13, 15, 7)
     p.end()
     pm.save(path)
     return path.replace("\\", "/")
