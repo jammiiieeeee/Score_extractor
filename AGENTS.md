@@ -8,13 +8,18 @@
 |------|---------|
 | Run GUI | `python app_gui.py` |
 | Run CLI | `python main.py <video_path>` |
-| Run all tests | `python -m pytest tests/ -v` |
+| Run all tests | `python -m pytest tests/ -v -m "not slow"` |
+| Run all tests (incl. slow/OCR) | `python -m pytest tests/ -v` |
 | Run single test | `python -m pytest tests/test_api.py -v -k test_name` |
 
 ## Architecture
 - Clean Architecture: `src/api` → `src/application` → `src/domain` ← `src/infrastructure`
 - Entry points: `app_gui.py` (PyQt6 GUI), `main.py` (CLI)
 - Specs: `.opencode/instructions/master_map.md`
+
+## Testing
+- Default test run **skips slow tests** (`-m "not slow"`) — this avoids PaddleOCR import timeouts unless changes touch OCR code
+- Run the full suite (including slow/OCR) only when working on OCR-related changes or before committing
 
 ## Key Conventions
 - Domain models in `src/domain/models.py`, config in `src/domain/value_objects/config.py`
