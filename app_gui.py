@@ -851,26 +851,17 @@ class DualHandleSeekBar(QWidget):
 
 # ── Welcome / Onboarding Widget ─────────────────────────────────────
 
-class WelcomeWidget(QWidget):
+class WelcomeWidget(QDialog):
     dismissed = pyqtSignal()
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("roundedWidget")
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        QDialog.__init__(self, parent)
+        self.setWindowTitle("Welcome \u2014 Score Extractor")
+        self.resize(560, 520)
+        self.setModal(True)
+        self.setStyleSheet(f"QDialog {{ background: {BG}; }}")
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(f"QScrollArea {{ background: {SURFACE}; border-radius: 8px; }}")
-
-        inner = QWidget()
-        inner.setStyleSheet(f"background: {SURFACE};")
-        layout = QVBoxLayout(inner)
+        layout = QVBoxLayout(self)
         layout.setSpacing(SPACE_LG)
         layout.setContentsMargins(SPACE_XL, SPACE_XL, SPACE_XL, SPACE_XL)
 
@@ -925,9 +916,6 @@ class WelcomeWidget(QWidget):
         footer.addWidget(dismiss_btn)
         layout.addLayout(footer)
 
-        scroll.setWidget(inner)
-        outer.addWidget(scroll)
-
     def _step_card(self, number: str, heading: str, description: str) -> QWidget:
         card = QWidget()
         card.setStyleSheet(f"""
@@ -976,6 +964,7 @@ class WelcomeWidget(QWidget):
         if self._dont_show.isChecked():
             settings.setValue("onboarding_welcome_seen", True)
         self.dismissed.emit()
+        self.accept()
 
 
 class GettingStartedDialog(QDialog):
@@ -2044,6 +2033,7 @@ class ExtractTab(QWidget):
         # ── Project field ──
         project_label = QLabel("Project:")
         project_label.setFixedWidth(115)
+        project_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         self.project_edit = QLineEdit()
         self.project_edit.setPlaceholderText("Score name \u2014 type to find an existing score, or enter a new name")
@@ -2077,16 +2067,6 @@ class ExtractTab(QWidget):
         self.crop_widget.setAccessibleName("Crop preview")
         layout.addWidget(self.crop_widget)
 
-        self.seek_bar = DualHandleSeekBar()
-        self.seek_bar.setMinimumHeight(64)
-        self.seek_bar.setAccessibleName("Video seek bar with start and end handles")
-        layout.addWidget(self.seek_bar)
-
-        self.welcome_widget = WelcomeWidget()
-        self.welcome_widget.setVisible(not self._welcome_seen and not self._has_existing_score)
-        self.welcome_widget.dismissed.connect(self._on_welcome_dismissed)
-        layout.addWidget(self.welcome_widget)
-
         # ── Crop ratio row ──
         crop_row = QHBoxLayout()
         crop_label = QLabel("Crop ratio:")
@@ -2114,6 +2094,12 @@ class ExtractTab(QWidget):
         crop_row.addWidget(self.config_btn)
         layout.addLayout(crop_row)
 
+        # ── Seek bar ──
+        self.seek_bar = DualHandleSeekBar()
+        self.seek_bar.setMinimumHeight(64)
+        self.seek_bar.setAccessibleName("Video seek bar with start and end handles")
+        layout.addWidget(self.seek_bar)
+
         # ── Output PDF name ──
         pdf_row = QHBoxLayout()
         pdf_label = QLabel("Output PDF:")
@@ -2133,7 +2119,6 @@ class ExtractTab(QWidget):
         self.progress_bar.setValue(0)
         self.page_badge = QLabel("")
         _set_widget_class(self.page_badge, "count")
-        self.page_badge.setMinimumWidth(150)
         self.page_badge.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         progress_row.addWidget(self.progress_bar, 1)
         progress_row.addWidget(self.page_badge)
@@ -2609,9 +2594,6 @@ class ExtractTab(QWidget):
 
     def _on_welcome_dismissed(self):
         self._welcome_seen = True
-        self.welcome_widget.setVisible(False)
-        self.crop_widget.setVisible(True)
-        self.seek_bar.setVisible(True)
 
     def _set_status(self, text: str, peak: bool = False):
         self.status_label.setText(text)
@@ -2624,14 +2606,6 @@ class ExtractTab(QWidget):
         has_video = bool(self._video_path and os.path.exists(self._video_path))
         has_pages = self._api.get_page_count() > 0
         can_act = not self._busy
-
-        show_welcome = (not self._welcome_seen
-                        and not has_video
-                        and not self._has_existing_score
-                        and not has_pages)
-        self.welcome_widget.setVisible(show_welcome)
-        self.crop_widget.setVisible(not show_welcome)
-        self.seek_bar.setVisible(not show_welcome)
 
         dbg(f"_update_state: busy={self._busy}, reextract={self._reextract_mode}, has_existing={self._has_existing_score}, has_pages={has_pages}, has_project={has_project}, has_video={has_video}")
 
@@ -3296,6 +3270,17 @@ def main():
 
     window = MainWindow()
     window.show()
+
+    # ── Welcome dialog on first launch ──
+    settings = QSettings("ScoreExtractor", "App")
+    if not bool(settings.value("onboarding_welcome_seen", False)):
+        welcome = WelcomeWidget(window)
+        welcome.dismissed.connect(window.extract_tab._on_welcome_dismissed)
+        welcome.setStyleSheet(
+            window.styleSheet()
+        )
+        welcome.exec()
+
     sys.exit(app.exec())
 
 
