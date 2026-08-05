@@ -463,7 +463,6 @@ class GuiApi:
             elif "ffmpeg" in msg.lower():
                 hint = "\nffmpeg is required for video reading. Install it from ffmpeg.org or via WinGet: winget install ffmpeg"
             self._emit_error(f"Extraction failed: {msg}{hint}")
-            self._emit_log(f"  [Error] {e}")
 
         finally:
             self._extraction_thread = None
@@ -537,7 +536,6 @@ class GuiApi:
                 hint = ("\nCheck that the video is still available and not region-restricted. "
                         "Ensure yt-dlp is up to date: pip install -U yt-dlp")
             self._emit_error(f"YouTube download failed: {msg}{hint}")
-            self._emit_log(f"  [Error] {e}")
 
         finally:
             self._download_thread = None
@@ -602,7 +600,6 @@ class GuiApi:
 
             self._emit_progress("generating_pdf", 100.0, "PDF generated successfully")
             self._emit_completed(len(self._pages))
-            self._emit_log(f"PDF saved: {output_path}")
 
             score_dir = output.parent
 
@@ -651,7 +648,6 @@ class GuiApi:
             elif "No pages" in msg:
                 hint = "\nExtract pages first before generating a PDF."
             self._emit_error(f"PDF generation failed: {msg}{hint}")
-            self._emit_log(f"  [Error] {e}")
 
         finally:
             self._state.phase = "idle"
