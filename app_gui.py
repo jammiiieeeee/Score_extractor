@@ -1991,6 +1991,7 @@ class ExtractTab(QWidget):
         self.video_path_edit.setPlaceholderText("Location of your sheet-music video (*.mp4, *.avi, *.mkv, *.mov)")
         self.browse_btn = QPushButton("Browse…")
         _set_widget_class(self.browse_btn, "secondary")
+        self.browse_btn.setMinimumHeight(32)
         input_grid.addWidget(self._local_label, 0, 0)
         input_grid.addWidget(self.video_path_edit, 0, 1)
         input_grid.addWidget(self.browse_btn, 0, 2)
@@ -2010,6 +2011,7 @@ class ExtractTab(QWidget):
         saved_qi = self._api.get_config().get("yt_quality_index", 0)
         self.quality_combo.setCurrentIndex(min(saved_qi, self.quality_combo.count() - 1))
         self.quality_combo.setFixedWidth(130)
+        self.quality_combo.setMinimumHeight(32)
 
         self.download_btn = QPushButton("Download")
         _set_widget_class(self.download_btn, "secondary")
@@ -2020,9 +2022,9 @@ class ExtractTab(QWidget):
         yt_action.addWidget(self.quality_combo)
         yt_action.addWidget(self.download_btn)
 
-        input_grid.addWidget(self._yt_label, 0, 0)
-        input_grid.addWidget(self.yt_url_edit, 0, 1)
-        input_grid.addLayout(yt_action, 0, 2)
+        input_grid.addWidget(self._yt_label, 1, 0)
+        input_grid.addWidget(self.yt_url_edit, 1, 1)
+        input_grid.addLayout(yt_action, 1, 2)
         self._yt_label.hide()
         self.yt_url_edit.hide()
         self.quality_combo.hide()
