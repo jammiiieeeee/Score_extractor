@@ -1967,7 +1967,7 @@ class ExtractTab(QWidget):
         # ── Source toggle ──
         toggle_row = QHBoxLayout()
         toggle_row.setSpacing(16)
-        self.yt_radio = QRadioButton("YouTube URL")
+        self.yt_radio = QRadioButton("Video URL")
         self.local_radio = QRadioButton("Local file")
         self.yt_radio.setChecked(True)
         self._source_group = QButtonGroup(self)
@@ -1996,11 +1996,11 @@ class ExtractTab(QWidget):
         input_grid.addWidget(self.video_path_edit, 0, 1)
         input_grid.addWidget(self.browse_btn, 0, 2)
 
-        # YouTube mode
-        self._yt_label = QLabel("YouTube URL:")
+        # Video URL mode
+        self._yt_label = QLabel("Video URL:")
         self._yt_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.yt_url_edit = QLineEdit()
-        self.yt_url_edit.setPlaceholderText("Paste YouTube video URL")
+        self.yt_url_edit.setPlaceholderText("Paste YouTube or Bilibili video URL")
 
         self.quality_combo = QComboBox()
         self.quality_combo.addItem("Best (≤1080p)", "bestvideo[height<=1080]")
@@ -2413,15 +2413,15 @@ class ExtractTab(QWidget):
         if not url:
             return
         if not url.startswith("http"):
-            QMessageBox.warning(self, "Invalid URL", "Please enter a valid YouTube URL starting with http")
+            QMessageBox.warning(self, "Invalid URL", "Please enter a valid video URL starting with http")
             return
         try:
             parsed = urlparse(url)
         except ValueError:
-            QMessageBox.warning(self, "Invalid URL", "Please enter a valid YouTube URL.")
+            QMessageBox.warning(self, "Invalid URL", "Please enter a valid video URL.")
             return
         if not parsed.scheme or not parsed.netloc:
-            QMessageBox.warning(self, "Invalid URL", "Please enter a valid YouTube URL.")
+            QMessageBox.warning(self, "Invalid URL", "Please enter a valid video URL.")
             return
         params = parse_qs(parsed.query)
         if 'list' in params:

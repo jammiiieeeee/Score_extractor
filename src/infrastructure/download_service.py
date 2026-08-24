@@ -58,10 +58,12 @@ class DownloadService:
 
     @staticmethod
     def _extract_video_id(url: str) -> Optional[str]:
-        """Extract YouTube video ID from various URL formats."""
+        """Extract video ID from various URL formats (YouTube or Bilibili)."""
         patterns = [
             r'(?:v=|/v/|youtu\.be/|/embed/)([a-zA-Z0-9_-]{11})',
             r'^([a-zA-Z0-9_-]{11})$',
+            r'/video/(BV[a-zA-Z0-9]+)',
+            r'(BV[a-zA-Z0-9]{10,})',
         ]
         for pat in patterns:
             m = re.search(pat, url)

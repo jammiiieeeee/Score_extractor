@@ -56,7 +56,7 @@ def main():
     parser.add_argument("--end-offset", type=float, default=0.0, help="Stop processing N seconds before video end (0 = off)")
     parser.add_argument("--crop-ratio", type=float, help="Override crop ratio for PDF output")
     parser.add_argument("--from-dir", help="Regenerate PDF from an existing score directory (skips video extraction)")
-    parser.add_argument("--yt-url", help="YouTube URL to download before extraction")
+    parser.add_argument("--yt-url", help="Video URL (YouTube/Bilibili) to download before extraction")
     parser.add_argument("--quality", choices=["1080p", "720p", "480p", "360p"], default="1080p", help="Video quality for YouTube download (default: 1080p)")
 
     args = parser.parse_args()
@@ -85,17 +85,16 @@ def main():
         print(f"\nPDF saved: {output_path}")
 
     else:
-        # Determine video path - handle YouTube URLs
+        # Determine video path - handle video URLs
         video_path = args.input
         is_youtube = False
 
         if args.yt_url:
-            # Explicit YouTube URL flag
+            # Explicit video URL flag
             video_path = args.yt_url
             is_youtube = True
-        elif video_path and (video_path.startswith("http") or video_path.startswith("www.") or 
-                            "youtube.com" in video_path or "youtu.be" in video_path):
-            # Auto-detect YouTube URL from positional arg
+        elif video_path and (video_path.startswith("http") or video_path.startswith("www.")):
+            # Auto-detect video URL (YouTube, Bilibili, etc.) from positional arg
             is_youtube = True
 
         # Download YouTube video if needed

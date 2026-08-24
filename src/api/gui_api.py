@@ -532,10 +532,10 @@ class GuiApi:
                         "and if the problem persists, try passing browser cookies:\n"
                         '  python -c "from yt_dlp import YoutubeDL; '
                         "YoutubeDL({'cookiesfrombrowser': ('chrome',)}).download('URL')\"")
-            elif "yt-dlp" in msg.lower() or "youtube" in msg.lower():
+            elif "yt-dlp" in msg.lower() or "youtube" in msg.lower() or "bilibili" in msg.lower():
                 hint = ("\nCheck that the video is still available and not region-restricted. "
                         "Ensure yt-dlp is up to date: pip install -U yt-dlp")
-            self._emit_error(f"YouTube download failed: {msg}{hint}")
+            self._emit_error(f"Video download failed: {msg}{hint}")
 
         finally:
             self._download_thread = None
