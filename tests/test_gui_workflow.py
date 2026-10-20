@@ -211,6 +211,10 @@ class TestExtractionWorkflow:
     def test_full_extraction_with_callbacks(self, api, test_video, work_dir):
         cb = CallbackCollector(api)
 
+        # This test exercises the extraction pipeline end-to-end; disable the
+        # boundary crop so it doesn't alter page acceptance on the fixture
+        # (auto-crop is covered separately in TestBoundaryCropWorkflow).
+        api.update_config({"boundary_mode": "off"})
         api.start_extraction(
             test_video, no_ocr=True, start_time=2.0, end_offset=10.0,
             output_folder=str(work_dir), score_name="test_extract"
@@ -544,6 +548,124 @@ class TestErrorHandlingWorkflow:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Boundary Crop Workflow
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _decode_png(data: bytes):
+    arr = np.frombuffer(data, dtype=np.uint8)
+    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+
+def _pdf_page_image_size(pdf_path):
+    """Return (width, height) in points of the first image drawn on page 1 of a PDF.
+
+    Uses PyMuPDF if available, else returns None (test skips the assertion).
+    """
+    try:
+        import fitz  # PyMuPDF
+    except Exception:
+        return None
+    doc = fitz.open(str(pdf_path))
+    try:
+        page = doc[0]
+        rects = []
+        for img in page.get_images(full=True):
+            for r in page.get_image_rects(img[0]):
+                rects.append(r)
+        if not rects:
+            return None
+        r = max(rects, key=lambda x: x.get_area())
+        return (r.width, r.height)
+    finally:
+        doc.close()
+
+
+class TestBoundaryCropWorkflow:
+    """Single-crop model: gallery/photos keep full frames; the crop is applied
+    once, by PdfService, according to boundary_mode."""
+
+    def _extract(self, api, test_video, work_dir, name, **cfg):
+        for k, v in cfg.items():
+            api.update_config({k: v})
+        api.start_extraction(
+            test_video, no_ocr=True, start_time=2.0, end_offset=10.0,
+            output_folder=str(work_dir), score_name=name
+        )
+        wait_for(lambda: not api.is_busy(), timeout=120.0)
+        return api.get_extraction_state()
+
+    def test_gallery_stays_full_frame_in_auto(self, api, test_video, work_dir):
+        """Auto mode must NOT crop the stored page image (no double crop)."""
+        state = self._extract(api, test_video, work_dir, "auto_crop",
+                              boundary_mode="auto")
+        assert state.phase == "done"
+        assert api.get_page_count() > 0
+
+        img = _decode_png(api.get_page_full(0))
+        assert img.shape[0] == 360  # full source frame, un-cropped
+
+    def test_off_mode_keeps_full_frame(self, api, test_video, work_dir):
+        state = self._extract(api, test_video, work_dir, "off_crop",
+                              boundary_mode="off")
+        assert state.phase == "done"
+        assert api.get_page_count() > 0
+
+        img = _decode_png(api.get_page_full(0))
+        assert img.shape[0] == 360
+
+    def test_manual_mode_gallery_full_frame(self, api, test_video, work_dir):
+        """Manual mode also keeps full frames in the gallery; crop is PDF-only."""
+        state = self._extract(api, test_video, work_dir, "manual_crop",
+                              boundary_mode="manual",
+                              default_crop_ratio=0.30)
+        assert state.phase == "done"
+        assert api.get_page_count() > 0
+
+        img = _decode_png(api.get_page_full(0))
+        assert img.shape[0] == 360
+
+    def test_manual_pdf_crops_once_to_ratio(self, api, test_video, work_dir):
+        """Manual mode: the PDF draws each page cropped to default_crop_ratio."""
+        self._extract(api, test_video, work_dir, "manual_pdf",
+                      boundary_mode="manual", default_crop_ratio=0.30)
+        out = str(work_dir / "manual_pdf.pdf")
+        api.generate_pdf(out)
+        wait_for(lambda: not api.is_busy(), timeout=30.0)
+        assert os.path.exists(out)
+
+        size = _pdf_page_image_size(out)
+        if size is None:
+            pytest.skip("PyMuPDF not available")
+        _w, h = size
+        # Source is 640x360; 0.30 -> ~108px tall strip. Drawn width == usable
+        # A4 width (523pt), so drawn height ~= 523 * (108/640) ~= 88pt.
+        expected = 523.0 * (108 / 640)
+        assert abs(h - expected) < 6, f"drawn height {h} vs expected {expected}"
+
+    def test_off_pdf_keeps_full_frame(self, api, test_video, work_dir):
+        self._extract(api, test_video, work_dir, "off_pdf",
+                      boundary_mode="off")
+        out = str(work_dir / "off_pdf.pdf")
+        api.generate_pdf(out)
+        wait_for(lambda: not api.is_busy(), timeout=30.0)
+
+        size = _pdf_page_image_size(out)
+        if size is None:
+            pytest.skip("PyMuPDF not available")
+        _w, h = size
+        expected = 523.0 * (360 / 640)
+        assert abs(h - expected) < 6, f"drawn height {h} vs expected {expected}"
+
+    def test_invalid_mode_rejected(self, api):
+        with pytest.raises(ValueError, match="boundary_mode"):
+            api.update_config({"boundary_mode": "bogus"})
+
+    def test_offset_config_roundtrip(self, api):
+        api.update_config({"boundary_offset_px": 12})
+        assert api.get_config()["boundary_offset_px"] == 12
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Full End-to-End Workflow
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -566,7 +688,9 @@ class TestEndToEndWorkflow:
         frame = api.read_frame_at(1.0)
         assert frame is not None
 
-        # 4. Extract (short duration for speed)
+        # 4. Extract (short duration for speed). Crop disabled so this workflow
+        # test is independent of boundary detection (covered separately).
+        api.update_config({"boundary_mode": "off"})
         api.start_extraction(
             test_video, no_ocr=True, start_time=2.0, end_offset=10.0,
             output_folder=str(work_dir), score_name="e2e_test"
@@ -610,6 +734,7 @@ class TestEndToEndWorkflow:
         cb = CallbackCollector(api)
 
         api.update_config({"default_crop_ratio": 0.30})
+        api.update_config({"boundary_mode": "manual"})
         api.start_extraction(
             test_video, no_ocr=True, start_time=2.0, end_offset=10.0,
             output_folder=str(work_dir), score_name="crop_test"

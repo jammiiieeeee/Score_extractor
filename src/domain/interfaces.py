@@ -120,5 +120,6 @@ class _NoopOcrService(IOcrService):
 
 class IPdfService(ABC):
     @abstractmethod
-    def create_pdf(self, images: List[np.ndarray], output_path: Path, config, title_hint: str = "") -> None:
+    def create_pdf(self, images: List[np.ndarray], output_path: Path, config, title_hint: str = "",
+                   crop_rows: Optional[List[Optional[int]]] = None) -> None:
         pass

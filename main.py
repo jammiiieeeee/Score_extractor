@@ -166,11 +166,13 @@ def main():
 
             if pages:
                 print(f"PDF: {output_pdf}")
+                crop_rows = [e.boundary_row for e in manifest if not e.is_duplicate] if manifest else None
                 pdf_service.create_pdf(
                     [page.image for page in pages],
                     Path(output_pdf),
                     config,
                     title_hint=score_name,
+                    crop_rows=crop_rows,
                 )
                 print(f"PDF saved: {output_pdf}")
 

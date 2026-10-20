@@ -37,6 +37,16 @@ class ScoreConfig:
     # PDF Output
     default_crop_ratio: float = 0.32             # Height of each PDF strip
 
+    # Boundary Detection (score sheet vs MIDI visualizer)
+    boundary_mode: str = "auto"                  # "auto" = per-page detection, "manual" = fixed crop, "off" = no crop
+    boundary_offset_px: int = 0                  # Lift the crop line this many px above the detected boundary
+    boundary_band_ratio: float = 0.05            # Height of comparison band (fraction of frame)
+    boundary_min_contrast: float = 12.0          # Min brightness drop (above-below) to accept a boundary row
+    boundary_search_margin: float = 0.05         # Fraction of frame excluded at very top/bottom of redetect search
+    boundary_track_window: float = 0.03          # ± fraction of frame height searched when tracking
+    boundary_hysteresis_px: int = 6              # New candidate must differ by > this from median before moving
+    boundary_median_window: int = 5              # Number of recent candidates for the tracking median
+    boundary_min_dark_mean: float = 120.0        # Bottom region mean must be below this to trust the split
 
     # Bar Detection
     bar_min_diff_threshold: float = 500.0        # Minimum summed column diff to accept bar position

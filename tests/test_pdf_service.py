@@ -75,3 +75,76 @@ class TestCreatePdf:
             mock_metrics.registerFont.side_effect = Exception("Font not found")
             pdf_svc.create_pdf(images, out, config, title_hint="Fallback")
             assert out.exists()
+
+
+def _capture_drawn_heights(pdf_svc, images, out, config, crop_rows=None):
+    """Run create_pdf and return the (width, height) list passed to drawImage."""
+    drawn = []
+
+    def fake_draw_image(self, image, x, y, width=None, height=None, **kwargs):
+        drawn.append((width, height))
+
+    with patch("reportlab.pdfgen.canvas.Canvas.drawImage", fake_draw_image):
+        pdf_svc.create_pdf(images, out, config, title_hint="T", crop_rows=crop_rows)
+    return drawn
+
+
+class TestPdfCropByMode:
+    """Single-crop model: PdfService owns the only crop, driven by boundary_mode."""
+
+    def test_manual_mode_crops_to_ratio(self, pdf_svc, tmp_path):
+        cfg = ScoreConfig(default_crop_ratio=0.5, boundary_mode="manual")
+        img = make_solid_image(800, 1000)
+        heights = _capture_drawn_heights(pdf_svc, [img], tmp_path / "m.pdf", cfg)
+        assert len(heights) == 1
+        w_pt, h_pt = heights[0]
+        # drawn width == usable A4 width (595 - 2*36 = 523); height = ratio of it
+        expected_h = w_pt * (500 / 800)
+        assert abs(h_pt - expected_h) < 1.0
+
+    def test_off_mode_no_crop_full_frame(self, pdf_svc, tmp_path):
+        cfg = ScoreConfig(default_crop_ratio=0.5, boundary_mode="off")
+        img = make_solid_image(800, 1000)
+        heights = _capture_drawn_heights(pdf_svc, [img], tmp_path / "o.pdf", cfg)
+        w_pt, h_pt = heights[0]
+        expected_h = w_pt * (1000 / 800)   # full height
+        assert abs(h_pt - expected_h) < 1.0
+
+    def test_auto_mode_uses_boundary_row(self, pdf_svc, tmp_path):
+        cfg = ScoreConfig(default_crop_ratio=0.5, boundary_mode="auto")
+        img = make_solid_image(800, 1000)
+        heights = _capture_drawn_heights(
+            pdf_svc, [img], tmp_path / "a.pdf", cfg, crop_rows=[400])
+        w_pt, h_pt = heights[0]
+        expected_h = w_pt * (400 / 800)   # boundary row 400 of 1000
+        assert abs(h_pt - expected_h) < 1.0
+
+    def test_auto_mode_applies_offset(self, pdf_svc, tmp_path):
+        cfg = ScoreConfig(default_crop_ratio=0.5, boundary_mode="auto",
+                          boundary_offset_px=50)
+        img = make_solid_image(800, 1000)
+        heights = _capture_drawn_heights(
+            pdf_svc, [img], tmp_path / "ao.pdf", cfg, crop_rows=[400])
+        w_pt, h_pt = heights[0]
+        expected_h = w_pt * ((400 - 50) / 800)
+        assert abs(h_pt - expected_h) < 1.0
+
+    def test_auto_mode_falls_back_to_ratio_without_row(self, pdf_svc, tmp_path):
+        cfg = ScoreConfig(default_crop_ratio=0.5, boundary_mode="auto")
+        img = make_solid_image(800, 1000)
+        heights = _capture_drawn_heights(
+            pdf_svc, [img], tmp_path / "af.pdf", cfg, crop_rows=[None])
+        w_pt, h_pt = heights[0]
+        expected_h = w_pt * (500 / 800)   # default_crop_ratio
+        assert abs(h_pt - expected_h) < 1.0
+
+    def test_auto_offset_scales_across_pages(self, pdf_svc, tmp_path):
+        """Each page is cropped at its own row, offset applied per page."""
+        cfg = ScoreConfig(boundary_mode="auto", boundary_offset_px=0)
+        imgs = [make_solid_image(800, 1000), make_solid_image(800, 1000)]
+        heights = _capture_drawn_heights(
+            pdf_svc, imgs, tmp_path / "multi.pdf", cfg, crop_rows=[300, 600])
+        w_pt = heights[0][0]
+        assert abs(heights[0][1] - w_pt * (300 / 800)) < 1.0
+        # second page may go to page 2 of the PDF but drawImage is still called
+        assert any(abs(h - w_pt * (600 / 800)) < 1.0 for _w, h in heights)

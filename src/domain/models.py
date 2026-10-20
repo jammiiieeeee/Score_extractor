@@ -33,6 +33,7 @@ class PageManifestEntry:
     ssim_score: Optional[float] = None
     guard_rail_passed: bool = True
     attempt_duration_ms: float = 0.0
+    boundary_row: Optional[int] = None
 
     def to_dict(self) -> dict:
         return asdict(self)

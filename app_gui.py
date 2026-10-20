@@ -2083,8 +2083,32 @@ class ExtractTab(QWidget):
         self.crop_original_label = QLabel("")
         _set_widget_class(self.crop_original_label, "muted")
 
+        self.crop_mode_combo = QComboBox()
+        self.crop_mode_combo.addItem("Auto (detect pages)", "auto")
+        self.crop_mode_combo.addItem("Fixed ratio", "manual")
+        self.crop_mode_combo.addItem("Full frame", "off")
+        self.crop_mode_combo.setToolTip(
+            "How each page is cropped:\n"
+            "Auto — detect the sheet-music / visualizer boundary per page.\n"
+            "Fixed ratio — crop every page to the ratio below.\n"
+            "Full frame — keep the whole frame, no crop."
+        )
+        self.crop_mode_combo.setMinimumWidth(150)
+
+        self.crop_offset_spin = QSpinBox()
+        self.crop_offset_spin.setRange(-200, 200)
+        self.crop_offset_spin.setSingleStep(2)
+        self.crop_offset_spin.setSuffix(" px")
+        self.crop_offset_spin.setFixedWidth(90)
+        self.crop_offset_spin.setToolTip(
+            "Shift the auto-detected crop line up/down (pixels).\n"
+            "Positive keeps more of the top; negative trims lower."
+        )
+
         crop_row.addWidget(crop_label)
         crop_row.addWidget(self.crop_spin)
+        crop_row.addWidget(self.crop_mode_combo)
+        crop_row.addWidget(self.crop_offset_spin)
         crop_row.addWidget(self.crop_original_label)
         crop_row.addStretch()
         self.config_btn = QPushButton("Settings")
@@ -2209,8 +2233,11 @@ class ExtractTab(QWidget):
         self.seek_bar.seek_changed.connect(self._on_seek)
         self.crop_spin.valueChanged.connect(self._on_crop_spin_changed)
         self.crop_widget.crop_ratio_changed.connect(self.crop_spin.setValue)
+        self.crop_mode_combo.currentIndexChanged.connect(self._on_crop_mode_changed)
+        self.crop_offset_spin.valueChanged.connect(self._on_crop_offset_changed)
 
         self._refresh_completer()
+        self._load_crop_controls()
         self._update_state()
 
         self.setAcceptDrops(True)
@@ -2369,7 +2396,7 @@ class ExtractTab(QWidget):
         self._completed_pdf_path = None
         self._project_dir = ""
         self.crop_original_label.setText("")
-        self.crop_spin.setValue(self._api.get_config().get("default_crop_ratio", 0.35))
+        self._load_crop_controls()
         if not self.pdf_name_edit.text():
             self.pdf_name_edit.setText(self.project_edit.text())
         self._set_video_controls_enabled(True)
@@ -2574,6 +2601,32 @@ class ExtractTab(QWidget):
             self.crop_original_label.setText(
                 f"(was {int(self._loaded_original_ratio * 100)}%)" if self._loaded_original_ratio else "")
 
+    def _on_crop_mode_changed(self, _index: int):
+        mode = self.crop_mode_combo.currentData()
+        self._api.update_config({"boundary_mode": mode})
+        self._sync_crop_controls()
+
+    def _on_crop_offset_changed(self, val: int):
+        self._api.update_config({"boundary_offset_px": val})
+
+    def _sync_crop_controls(self):
+        mode = self.crop_mode_combo.currentData()
+        self.crop_spin.setEnabled(mode == "manual")
+        self.crop_offset_spin.setEnabled(mode == "auto")
+
+    def _load_crop_controls(self):
+        cfg = self._api.get_config()
+        mode = cfg.get("boundary_mode", "auto")
+        idx = self.crop_mode_combo.findData(mode)
+        self.crop_mode_combo.blockSignals(True)
+        self.crop_mode_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.crop_mode_combo.blockSignals(False)
+        self.crop_spin.setValue(cfg.get("default_crop_ratio", 0.35))
+        self.crop_offset_spin.blockSignals(True)
+        self.crop_offset_spin.setValue(int(cfg.get("boundary_offset_px", 0)))
+        self.crop_offset_spin.blockSignals(False)
+        self._sync_crop_controls()
+
     def _on_reextract(self):
         dbg("_on_reextract")
         if self._busy:
@@ -2699,7 +2752,11 @@ class ExtractTab(QWidget):
         main_win = self.window()
         if hasattr(main_win, 'config_tab'):
             main_win.config_tab.apply_to_api()
-        self._api.update_config({"default_crop_ratio": self.crop_spin.value()})
+        self._api.update_config({
+            "default_crop_ratio": self.crop_spin.value(),
+            "boundary_mode": self.crop_mode_combo.currentData(),
+            "boundary_offset_px": self.crop_offset_spin.value(),
+        })
 
         start_time = self.seek_bar.get_start()
         end_time = self.seek_bar.get_end()
@@ -2743,7 +2800,11 @@ class ExtractTab(QWidget):
         if hasattr(main_win, 'config_tab'):
             main_win.config_tab.apply_to_api()
 
-        self._api.update_config({"default_crop_ratio": self.crop_spin.value()})
+        self._api.update_config({
+            "default_crop_ratio": self.crop_spin.value(),
+            "boundary_mode": self.crop_mode_combo.currentData(),
+            "boundary_offset_px": self.crop_offset_spin.value(),
+        })
 
         pdf_name = self.pdf_name_edit.text().strip()
         title = pdf_name if pdf_name else None

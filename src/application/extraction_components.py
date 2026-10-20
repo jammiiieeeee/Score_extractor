@@ -20,6 +20,7 @@ from src.domain.interfaces import IVideoService, IOcrService, IFileService
 from src.domain.deduplication import Deduplicator
 from src.domain.bar_profile_calibrator import BarProfileCalibrator
 from src.domain.bar_profile_guard import BarProfileGuard
+from src.domain.boundary_detector import BoundaryDetector
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -255,6 +256,8 @@ class _Analysis:
     bar_peaks: list
     has_clean_profile: bool
     has_left_spike: bool
+    pre_crop_merged: Optional[np.ndarray] = None
+    boundary_row: Optional[int] = None
 
 
 class PageCommitter:
@@ -285,6 +288,7 @@ class PageCommitter:
         orig_h: int,
         original_video_path: Optional[str] = None,
         calibrator: Optional[BarProfileCalibrator] = None,
+        boundary_detector: Optional[BoundaryDetector] = None,
     ):
         self.video = video_service
         self.file_service = file_service
@@ -298,6 +302,10 @@ class PageCommitter:
         self._original_fps = None
         self._original_dim_probed = False
         self.calibrator = calibrator
+        self.boundary_detector = boundary_detector
+        self.boundary_mode = getattr(config, "boundary_mode", "auto")
+        self._last_boundary_row: Optional[int] = None
+        self._last_boundary_before_h: Optional[int] = None
         self._pending: List[_PendingCommit] = []
         self._calibration_logged = False
 
@@ -464,6 +472,27 @@ class PageCommitter:
             has_left_spike = verdict.has_left_spike
             bar_peaks = list(spikes)
 
+        # Boundary crop (Job B): drop the MIDI visualizer from the page image.
+        #   The page image saved to photos/ and shown in the gallery is always
+        #   the FULL merged frame — the crop is applied once, later, by
+        #   PdfService.create_pdf().  Here we only record the crop row so the
+        #   PDF knows where to cut per page.
+        #   auto   — per-page detection.  Each page transition can move the
+        #            boundary (jump-then-hold), so every analyzed pair runs a
+        #            fresh global redetect on the merged frame; held pages
+        #            re-analyzed later re-run on the same frames (idempotent).
+        #   manual — fixed crop at default_crop_ratio for every page (row left
+        #            None; PdfService applies the ratio directly).
+        #   off    — no crop.
+        pre_crop_merged = merged
+        boundary_row: Optional[int] = None
+        if self.boundary_mode == "auto" and self.boundary_detector is not None:
+            before_h = merged.shape[0]
+            self.boundary_detector.redetect(merged)
+            boundary_row = self.boundary_detector.boundary_row
+            self._last_boundary_row = self.boundary_detector.boundary_row
+            self._last_boundary_before_h = before_h
+
         # OCR number from a merged pair (dedup channel)
         # Reuse the merge result computed above when full-res frames were used;
         # only recompute if the merge fell back to scan-res frames.
@@ -514,6 +543,7 @@ class PageCommitter:
             is_dup=is_dup, guard_rail_passed=guard_rail_passed,
             reject_reason=reject_reason, bar_peaks=bar_peaks,
             has_clean_profile=has_clean_profile, has_left_spike=has_left_spike,
+            pre_crop_merged=pre_crop_merged, boundary_row=boundary_row,
         )
 
     def _commit_analyzed(
@@ -535,6 +565,11 @@ class PageCommitter:
 
         log(f"  Merge result: {len(analysis.spikes)} spike(s), merge_x={analysis.merge_x} for page {page_num}")
 
+        if self.boundary_mode == "auto" and analysis.boundary_row is not None:
+            log(f"  Boundary (auto): detected row {analysis.boundary_row}/{self._last_boundary_before_h}")
+        elif self.boundary_mode == "manual":
+            log(f"  Boundary crop (manual): PDF ratio {self.config.default_crop_ratio:.2f}")
+
         if analysis.bar_peaks:
             sorted_peaks = sorted(analysis.bar_peaks, key=lambda p: p[0])
             peak_str = ", ".join(f"col{p[0]}:{p[1]:.0f}" for p in sorted_peaks)
@@ -548,7 +583,9 @@ class PageCommitter:
         if not is_dup:
             # Reject pages that are mostly white (blank-ish frames that slipped
             # past the blank detector).  A real score page has substantial
-            # ink content; a blank frame has high mean and low std.
+            # ink content; a blank frame has high mean and low std.  Judged on
+            # the full merged frame — the blank test is about the source
+            # content, not any crop.
             merged_std = float(np.std(analysis.merged))
             merged_mean = float(np.mean(analysis.merged))
             if merged_mean > self.config.blank_page_mean_threshold and merged_std < self.config.blank_page_std_threshold:
@@ -601,6 +638,7 @@ class PageCommitter:
             ssim_score=ssim_score,
             guard_rail_passed=guard_rail_passed,
             attempt_duration_ms=round(attempt_duration_ms, 1),
+            boundary_row=analysis.boundary_row,
         )
 
     def _flush_pending(

@@ -9,6 +9,7 @@ from src.domain.models import Frame, PageManifestEntry
 from src.domain.interfaces import IVideoService, IOcrService, IPdfService, IFileService
 from src.domain.deduplication import Deduplicator
 from src.domain.bar_profile_calibrator import BarProfileCalibrator
+from src.domain.boundary_detector import BoundaryDetector
 from src.application.extraction_components import FrameStepper, PageCommitter, BarProfilePlotter
 
 
@@ -67,6 +68,18 @@ class ExtractScoreUseCase:
 
         calibrator = BarProfileCalibrator(bootstrap=self.config.bar_min_diff_threshold)
         deduplicator = Deduplicator(self.config, effective_ocr)
+        boundary_detector = None
+        if self.config.boundary_mode == "auto":
+            boundary_detector = BoundaryDetector(
+                band_ratio=self.config.boundary_band_ratio,
+                min_contrast=self.config.boundary_min_contrast,
+                search_margin=self.config.boundary_search_margin,
+                track_window=self.config.boundary_track_window,
+                hysteresis_px=self.config.boundary_hysteresis_px,
+                median_window=self.config.boundary_median_window,
+                offset_px=self.config.boundary_offset_px,
+                min_dark_mean=self.config.boundary_min_dark_mean,
+            )
         ocr_available = effective_ocr.is_enabled()        # Write extraction log to diagnostics/ subfolder (always on)
         log_file: Optional[TextIO] = None
         try:
@@ -89,6 +102,7 @@ class ExtractScoreUseCase:
             self.config, deduplicator, orig_w, orig_h,
             original_video_path=r.original_video_path,
             calibrator=calibrator,
+            boundary_detector=boundary_detector,
         )
         stepper = FrameStepper(
             self.video_service, self.config,

@@ -78,6 +78,10 @@ class GuiApi:
         self._video_path: Optional[str] = None
         self._loaded_score_path: Optional[str] = None
         self._loaded_score_metadata: dict = {}
+        # Per-page crop rows for the PDF (aligned with self._pages).  Only
+        # populated in auto boundary mode; None entries mean "use the fixed
+        # ratio" for that page.
+        self._page_crop_rows: list = []
 
         self._extraction_thread: Optional[threading.Thread] = None
         self._pdf_thread: Optional[threading.Thread] = None
@@ -207,11 +211,13 @@ class GuiApi:
             "blank_content_std_threshold", "bar_min_diff_threshold",
         }
         valid_int_0_100 = {"ocr_confidence_threshold"}
-        valid_int_any = {"bar_padding_px", "yt_quality_index"}
+        valid_int_any = {"bar_padding_px", "yt_quality_index", "boundary_offset_px"}
 
         valid_keys = valid_float_0_1 | valid_float_any | valid_int_0_100 | valid_int_any
 
         for key, value in updates.items():
+            if key == "boundary_mode":
+                continue
             if key not in valid_keys:
                 raise ValueError(f"Unknown config key: {key}")
 
@@ -229,6 +235,12 @@ class GuiApi:
                 setattr(self._config, key, val)
             elif key in valid_int_any:
                 setattr(self._config, key, int(value))
+
+        if "boundary_mode" in updates:
+            val = str(updates["boundary_mode"])
+            if val not in ("auto", "manual", "off"):
+                raise ValueError("boundary_mode must be one of: auto, manual, off")
+            self._config.boundary_mode = val
 
         return asdict(self._config)
 
@@ -426,6 +438,15 @@ class GuiApi:
                 Frame(p.image.copy(), p.timestamp, p.index) for p in pages
             ])
 
+            # Per-page boundary rows (auto mode) — committed pages only, in
+            # order, so they align 1:1 with self._pages.
+            if manifest_entries:
+                self._page_crop_rows = [
+                    e.boundary_row for e in manifest_entries if not e.is_duplicate
+                ]
+            else:
+                self._page_crop_rows = []
+
             if manifest_entries:
                 manifest_path = score_dir / "diagnostics" / "page_manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -556,14 +577,19 @@ class GuiApi:
 
     def remove_page(self, index: int) -> None:
         self._pages.remove(index)
+        if 0 <= index < len(self._page_crop_rows):
+            self._page_crop_rows.pop(index)
 
     def reorder_pages(self, new_order: list[int]) -> None:
         self._pages.reorder(new_order)
+        if len(self._page_crop_rows) == len(new_order):
+            self._page_crop_rows = [self._page_crop_rows[i] for i in new_order]
 
     def clear_pages(self) -> None:
         self._pages.clear()
         self._loaded_score_path = None
         self._loaded_score_metadata = {}
+        self._page_crop_rows = []
 
     # ═════════════════════════════════════════════════════════════════════
     #  PDF Generation (22-23)
@@ -596,7 +622,10 @@ class GuiApi:
             self._emit_log(f"PDF: {len(images)} pages...")
             self._emit_progress("generating_pdf", 0.0, "Generating PDF...")
 
-            self._pdf_service.create_pdf(images, output, self._config, title_hint=final_title)
+            self._pdf_service.create_pdf(
+                images, output, self._config, title_hint=final_title,
+                crop_rows=self._current_crop_rows(),
+            )
 
             self._emit_progress("generating_pdf", 100.0, "PDF generated successfully")
             self._emit_completed(len(self._pages))
@@ -629,6 +658,9 @@ class GuiApi:
             }
             if self._video_path:
                 meta["video_path"] = self._video_path
+            rows = self._current_crop_rows()
+            if any(r is not None for r in rows):
+                meta["page_boundary_rows"] = rows
             self.save_metadata(str(score_dir), meta)
 
             diag_dir = score_dir / "diagnostics"
@@ -699,6 +731,8 @@ class GuiApi:
         self._loaded_score_metadata = self._read_metadata(score_dir)
         meta_crop = self._loaded_score_metadata.get("crop_ratio", 0.35)
         self._config.default_crop_ratio = meta_crop
+        rows = self._loaded_score_metadata.get("page_boundary_rows") or []
+        self._page_crop_rows = list(rows)
         return len(self._pages)
 
     def delete_saved_score(self, path: str) -> None:
@@ -732,6 +766,21 @@ class GuiApi:
         if self._pages:
             return self._pages[0].image
         return None
+
+    def _current_crop_rows(self) -> list:
+        """Per-page measured boundary rows aligned with self._pages.
+
+        Entries are ints (auto boundary row, offset-free) or None (no per-page
+        row; PdfService then applies the fixed ratio, or no crop when
+        boundary_mode is 'off').  Missing entries are padded with None.
+        """
+        n = len(self._pages)
+        rows = list(self._page_crop_rows)
+        if len(rows) < n:
+            rows.extend([None] * (n - len(rows)))
+        elif len(rows) > n:
+            rows = rows[:n]
+        return rows
 
     def _read_metadata(self, score_dir) -> dict:
         score_dir = Path(score_dir)
