@@ -1,8 +1,7 @@
 """Unit tests for BoundaryDetector (src/domain/boundary_detector.py).
 
 Covers the region-contrast measurement (staff-line robustness), global
-redetect, narrow tracking with hysteresis, and the crop helper including
-scale mapping from scan-res to full-res frames.
+redetect, narrow tracking with hysteresis, and the sanity guard.
 """
 
 import sys
@@ -112,75 +111,6 @@ class TestTrack:
 
 
 @pytest.mark.unit
-class TestCrop:
-
-    def test_crop_unlocked_returns_frame(self):
-        d = BoundaryDetector()
-        frame = _split_frame(split=250)
-        cropped = d.crop(frame)
-        assert cropped.shape[0] == frame.shape[0]
-
-    def test_crop_removes_bottom_region(self):
-        d = BoundaryDetector(min_contrast=20.0)
-        frame = _split_frame(split=250)
-        d.redetect(frame)
-        cropped = d.crop(frame)
-        assert cropped.shape[0] < frame.shape[0]
-        assert abs(cropped.shape[0] - 250) <= 12
-        # Kept region is the bright score, not the dark visualizer.
-        assert float(np.mean(cropped)) > 150
-
-    def test_crop_scales_from_scan_res_to_full_res(self):
-        """Boundary learned on a 400px scan frame applies to an 800px frame."""
-        d = BoundaryDetector(min_contrast=20.0)
-        d.redetect(_split_frame(height=400, split=250))
-        full = _split_frame(height=800, split=500)
-        cropped = d.crop(full)
-        # 250/400 = 0.625 -> 0.625*800 = 500
-        assert abs(cropped.shape[0] - 500) <= 24
-
-    def test_crop_never_empty(self):
-        d = BoundaryDetector(min_contrast=20.0)
-        d.redetect(_split_frame(split=250))
-        cropped = d.crop(_split_frame(split=250))
-        assert cropped.shape[0] >= 1
-
-
-@pytest.mark.unit
-class TestOffset:
-
-    def test_crop_row_is_boundary_minus_offset(self):
-        d = BoundaryDetector(min_contrast=20.0, offset_px=15)
-        d.redetect(_split_frame(split=250))
-        assert d.crop_row == d.boundary_row - 15
-
-    def test_offset_lifts_crop_line_up(self):
-        d = BoundaryDetector(min_contrast=20.0, offset_px=20)
-        frame = _split_frame(split=250)
-        d.redetect(frame)
-        offset_h = d.crop(frame).shape[0]
-
-        d0 = BoundaryDetector(min_contrast=20.0, offset_px=0)
-        d0.redetect(frame)
-        base_h = d0.crop(frame).shape[0]
-
-        assert offset_h < base_h
-        assert abs(base_h - offset_h - 20) <= 2
-
-    def test_offset_crop_row_never_zero(self):
-        d = BoundaryDetector(min_contrast=20.0, offset_px=99999)
-        d.redetect(_split_frame(split=250))
-        assert d.crop_row == 1
-
-    def test_offset_scales_on_crop_too(self):
-        d = BoundaryDetector(min_contrast=20.0, offset_px=40)
-        d.redetect(_split_frame(height=400, split=250))
-        # scan crop_row = 250-40 = 210; 210/400 * 800 = 420
-        cropped = d.crop(_split_frame(height=800, split=500))
-        assert abs(cropped.shape[0] - 420) <= 24
-
-
-@pytest.mark.unit
 class TestSanityGuard:
 
     def test_bright_bottom_region_rejected(self):
@@ -194,12 +124,6 @@ class TestSanityGuard:
         d = BoundaryDetector(min_contrast=5.0, min_dark_mean=120.0)
         frame = _split_frame(split=250, top=230, bottom=20)
         assert d.redetect(frame) is not None
-
-    def test_guard_leaves_frame_uncropped(self):
-        d = BoundaryDetector(min_contrast=5.0, min_dark_mean=120.0)
-        frame = _split_frame(split=250, top=230, bottom=200)
-        d.redetect(frame)
-        assert d.crop(frame).shape[0] == frame.shape[0]
 
 
 @pytest.mark.unit

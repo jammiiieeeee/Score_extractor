@@ -1,6 +1,6 @@
 # GUI API Specification
 
-This document defines the 44-method Python API surface for GUI integration.
+This document defines the 43-method Python API surface for GUI integration.
 
 ## Design Principles
 
@@ -118,24 +118,23 @@ class ScoreInfo:
 | 34 | `delete_saved_score(path)` | `str → None` | Delete score directory |
 | 35 | `save_metadata(score_dir, data)` | `str, dict → None` | Write metadata.json |
 
-### Re-extraction Helpers (7)
+### Re-extraction Helpers (6)
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 36 | `reapply_crop(ratio)` | `float → None` | Re-crop loaded pages from originals |
-| 37 | `has_loaded_score()` | `→ bool` | Is an existing score loaded? |
-| 38 | `get_loaded_score_path()` | `→ str\|None` | Path of loaded score |
-| 39 | `get_loaded_score_metadata()` | `→ dict` | metadata.json contents |
-| 40 | `is_loading_from_scratch()` | `→ bool` | True if no loaded score |
-| 41 | `get_first_page_image()` | `→ np.ndarray\|None` | First page for preview |
+| 36 | `has_loaded_score()` | `→ bool` | Is an existing score loaded? |
+| 37 | `get_loaded_score_path()` | `→ str\|None` | Path of loaded score |
+| 38 | `get_loaded_score_metadata()` | `→ dict` | metadata.json contents |
+| 39 | `is_loading_from_scratch()` | `→ bool` | True if no loaded score |
+| 40 | `get_first_page_image()` | `→ np.ndarray\|None` | First page for preview |
 
 ### Lifecycle (3)
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 42 | `cleanup()` | `→ None` | Close video, clear pages |
-| 43 | `is_busy()` | `→ bool` | Any background thread alive? |
-| 44 | `set_debug_mode(enabled)` | `bool → None` | Enable/disable debug mode |
+| 41 | `cleanup()` | `→ None` | Close video, clear pages |
+| 42 | `is_busy()` | `→ bool` | Any background thread alive? |
+| 43 | `set_debug_mode(enabled)` | `bool → None` | Enable/disable debug mode |
 
 ## Threading Model
 

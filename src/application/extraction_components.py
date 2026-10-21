@@ -256,7 +256,6 @@ class _Analysis:
     bar_peaks: list
     has_clean_profile: bool
     has_left_spike: bool
-    pre_crop_merged: Optional[np.ndarray] = None
     boundary_row: Optional[int] = None
 
 
@@ -304,7 +303,6 @@ class PageCommitter:
         self.calibrator = calibrator
         self.boundary_detector = boundary_detector
         self.boundary_mode = getattr(config, "boundary_mode", "auto")
-        self._last_boundary_row: Optional[int] = None
         self._last_boundary_before_h: Optional[int] = None
         self._pending: List[_PendingCommit] = []
         self._calibration_logged = False
@@ -484,13 +482,11 @@ class PageCommitter:
         #   manual — fixed crop at default_crop_ratio for every page (row left
         #            None; PdfService applies the ratio directly).
         #   off    — no crop.
-        pre_crop_merged = merged
         boundary_row: Optional[int] = None
         if self.boundary_mode == "auto" and self.boundary_detector is not None:
             before_h = merged.shape[0]
             self.boundary_detector.redetect(merged)
             boundary_row = self.boundary_detector.boundary_row
-            self._last_boundary_row = self.boundary_detector.boundary_row
             self._last_boundary_before_h = before_h
 
         # OCR number from a merged pair (dedup channel)
@@ -543,7 +539,7 @@ class PageCommitter:
             is_dup=is_dup, guard_rail_passed=guard_rail_passed,
             reject_reason=reject_reason, bar_peaks=bar_peaks,
             has_clean_profile=has_clean_profile, has_left_spike=has_left_spike,
-            pre_crop_merged=pre_crop_merged, boundary_row=boundary_row,
+            boundary_row=boundary_row,
         )
 
     def _commit_analyzed(

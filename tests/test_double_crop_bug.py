@@ -134,27 +134,8 @@ class TestRegenerateWithDifferentCrop:
         assert store._original_pages[0].image.shape[0] == 1000, "Original unchanged"
 
 
-class TestReapplyCropUpdatesConfig:
-    """Verify reapply_crop now only updates config (single-crop model)."""
-
-    def test_reapply_crop_updates_config(self):
-        """reapply_crop changes config, does NOT modify page images."""
-        img = make_tall_image(800, 1000)
-        config = ScoreConfig(default_crop_ratio=0.1)
-
-        store = PageStore()
-        store.set_originals([Frame(img, 0.0, 0)])
-        store._pages.append(Frame(img.copy(), 0.0, 0))
-
-        # reapply_crop sets ratio on config — no page mutation
-        from src.api.gui_api import GuiApi
-        api = GuiApi()
-        api._config.default_crop_ratio = 0.9
-        api._pages = store
-
-        api.reapply_crop(0.5)
-        assert api._config.default_crop_ratio == 0.5
-        assert store[0].image.shape[0] == 1000, "Pages should NOT be cropped by reapply_crop"
+class TestSingleCropModel:
+    """Verify only PdfService crops, once, from full-size images."""
 
     def test_single_crop_in_pdf_service(self):
         """PdfService crops once from full-size images."""

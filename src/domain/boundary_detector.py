@@ -39,7 +39,6 @@ class BoundaryDetector:
         track_window: float = 0.03,
         hysteresis_px: int = 6,
         median_window: int = 5,
-        offset_px: int = 0,
         min_dark_mean: float = 120.0,
     ):
         self._band_ratio = float(band_ratio)
@@ -48,11 +47,9 @@ class BoundaryDetector:
         self._track_window = float(track_window)
         self._hysteresis_px = int(hysteresis_px)
         self._median_window = int(median_window)
-        self._offset_px = int(offset_px)
         self._min_dark_mean = float(min_dark_mean)
 
         self._row: Optional[int] = None
-        self._height: Optional[int] = None
         self._recent: deque = deque(maxlen=max(1, self._median_window))
         self._last_confidence = 0.0
 
@@ -62,14 +59,6 @@ class BoundaryDetector:
     def boundary_row(self) -> Optional[int]:
         """Measured boundary row (pixels, in the detector's frame scale), or None."""
         return self._row
-
-    @property
-    def crop_row(self) -> Optional[int]:
-        """Row the score is actually cut at: measured boundary lifted up by
-        ``offset_px``.  Always >= 1 so at least one row survives."""
-        if self._row is None:
-            return None
-        return max(1, self._row - self._offset_px)
 
     @property
     def is_locked(self) -> bool:
@@ -82,7 +71,6 @@ class BoundaryDetector:
 
     def reset(self) -> None:
         self._row = None
-        self._height = None
         self._recent.clear()
         self._last_confidence = 0.0
 
@@ -92,7 +80,6 @@ class BoundaryDetector:
         clears ``min_contrast``."""
         profile = self._contrast_profile(frame)
         h = profile.shape[0]
-        self._height = h
 
         lo = int(h * self._search_margin)
         hi = int(h * (1.0 - self._search_margin))
@@ -123,7 +110,6 @@ class BoundaryDetector:
 
         profile = self._contrast_profile(frame)
         h = profile.shape[0]
-        self._height = h
 
         half = max(1, int(h * self._track_window))
         lo = max(0, self._row - half)
@@ -184,17 +170,3 @@ class BoundaryDetector:
         if float(np.mean(below)) > self._min_dark_mean:
             return False
         return True
-
-    def crop(self, frame: np.ndarray) -> np.ndarray:
-        """Return the score region of ``frame`` (rows above the crop line).
-
-        Uses ``crop_row`` (the measured boundary lifted by ``offset_px``) and
-        scales it from the detector's frame height to the supplied frame's
-        height, so a boundary learned on scan-res frames can crop a full-res
-        frame.  Returns the frame unchanged when unlocked."""
-        if self._row is None or self._height is None:
-            return frame
-        h = frame.shape[0]
-        scaled = int(round(self.crop_row * (h / self._height)))
-        scaled = max(1, min(scaled, h))
-        return frame[:scaled, :]

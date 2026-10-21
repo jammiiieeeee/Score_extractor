@@ -747,9 +747,6 @@ class GuiApi:
     #  Re-extraction helpers
     # ═════════════════════════════════════════════════════════════════════
 
-    def reapply_crop(self, ratio: float) -> None:
-        self._config.default_crop_ratio = ratio
-
     def has_loaded_score(self) -> bool:
         return self._pages.has_originals() and self._loaded_score_path is not None
 

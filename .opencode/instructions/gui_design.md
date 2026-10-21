@@ -51,7 +51,7 @@ Single unified interface driven by the **Project** field at the top.
 - QDoubleSpinBox (0.0–1.0, step 0.01, default **0.32**)
 - Shows "(was X%)" label when existing score loaded
 - "Set as Default" button saves to config
-- In existing mode, changing spinbox calls `GuiApi.reapply_crop(ratio)` for live preview
+- In existing mode, changing spinbox calls `GuiApi.update_config({"default_crop_ratio": ratio})`; the crop is applied at PDF generation
 
 ### Output PDF
 - QLineEdit for PDF filename (defaults to project name)

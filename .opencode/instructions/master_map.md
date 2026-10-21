@@ -7,7 +7,7 @@ The system follows Clean Architecture principles to ensure robustness and testab
 
 ### Layered Structure
 - **Entry Points**: `main.py` (CLI), `app_gui.py` (PyQt6 GUI)
-- **API**: `src/api/gui_api.py` (GUI orchestrator, 44-method Python API)
+- **API**: `src/api/gui_api.py` (GUI orchestrator, 43-method Python API)
 - **Application**: `src/application/use_cases.py` + `extraction_components.py` (Orchestration)
 - **Domain**: `src/domain/` (Business logic, deduplication, interfaces, page store)
 - **Infrastructure**: `src/infrastructure/` (OpenCV, PaddleOCR, ReportLab, yt-dlp implementations)
@@ -22,7 +22,7 @@ Load the following specification files via `@reference` depending on the module 
 | **Orchestration** | `@reference application_orchestration.md` | Data flow between services and component definitions. |
 | **Video Processing** | `@reference infrastructure_video.md` | SSIM detection, Dynamic Bar Erase, and frame extraction. |
 | **OCR & PDF** | `@reference infrastructure_ocr_pdf.md` | PaddleOCR initialization, regex filtering, and ReportLab layout. |
-| **GUI API** | `@reference gui_api.md` | 44-method Python API surface for GUI integration, callback registry, threading model. |
+| **GUI API** | `@reference gui_api.md` | 43-method Python API surface for GUI integration, callback registry, threading model. |
 | **GUI Design** | `@reference gui_design.md` | Two-tab layout, state machine, and widget specifications. |
 | **System & Safety** | `@reference system_lifecycle.md` | Windows Unicode safety, error handling, and resource cleanup. |
 

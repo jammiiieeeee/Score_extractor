@@ -8,7 +8,7 @@ This document defines the orchestration layer: data flow, component responsibili
 |------|------|
 | `main.py` | CLI — argparse, synchronous extraction, direct PDF generation |
 | `app_gui.py` | PyQt6 GUI — two tabs, callback-driven, threaded operations |
-| `src/api/gui_api.py` | 44-method Python API — thin orchestrator delegating to sub-modules |
+| `src/api/gui_api.py` | 43-method Python API — thin orchestrator delegating to sub-modules |
 
 Both `main.py` and `app_gui.py` share `ExtractScoreUseCase` — neither wraps the other.
 
@@ -78,8 +78,7 @@ Also provides bar profile validation: `check_bar_profile()` → `(has_clean, has
 ### `PageStore` (`src/domain/page_store.py`)
 
 In-memory page storage. Handles:
-- Working pages + original pages (for re-cropping)
-- `reapply_crop(ratio)` — crops from originals on each call
+- Working pages + original pages (for loaded-score preview/regeneration)
 - `set_originals()` / `has_originals()` — for loaded-score mode
 - Thumbnail generation (320px wide PNG)
 - Full-resolution PNG encoding
@@ -108,13 +107,12 @@ main.py / gui_api.py
 
 ```
 app_gui.py (user adjusts crop slider)
-  └─ GuiApi.reapply_crop(ratio)
-       └─ PageStore.reapply_crop(ratio)
-            └─ crops from _original_pages, updates _pages
+  └─ GuiApi.update_config({"default_crop_ratio": ratio})
+       └─ stored in config; applied once by PdfService at PDF generation
 
 app_gui.py (user clicks "Regenerate PDF")
   └─ GuiApi.generate_pdf(output_path)
-       └─ PdfService.create_pdf(pages.all_images(), ...)
+       └─ PdfService.create_pdf(pages.all_images(), ..., crop_rows)
 ```
 
 ## Data Flow: YouTube Download

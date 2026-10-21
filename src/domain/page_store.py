@@ -111,29 +111,12 @@ class PageStore:
         self._original_png_cache.clear()
 
     def clear_working(self) -> None:
-        """Clear only working pages, keep originals for re-crop."""
+        """Clear only working pages, keep originals."""
         self._pages.clear()
         self._png_cache.clear()
 
-    # ── Original management (for loaded scores + re-crop) ─────────────
+    # ── Original management (for loaded scores) ─────────────────────
 
     def set_originals(self, frames: List[Frame]) -> None:
         self._original_pages = list(frames)
         self._original_png_cache = [self.encode_png(f.image) for f in frames]
-
-    def reapply_crop(self, ratio: float) -> None:
-        """Re-crop originals with a new ratio, replacing working pages.
-
-        Crops from top (0) to ratio of image height.
-        """
-        if not self._original_pages:
-            return
-        self._pages.clear()
-        self._png_cache.clear()
-        for frame in self._original_pages:
-            h = frame.image.shape[0]
-            y_end = int(h * ratio)
-            cropped = frame.image[0:y_end, :].copy()
-            new_frame = Frame(cropped, frame.timestamp, frame.index)
-            self._pages.append(new_frame)
-            self._png_cache.append(self.encode_png(cropped))

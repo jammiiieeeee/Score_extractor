@@ -77,7 +77,6 @@ class ExtractScoreUseCase:
                 track_window=self.config.boundary_track_window,
                 hysteresis_px=self.config.boundary_hysteresis_px,
                 median_window=self.config.boundary_median_window,
-                offset_px=self.config.boundary_offset_px,
                 min_dark_mean=self.config.boundary_min_dark_mean,
             )
         ocr_available = effective_ocr.is_enabled()        # Write extraction log to diagnostics/ subfolder (always on)
