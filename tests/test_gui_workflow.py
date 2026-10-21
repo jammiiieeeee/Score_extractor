@@ -424,9 +424,7 @@ class TestScoreManagementWorkflow:
         img = np.ones((600, 800, 3), dtype=np.uint8) * 240
         cv2.imwrite(str(photos_dir / "page_000_merged.png"), img)
 
-        from src.domain.models import Frame
         api._loaded_score_path = str(tmp_path)
-        api._pages.set_originals([Frame(img, 0.0, 0)])
         assert api.has_loaded_score() is True
 
     def test_delete_saved_score(self, api, tmp_path):
@@ -441,8 +439,7 @@ class TestScoreManagementWorkflow:
     def test_is_loading_from_scratch(self, api):
         assert api.is_loading_from_scratch() is True
         api._loaded_score_path = "/some/path"
-        # Still False because _original_pages is empty
-        assert api.is_loading_from_scratch() is True
+        assert api.is_loading_from_scratch() is False
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional, Callable, List
 
 from src.domain.value_objects.config import ScoreConfig
-from src.domain.models import Frame, PageManifestEntry
+from src.domain.models import PageManifestEntry
 from src.domain.page_store import PageStore
 from src.infrastructure.video_service import VideoService
 from src.infrastructure.ocr_service import OcrService
@@ -435,9 +435,6 @@ class GuiApi:
             manifest_entries = result.manifest
 
             self._pages.set_pages(pages)
-            self._pages.set_originals([
-                Frame(p.image.copy(), p.timestamp, p.index) for p in pages
-            ])
 
             # Per-page boundary rows (auto mode) — committed pages only, in
             # order, so they align 1:1 with self._pages.
@@ -719,14 +716,7 @@ class GuiApi:
 
         from src.domain.models import Frame
         self._pages.clear()
-        working = []
-        originals = []
-        for i, img in enumerate(images):
-            frame = Frame(img, 0.0, i)
-            working.append(frame)
-            originals.append(Frame(img.copy(), 0.0, i))
-        self._pages.set_pages(working)
-        self._pages.set_originals(originals)
+        self._pages.set_pages([Frame(img, 0.0, i) for i, img in enumerate(images)])
 
         self._loaded_score_path = path
         self._loaded_score_metadata = self._read_metadata(score_dir)
@@ -749,7 +739,7 @@ class GuiApi:
     # ═════════════════════════════════════════════════════════════════════
 
     def has_loaded_score(self) -> bool:
-        return self._pages.has_originals() and self._loaded_score_path is not None
+        return self._loaded_score_path is not None
 
     def get_loaded_score_path(self) -> Optional[str]:
         return self._loaded_score_path

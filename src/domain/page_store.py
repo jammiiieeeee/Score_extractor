@@ -8,17 +8,15 @@ from src.domain.models import Frame
 
 @dataclass
 class PageStore:
-    """Encapsulates the dual-list page state.
+    """Encapsulates the page state.
 
-    Manages _pages + _page_png_cache (working copy) and
-    _original_pages + _original_png_cache (untouched originals for re-crop).
-    Every mutation is atomic — the four lists are always in sync.
+    Holds one copy of each page: _pages (the frames) plus _png_cache (the
+    encoded PNG of that same page, for full-size rendering).
+    Every mutation keeps the two lists the same length and in the same order.
     """
 
     _pages: List[Frame] = field(default_factory=list)
     _png_cache: List[Optional[bytes]] = field(default_factory=list)
-    _original_pages: List[Frame] = field(default_factory=list)
-    _original_png_cache: List[Optional[bytes]] = field(default_factory=list)
 
     # ── Queries ───────────────────────────────────────────────────────
 
@@ -42,9 +40,6 @@ class PageStore:
 
     def all_images(self) -> List[np.ndarray]:
         return [f.image for f in self._pages]
-
-    def has_originals(self) -> bool:
-        return len(self._original_pages) > 0
 
     @staticmethod
     def encode_png(img: np.ndarray) -> Optional[bytes]:
@@ -104,19 +99,6 @@ class PageStore:
         self._png_cache = [self._png_cache[i] for i in new_order]
 
     def clear(self) -> None:
-        """Clear all pages AND originals (full reset)."""
+        """Clear all pages (full reset)."""
         self._pages.clear()
         self._png_cache.clear()
-        self._original_pages.clear()
-        self._original_png_cache.clear()
-
-    def clear_working(self) -> None:
-        """Clear only working pages, keep originals."""
-        self._pages.clear()
-        self._png_cache.clear()
-
-    # ── Original management (for loaded scores) ─────────────────────
-
-    def set_originals(self, frames: List[Frame]) -> None:
-        self._original_pages = list(frames)
-        self._original_png_cache = [self.encode_png(f.image) for f in frames]

@@ -77,9 +77,9 @@ Also provides bar profile validation: `check_bar_profile()` → `(has_clean, has
 
 ### `PageStore` (`src/domain/page_store.py`)
 
-In-memory page storage. Handles:
-- Working pages + original pages (for loaded-score preview/regeneration)
-- `set_originals()` / `has_originals()` — for loaded-score mode
+In-memory page storage. Holds **one copy** of each page:
+- `_pages` — the page frames (the only copy of the pixel data)
+- `_png_cache` — the encoded PNG of that same page, for full-size rendering
 - Thumbnail generation (320px wide PNG)
 - Full-resolution PNG encoding
 

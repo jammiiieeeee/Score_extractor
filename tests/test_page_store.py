@@ -144,18 +144,9 @@ class TestPageStoreClear:
     def test_clear_empties_everything(self):
         store = PageStore()
         store.add(_frame(10))
-        store.set_originals([_frame(50)])
         store.clear()
         assert len(store) == 0
-        assert store.has_originals() is False
-
-    def test_clear_working_keeps_originals(self):
-        store = PageStore()
-        store.add(_frame(10))
-        store.set_originals([_frame(50)])
-        store.clear_working()
-        assert len(store) == 0
-        assert store.has_originals() is True
+        assert store._png_cache == []
 
 
 @pytest.mark.unit
@@ -233,12 +224,18 @@ class TestPageStoreAllFramesImages:
 
 
 @pytest.mark.unit
-class TestPageStoreOriginals:
-    def test_has_originals_false_initially(self):
-        store = PageStore()
-        assert store.has_originals() is False
+class TestPageStoreSingleCopy:
+    """The store keeps exactly one copy of each page image."""
 
-    def test_has_originals_true_after_set(self):
+    def test_set_pages_reuses_the_given_frames(self):
         store = PageStore()
-        store.set_originals([_frame(10)])
-        assert store.has_originals() is True
+        frame = _frame(10)
+        store.set_pages([frame])
+        assert store[0] is frame
+        assert store.get_image(0) is frame.image
+
+    def test_no_second_copy_is_kept(self):
+        store = PageStore()
+        store.add(_frame(10))
+        assert not hasattr(store, "_original_pages")
+        assert not hasattr(store, "_original_png_cache")

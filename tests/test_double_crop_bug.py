@@ -117,9 +117,7 @@ class TestRegenerateWithDifferentCrop:
 
         # Store uncropped image (simulating extraction)
         store = PageStore()
-        store.set_originals([Frame(img, 0.0, 0)])
-        # Also add to working pages for all_images()
-        store._pages.append(Frame(img.copy(), 0.0, 0))
+        store.set_pages([Frame(img, 0.0, 0)])
 
         # First crop 30%
         cropped1 = crop_image(img, config)
@@ -130,8 +128,8 @@ class TestRegenerateWithDifferentCrop:
         cropped2 = crop_image(img, config)
         assert cropped2.shape[0] == 500, "Second crop: 500px"
 
-        # Original image unchanged
-        assert store._original_pages[0].image.shape[0] == 1000, "Original unchanged"
+        # Stored image unchanged
+        assert store[0].image.shape[0] == 1000, "Original unchanged"
 
 
 class TestSingleCropModel:
