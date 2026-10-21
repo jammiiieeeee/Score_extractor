@@ -21,6 +21,13 @@
 - Default test run **skips slow tests** (`-m "not slow"`) — this avoids PaddleOCR import timeouts unless changes touch OCR code
 - Run the full suite (including slow/OCR) only when working on OCR-related changes or before committing
 
+## Communication
+- The user prefers **simple explanations**. Write in plain language with short sentences, and avoid jargon dumps.
+- Lead with *what it does* and *why it matters*; keep file paths, line numbers and code as references, not as the explanation itself.
+- Use a diagram (ASCII or Markdown) to show structure, call flow or information flow instead of describing it in prose.
+- When a term has to be technical, define it in one line the first time it appears.
+- Keep summaries short: what changed, what it affects, what happens next.
+
 ## Key Conventions
 - Domain models in `src/domain/models.py`, config in `src/domain/value_objects/config.py`
 - Services implement interfaces from `src/domain/interfaces.py`
