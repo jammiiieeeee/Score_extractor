@@ -49,7 +49,7 @@
 
 Peaks computed by `Deduplicator._get_bar_profile_peaks()`:
 1. Resize A/B to 640px width
-2. Crop top `crop_ratio` region
+2. Compute bar profile over top `bar_analysis_ratio` region
 3. Column-wise absdiff → `col_sums`
 4. Find local maxima: `col_sums[i] > col_sums[i-1]` and `>= col_sums[i+1]`
 5. Threshold: `> max_val * 0.3`

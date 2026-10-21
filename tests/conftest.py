@@ -223,11 +223,11 @@ class StubVideoService(IVideoService):
     def read_full_frame_at(self, frame_idx: int):
         return self.read_frame_at(frame_idx)
 
-    def merge_frames(self, frame_a, frame_b, overlay_width_ratio=0.5, crop_ratio=0.35,
+    def merge_frames(self, frame_a, frame_b, overlay_width_ratio=0.5, bar_analysis_ratio=0.32,
                      min_diff_threshold=500.0, bar_padding_px=-15, debug_save_path=None):
         from src.domain.models import MergeResult
         from src.domain.bar_profile_service import BarProfileService
-        col_sums = BarProfileService.compute_column_sums(frame_a, frame_b, crop_ratio)
+        col_sums = BarProfileService.compute_column_sums(frame_a, frame_b, bar_analysis_ratio)
         spikes = BarProfileService.detect_spikes(col_sums, min_diff_threshold)
         merge_x = frame_a.shape[1] // 2
         result = frame_a.copy()

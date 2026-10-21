@@ -30,7 +30,7 @@ Three-stage pipeline executed by `src/domain/deduplication.py:Deduplicator`:
 
 Guard rails applied to each A/B capture pair before deduplication:
 
-1. Compute column-wise absolute diff between A and B in top `crop_ratio` region (resized to 640px width).
+1. Compute column-wise absolute diff between A and B in top `bar_analysis_ratio` region (resized to 640px width).
 2. Find peaks: local maxima exceeding 30% of peak value, minimum 6% width apart.
 3. **Clean profile**: 2–4 peaks → pass.
 4. **Left spike**: leftmost of top 2 peaks must be within `bar_left_margin` (20%) of frame width.
@@ -72,14 +72,15 @@ Guard rails applied to each A/B capture pair before deduplication:
 ### PDF Output
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `default_crop_ratio` | float | 0.32 | Height of each PDF strip |
+| `default_crop_ratio` | float | 0.32 | Manual-mode PDF strip height (auto boundary rows override per page) |
 
 ### Bar Detection
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
+| `bar_analysis_ratio` | float | 0.32 | Top fraction of frame scanned for bar-profile spikes |
 | `bar_min_diff_threshold` | float | 500.0 | Minimum summed column diff to accept bar |
 | `bar_padding_px` | int | -15 | B overlay offset from bar edge (+ into bar, - retract) |
-| `bar_left_margin` | float | 0.20 | Left spike must be within this fraction of width |
+| `bar_left_margin` | float | 0.35 | Left spike must be within this fraction of width |
 
 ### Blank / End Detection
 | Field | Type | Default | Description |

@@ -22,27 +22,27 @@ class TestComputeColumnSums:
     def test_returns_array_of_width_640(self):
         a = make_bar_image(800, 600, bar_left=100, bar_right=200)
         b = make_bar_image(800, 600, bar_left=500, bar_right=600)
-        result = BarProfileService.compute_column_sums(a, b, crop_ratio=0.35)
+        result = BarProfileService.compute_column_sums(a, b, analysis_ratio=0.35)
         assert result.shape == (640,)
 
     def test_identical_images_returns_zeros(self):
         img = make_bar_image(800, 600, bar_left=200, bar_right=400)
-        result = BarProfileService.compute_column_sums(img, img, crop_ratio=0.35)
+        result = BarProfileService.compute_column_sums(img, img, analysis_ratio=0.35)
         assert np.all(result == 0)
 
     def test_different_images_returns_nonzero(self):
         a = make_bar_image(800, 600, bar_left=50, bar_right=100)
         b = make_bar_image(800, 600, bar_left=700, bar_right=750)
-        result = BarProfileService.compute_column_sums(a, b, crop_ratio=0.35)
+        result = BarProfileService.compute_column_sums(a, b, analysis_ratio=0.35)
         assert np.any(result > 0)
 
-    def test_crop_ratio_affects_region(self):
+    def test_analysis_ratio_affects_region(self):
         a = np.zeros((600, 800, 3), dtype=np.uint8)
         b = np.zeros((600, 800, 3), dtype=np.uint8)
         # Put a difference only in the top 10% of the image
         b[30:35, 100:200] = 255
-        result_small_crop = BarProfileService.compute_column_sums(a, b, crop_ratio=0.05)
-        result_large_crop = BarProfileService.compute_column_sums(a, b, crop_ratio=0.5)
+        result_small_crop = BarProfileService.compute_column_sums(a, b, analysis_ratio=0.05)
+        result_large_crop = BarProfileService.compute_column_sums(a, b, analysis_ratio=0.5)
         # Large crop should see more of the difference
         assert np.sum(result_large_crop) >= np.sum(result_small_crop)
 
@@ -50,7 +50,7 @@ class TestComputeColumnSums:
         for w, h in [(640, 480), (1920, 1080), (320, 240)]:
             a = make_bar_image(w, h, bar_left=10, bar_right=20)
             b = make_bar_image(w, h, bar_left=30, bar_right=40)
-            result = BarProfileService.compute_column_sums(a, b, crop_ratio=0.35)
+            result = BarProfileService.compute_column_sums(a, b, analysis_ratio=0.35)
             assert result.shape == (640,), f"Failed for {w}x{h}"
 
 

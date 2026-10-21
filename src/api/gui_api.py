@@ -203,6 +203,7 @@ class GuiApi:
             "pixel_similarity_threshold", "row_similarity_threshold",
             "row_coverage_threshold", "ocr_horizontal_ratio",
             "default_crop_ratio",
+            "bar_analysis_ratio",
             "bar_left_margin",
         }
         valid_float_any = {

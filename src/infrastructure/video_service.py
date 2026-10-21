@@ -90,10 +90,10 @@ class VideoService(IVideoService):
         timestamp = frame_idx / self.fps
         return frame, timestamp
 
-    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, bar_padding_px: int = -15, debug_save_path: Optional[str] = None) -> MergeResult:
+    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, bar_analysis_ratio: float = 0.32, min_diff_threshold: float = 500.0, bar_padding_px: int = -15, debug_save_path: Optional[str] = None) -> MergeResult:
         h, w = frame_a.shape[:2]
 
-        col_sums = BarProfileService.compute_column_sums(frame_a, frame_b, crop_ratio)
+        col_sums = BarProfileService.compute_column_sums(frame_a, frame_b, bar_analysis_ratio)
         search_range = int(640 * overlay_width_ratio)
 
         # Detect spikes on the FULL profile — same data the deduplicator sees.

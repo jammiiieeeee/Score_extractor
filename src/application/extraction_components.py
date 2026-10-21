@@ -458,7 +458,7 @@ class PageCommitter:
             debug_profile_path = str(output_dir / "diagnostics" / f"bar_profile_page_{page_num:03d}.txt") if debug else None
             mr = self.video.merge_frames(
                 merge_a, merge_b, self.config.b_overlay_width_ratio,
-                self.config.default_crop_ratio, floor,
+                self.config.bar_analysis_ratio, floor,
                 self.config.bar_padding_px, debug_profile_path
             )
             merged = mr.merged
@@ -498,7 +498,7 @@ class PageCommitter:
             if ocr_input is None:
                 ocr_mr = self.video.merge_frames(
                     full_a, full_b, self.config.b_overlay_width_ratio,
-                    self.config.default_crop_ratio, floor,
+                    self.config.bar_analysis_ratio, floor,
                     self.config.bar_padding_px, None
                 )
                 ocr_input = ocr_mr.merged

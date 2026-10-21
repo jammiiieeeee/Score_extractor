@@ -35,7 +35,7 @@ class ScoreConfig:
     ocr_horizontal_ratio: float = 0.30           # Left portion of frame for OCR search
 
     # PDF Output
-    default_crop_ratio: float = 0.32             # Height of each PDF strip
+    default_crop_ratio: float = 0.32             # Manual-mode PDF strip height (auto boundary rows override per page)
 
     # Boundary Detection (score sheet vs MIDI visualizer)
     boundary_mode: str = "auto"                  # "auto" = per-page detection, "manual" = fixed crop, "off" = no crop
@@ -49,6 +49,7 @@ class ScoreConfig:
     boundary_min_dark_mean: float = 120.0        # Bottom region mean must be below this to trust the split
 
     # Bar Detection
+    bar_analysis_ratio: float = 0.32             # Top portion of frame scanned for bar-profile spikes
     bar_min_diff_threshold: float = 500.0        # Minimum summed column diff to accept bar position
     bar_padding_px: int = -15                    # B overlay offset from bar left edge (positive = extend into bar, negative = retract before bar)
     bar_left_margin: float = 0.35                # Left spike must be within this fraction (0-1) of frame width

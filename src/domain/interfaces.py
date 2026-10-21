@@ -45,7 +45,7 @@ class IVideoService(ABC):
         pass
 
     @abstractmethod
-    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, crop_ratio: float = 0.35, min_diff_threshold: float = 500.0, bar_padding_px: int = -15, debug_save_path: Optional[str] = None) -> MergeResult:
+    def merge_frames(self, frame_a: np.ndarray, frame_b: np.ndarray, overlay_width_ratio: float = 0.5, bar_analysis_ratio: float = 0.32, min_diff_threshold: float = 500.0, bar_padding_px: int = -15, debug_save_path: Optional[str] = None) -> MergeResult:
         """Detect bar edge via spike detection and merge Frame B onto Frame A.
         
         If exactly 2 spikes are found, sets the overlay cutoff to the midpoint between them.

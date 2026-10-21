@@ -6,16 +6,16 @@ class BarProfileService:
     """Shared bar-profile (spike) detection used by both Deduplicator and VideoService."""
 
     @staticmethod
-    def compute_column_sums(frame_a: np.ndarray, frame_b: np.ndarray, crop_ratio: float) -> np.ndarray:
+    def compute_column_sums(frame_a: np.ndarray, frame_b: np.ndarray, analysis_ratio: float) -> np.ndarray:
         h, w = frame_a.shape[:2]
         target_w = 640
         scale = target_w / w
         target_h = int(h * scale)
         a_small = cv2.resize(frame_a, (target_w, target_h))
         b_small = cv2.resize(frame_b, (target_w, target_h))
-        crop_h = int(target_h * crop_ratio)
-        a_top = cv2.cvtColor(a_small[:crop_h, :], cv2.COLOR_BGR2GRAY).astype(float)
-        b_top = cv2.cvtColor(b_small[:crop_h, :], cv2.COLOR_BGR2GRAY).astype(float)
+        analysis_h = int(target_h * analysis_ratio)
+        a_top = cv2.cvtColor(a_small[:analysis_h, :], cv2.COLOR_BGR2GRAY).astype(float)
+        b_top = cv2.cvtColor(b_small[:analysis_h, :], cv2.COLOR_BGR2GRAY).astype(float)
         diff = np.abs(a_top - b_top)
         return np.sum(diff, axis=0)
 
