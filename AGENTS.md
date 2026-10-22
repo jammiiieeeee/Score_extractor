@@ -11,6 +11,7 @@
 | Run all tests | `python -m pytest tests/ -v -m "not slow"` |
 | Run all tests (incl. slow/OCR) | `python -m pytest tests/ -v` |
 | Run single test | `python -m pytest tests/test_api.py -v -k test_name` |
+| Verify a 1080p extraction end to end | `python tools/verify_1080p.py <video>` |
 
 ## Architecture
 - Clean Architecture: `src/api` → `src/application` → `src/domain` ← `src/infrastructure`
