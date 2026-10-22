@@ -290,9 +290,8 @@ class TestPageManagementWorkflow:
 
     @pytest.fixture(autouse=True)
     def setup_pages(self, api, synthetic_images):
-        from src.domain.models import Frame
-        for i, img in enumerate(synthetic_images):
-            api._pages.add(Frame(img, float(i), i))
+        for img in synthetic_images:
+            api.add_page(img)
 
     def test_page_count_matches(self, api):
         assert api.get_page_count() == 5
@@ -316,11 +315,11 @@ class TestPageManagementWorkflow:
         with pytest.raises(IndexError):
             api.remove_page(999)
 
-    def test_reorder_pages(self, api):
+    def test_reorder_pages(self, api, synthetic_images):
         api.reorder_pages([4, 3, 2, 1, 0])
         assert api.get_page_count() == 5
-        # Verify the first page is now from index 4
-        assert api._pages[0].index == 4
+        # Verify the first page is now the one that was last
+        assert api.get_page(0).image is synthetic_images[4]
 
     def test_reorder_pages_invalid_length(self, api):
         with pytest.raises(ValueError, match="must match"):
@@ -349,9 +348,8 @@ class TestPdfWorkflow:
     """User story: generating PDF from detected pages."""
 
     def test_generate_pdf_from_synthetic_pages(self, api, synthetic_images, tmp_path):
-        from src.domain.models import Frame
-        for i, img in enumerate(synthetic_images):
-            api._pages.add(Frame(img, float(i), i))
+        for img in synthetic_images:
+            api.add_page(img)
 
         output = str(tmp_path / "test_output.pdf")
         api.generate_pdf(output)
@@ -365,9 +363,8 @@ class TestPdfWorkflow:
             api.generate_pdf(str(tmp_path / "empty.pdf"))
 
     def test_generate_pdf_rejects_when_busy(self, api, synthetic_images, tmp_path):
-        from src.domain.models import Frame
-        for i, img in enumerate(synthetic_images):
-            api._pages.add(Frame(img, float(i), i))
+        for img in synthetic_images:
+            api.add_page(img)
 
         # is_busy() checks thread aliveness, not _state.phase
         # So we need to actually have a running thread
@@ -450,9 +447,8 @@ class TestLifecycleWorkflow:
     """User story: cleanup and state queries."""
 
     def test_cleanup_resets_everything(self, api, synthetic_images):
-        from src.domain.models import Frame
-        for i, img in enumerate(synthetic_images):
-            api._pages.add(Frame(img, float(i), i))
+        for img in synthetic_images:
+            api.add_page(img)
 
         api.cleanup()
         assert api.get_page_count() == 0

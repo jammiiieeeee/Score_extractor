@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 
 from src.api.gui_api import GuiApi, VideoInfo, ExtractionState, ScoreInfo
+from src.domain.models import Page, PageStatus
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -355,8 +356,7 @@ class TestGetPageCount:
 
 class TestGetPageThumbnail:
     def test_returns_encoded_png(self, api, synthetic_images):
-        from src.domain.models import Frame
-        api._pages.add(Frame(synthetic_images[0], 1.0, 0))
+        api.add_page(synthetic_images[0])
 
         thumb = api.get_page_thumbnail(0)
         assert thumb is not None
@@ -372,8 +372,7 @@ class TestGetPageThumbnail:
 
 class TestGetPageFull:
     def test_returns_full_resolution(self, api, synthetic_images):
-        from src.domain.models import Frame
-        api._pages.add(Frame(synthetic_images[0], 1.0, 0))
+        api.add_page(synthetic_images[0])
 
         full = api.get_page_full(0)
         assert full is not None
@@ -386,9 +385,8 @@ class TestGetPageFull:
 
 class TestRemovePage:
     def test_decrements_count(self, api, synthetic_images):
-        from src.domain.models import Frame
-        for i, img in enumerate(synthetic_images):
-            api._pages.add(Frame(img, float(i), i))
+        for img in synthetic_images:
+            api.add_page(img)
 
         api.remove_page(0)
         assert api.get_page_count() == 4
@@ -398,42 +396,37 @@ class TestRemovePage:
             api.remove_page(999)
 
     def test_raises_for_negative_index(self, api, synthetic_images):
-        from src.domain.models import Frame
-        api._pages.add(Frame(synthetic_images[0], 1.0, 0))
+        api.add_page(synthetic_images[0])
         with pytest.raises(IndexError):
             api.remove_page(-1)
 
 
 class TestReorderPages:
     def test_reorders_correctly(self, api, synthetic_images):
-        from src.domain.models import Frame
-        for i, img in enumerate(synthetic_images):
-            api._pages.add(Frame(img, float(i), i))
+        for img in synthetic_images:
+            api.add_page(img)
 
         api.reorder_pages([4, 3, 2, 1, 0])
         assert api.get_page_count() == 5
-        assert api._pages[0].index == 4
+        assert api.get_page(0).image is synthetic_images[4]
 
     def test_rejects_wrong_length(self, api, synthetic_images):
-        from src.domain.models import Frame
-        for i, img in enumerate(synthetic_images):
-            api._pages.add(Frame(img, float(i), i))
+        for img in synthetic_images:
+            api.add_page(img)
         with pytest.raises(ValueError, match="must match"):
             api.reorder_pages([0, 1])
 
     def test_rejects_invalid_permutation(self, api, synthetic_images):
-        from src.domain.models import Frame
-        for i, img in enumerate(synthetic_images):
-            api._pages.add(Frame(img, float(i), i))
+        for img in synthetic_images:
+            api.add_page(img)
         with pytest.raises(ValueError, match="permutation"):
             api.reorder_pages([0, 0, 0, 0, 0])
 
 
 class TestClearPages:
     def test_clears_all(self, api, synthetic_images):
-        from src.domain.models import Frame
-        for i, img in enumerate(synthetic_images):
-            api._pages.add(Frame(img, float(i), i))
+        for img in synthetic_images:
+            api.add_page(img)
         api.clear_pages()
         assert api.get_page_count() == 0
 
@@ -445,6 +438,92 @@ class TestClearPages:
         assert api._loaded_score_metadata == {}
 
 
+class TestGetPageState:
+    """Pages are read through get_page, never through internal lists."""
+
+    def test_returns_index_image_boundary_file_status(self, api, synthetic_images):
+        api.add_page(synthetic_images[0], boundary_row=123, file="photos/page_001_merged.png")
+
+        state = api.get_page(0)
+        assert state.index == 0
+        assert state.image is synthetic_images[0]
+        assert state.boundary_row == 123
+        assert state.file == "photos/page_001_merged.png"
+        assert state.status is PageStatus.KEEP
+
+    def test_defaults_are_keep_and_none(self, api, synthetic_images):
+        api.add_page(synthetic_images[0])
+        state = api.get_page(0)
+        assert state.boundary_row is None
+        assert state.file is None
+        assert state.status is PageStatus.KEEP
+
+    def test_raises_for_invalid_index(self, api):
+        with pytest.raises(IndexError):
+            api.get_page(0)
+
+    def test_reflects_current_position(self, api, synthetic_images):
+        api.add_page(synthetic_images[0])
+        api.add_page(synthetic_images[1])
+        assert api.get_page(0).image is synthetic_images[0]
+        assert api.get_page(1).image is synthetic_images[1]
+
+
+class TestSetPageStatus:
+    """Status is changed through set_page_status and survives the read-back."""
+
+    def test_status_change_survives(self, api, synthetic_images):
+        api.add_page(synthetic_images[0])
+        api.set_page_status(0, PageStatus.EXCLUDED)
+        assert api.get_page(0).status is PageStatus.EXCLUDED
+
+    def test_accepts_the_string_value(self, api, synthetic_images):
+        api.add_page(synthetic_images[0])
+        api.set_page_status(0, "excluded")
+        assert api.get_page(0).status is PageStatus.EXCLUDED
+
+    def test_only_the_targeted_page_changes(self, api, synthetic_images):
+        api.add_page(synthetic_images[0])
+        api.add_page(synthetic_images[1])
+        api.set_page_status(1, PageStatus.DUPLICATE)
+        assert api.get_page(0).status is PageStatus.KEEP
+        assert api.get_page(1).status is PageStatus.DUPLICATE
+
+    def test_raises_for_invalid_index(self, api, synthetic_images):
+        api.add_page(synthetic_images[0])
+        with pytest.raises(IndexError):
+            api.set_page_status(5, PageStatus.EXCLUDED)
+
+
+class TestAddPage:
+    def test_returns_sequential_indices(self, api, synthetic_images):
+        assert api.add_page(synthetic_images[0]) == 0
+        assert api.add_page(synthetic_images[1]) == 1
+
+    def test_crop_rows_follow_the_pages(self, api, synthetic_images):
+        api.add_page(synthetic_images[0], boundary_row=10)
+        api.add_page(synthetic_images[1], boundary_row=20)
+        assert api._current_crop_rows() == [10, 20]
+        api.reorder_pages([1, 0])
+        assert api._current_crop_rows() == [20, 10]
+
+
+class TestSetPages:
+    def test_replaces_all_pages(self, api, synthetic_images):
+        api.add_page(synthetic_images[0])
+        api.set_pages(synthetic_images[:3])
+        assert api.get_page_count() == 3
+        assert api.get_page(2).image is synthetic_images[2]
+
+    def test_accepts_page_objects(self, api, synthetic_images):
+        api.set_pages([
+            Page(synthetic_images[0], boundary_row=5),
+            Page(synthetic_images[1], boundary_row=6),
+        ])
+        assert api.get_page(0).boundary_row == 5
+        assert api._current_crop_rows() == [5, 6]
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  6. PDF Generation
 # ═══════════════════════════════════════════════════════════════════════════
@@ -452,9 +531,8 @@ class TestClearPages:
 
 class TestGeneratePdf:
     def test_creates_pdf_file(self, api, synthetic_images, tmp_path):
-        from src.domain.models import Frame
-        for i, img in enumerate(synthetic_images):
-            api._pages.add(Frame(img, float(i), i))
+        for img in synthetic_images:
+            api.add_page(img)
 
         output = str(tmp_path / "test_output.pdf")
         api.generate_pdf(output)
@@ -467,9 +545,8 @@ class TestGeneratePdf:
             api.generate_pdf(str(tmp_path / "empty.pdf"))
 
     def test_rejects_when_busy(self, api, synthetic_images, tmp_path):
-        from src.domain.models import Frame
-        for i, img in enumerate(synthetic_images):
-            api._pages.add(Frame(img, float(i), i))
+        for img in synthetic_images:
+            api.add_page(img)
 
         import threading
         api._pdf_thread = threading.Thread(target=lambda: __import__('time').sleep(10), daemon=True)
@@ -554,10 +631,9 @@ class TestDeleteSavedScore:
 
 class TestCleanup:
     def test_resets_everything(self, api, synthetic_video, synthetic_images):
-        from src.domain.models import Frame
         api.open_video(synthetic_video)
-        for i, img in enumerate(synthetic_images):
-            api._pages.add(Frame(img, float(i), i))
+        for img in synthetic_images:
+            api.add_page(img)
 
         api.cleanup()
         assert api.get_page_count() == 0

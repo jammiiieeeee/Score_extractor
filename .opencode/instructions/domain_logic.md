@@ -130,6 +130,29 @@ Extraction produces one `Page` per committed page (duplicates get none).
 recorded, never a guess. Only `KEEP` is produced today; `EXCLUDED` and
 `DUPLICATE` are reserved for page selection.
 
+### PageState
+
+A read-only view of one page, as handed to callers. It carries the page's
+position in the score together with the facts the page knows about itself, so
+callers read page state without depending on how pages are stored.
+
+```python
+@dataclass(frozen=True)
+class PageState:
+    index: int                 # the page's position in the score
+    image: np.ndarray          # BGR image
+    boundary_row: Optional[int]
+    file: Optional[str]
+    status: PageStatus
+```
+
+### PageStore
+
+`src/domain/page_store.py` holds one `Page` object per page (image, boundary
+row, file, status) plus a cache of each page's encoded PNG. Every mutation
+keeps the page list and the PNG cache the same length and order. The store
+accepts either `Page` or `Frame` (a bare frame becomes a `Page` with default
+facts) so old callers keep working during the migration.
 ## Interfaces
 
 `src/domain/interfaces.py` defines:

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional, Callable, List
 
 from src.domain.value_objects.config import ScoreConfig
-from src.domain.models import PageManifestEntry
+from src.domain.models import Page, PageState, PageStatus, PageManifestEntry
 from src.domain.page_store import PageStore
 from src.infrastructure.video_service import VideoService
 from src.infrastructure.ocr_service import OcrService
@@ -78,9 +78,9 @@ class GuiApi:
         self._video_path: Optional[str] = None
         self._loaded_score_path: Optional[str] = None
         self._loaded_score_metadata: dict = {}
-        # Per-page crop rows for the PDF (aligned with self._pages).  Only
-        # populated in auto boundary mode; None entries mean "use the fixed
-        # ratio" for that page.
+        # Legacy migration mirror of the pages' boundary rows (see
+        # _sync_crop_rows).  Pages are the source of truth; this is refreshed
+        # from them and removed in a later ticket.
         self._page_crop_rows: list = []
 
         self._extraction_thread: Optional[threading.Thread] = None
@@ -431,19 +431,11 @@ class GuiApi:
                 is_cancelled=lambda: self._cancel_flag,
                 original_video_path=original_video_path,
             ))
-            pages = result.pages
+            pages = result.page_records or result.pages
             manifest_entries = result.manifest
 
             self._pages.set_pages(pages)
-
-            # Per-page boundary rows (auto mode) — committed pages only, in
-            # order, so they align 1:1 with self._pages.
-            if manifest_entries:
-                self._page_crop_rows = [
-                    e.boundary_row for e in manifest_entries if not e.is_duplicate
-                ]
-            else:
-                self._page_crop_rows = []
+            self._sync_crop_rows()
 
             if manifest_entries:
                 manifest_path = score_dir / "diagnostics" / "page_manifest.json"
@@ -567,6 +559,52 @@ class GuiApi:
     def get_page_count(self) -> int:
         return len(self._pages)
 
+    def add_page(self, image: np.ndarray, boundary_row: Optional[int] = None,
+                 file: Optional[str] = None,
+                 status: PageStatus = PageStatus.KEEP) -> int:
+        """Append a page and return its index.
+
+        The public way to put a page into the score.  Callers (the GUI and the
+        tests) never touch the store directly, so how pages are held can change
+        without rewriting them.
+        """
+        return self._pages.add(Page(
+            image=image, boundary_row=boundary_row, file=file, status=status,
+        ))
+
+    def get_page(self, index: int) -> PageState:
+        """Read one page's state: its index, image, boundary row, file, status.
+
+        Raises IndexError when the index is out of range.
+        """
+        page = self._pages.get(index)
+        return PageState(
+            index=index,
+            image=page.image,
+            boundary_row=page.boundary_row,
+            file=page.file,
+            status=page.status,
+        )
+
+    def set_page_status(self, index: int, status: PageStatus) -> None:
+        """Change one page's status.  The change survives until read back."""
+        page = self._pages.get(index)
+        page.status = PageStatus(status) if not isinstance(status, PageStatus) else status
+
+    def set_pages(self, pages: list) -> None:
+        """Replace every page at once.
+
+        Accepts Page objects or bare images/Frames, so callers can set up a
+        score without reaching into the store.  Boundary rows are mirrored for
+        the legacy crop-row list.
+        """
+        normalized = [
+            Page(image=p) if isinstance(p, np.ndarray) else PageStore.as_page(p)
+            for p in pages
+        ]
+        self._pages.set_pages(normalized)
+        self._sync_crop_rows()
+
     def get_page_thumbnail(self, index: int) -> Optional[bytes]:
         return self._pages.get_thumbnail(index)
 
@@ -575,13 +613,11 @@ class GuiApi:
 
     def remove_page(self, index: int) -> None:
         self._pages.remove(index)
-        if 0 <= index < len(self._page_crop_rows):
-            self._page_crop_rows.pop(index)
+        self._sync_crop_rows()
 
     def reorder_pages(self, new_order: list[int]) -> None:
         self._pages.reorder(new_order)
-        if len(self._page_crop_rows) == len(new_order):
-            self._page_crop_rows = [self._page_crop_rows[i] for i in new_order]
+        self._sync_crop_rows()
 
     def clear_pages(self) -> None:
         self._pages.clear()
@@ -692,10 +728,9 @@ class GuiApi:
         if not images:
             raise RuntimeError(f"No page images found in {score_dir}/photos/")
 
-        from src.domain.models import Frame
         self._pages.clear()
-        for i, img in enumerate(images):
-            self._pages.add(Frame(img, 0.0, i))
+        for img in images:
+            self._pages.add(Page(image=img))
 
         if output_path is None:
             output_path = str(sb_path / f"{sb_path.name}.pdf")
@@ -714,16 +749,17 @@ class GuiApi:
         score_dir = Path(path)
         images = self._file_service.load_page_images(score_dir)
 
-        from src.domain.models import Frame
-        self._pages.clear()
-        self._pages.set_pages([Frame(img, 0.0, i) for i, img in enumerate(images)])
-
         self._loaded_score_path = path
         self._loaded_score_metadata = self._read_metadata(score_dir)
         meta_crop = self._loaded_score_metadata.get("crop_ratio", 0.35)
         self._config.default_crop_ratio = meta_crop
         rows = self._loaded_score_metadata.get("page_boundary_rows") or []
-        self._page_crop_rows = list(rows)
+
+        self._pages.clear()
+        for i, img in enumerate(images):
+            row = rows[i] if i < len(rows) else None
+            self._pages.add(Page(image=img, boundary_row=row))
+        self._sync_crop_rows()
         return len(self._pages)
 
     def delete_saved_score(self, path: str) -> None:
@@ -756,19 +792,22 @@ class GuiApi:
         return None
 
     def _current_crop_rows(self) -> list:
-        """Per-page measured boundary rows aligned with self._pages.
+        """Per-page measured boundary rows, read from the pages themselves.
 
         Entries are ints (auto boundary row, offset-free) or None (no per-page
         row; PdfService then applies the fixed ratio, or no crop when
-        boundary_mode is 'off').  Missing entries are padded with None.
+        boundary_mode is 'off').  Derived from the pages so an image and its
+        crop can never drift apart.
         """
-        n = len(self._pages)
-        rows = list(self._page_crop_rows)
-        if len(rows) < n:
-            rows.extend([None] * (n - len(rows)))
-        elif len(rows) > n:
-            rows = rows[:n]
-        return rows
+        return [p.boundary_row for p in self._pages.all_pages()]
+
+    def _sync_crop_rows(self) -> None:
+        """Refresh the legacy crop-row list from the pages.
+
+        The list is a migration leftover (removed in a later ticket); pages are
+        the source of truth, so this only mirrors them and can never desync.
+        """
+        self._page_crop_rows = self._current_crop_rows()
 
     def _read_metadata(self, score_dir) -> dict:
         score_dir = Path(score_dir)

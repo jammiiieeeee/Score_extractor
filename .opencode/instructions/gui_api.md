@@ -1,6 +1,6 @@
 # GUI API Specification
 
-This document defines the 43-method Python API surface for GUI integration.
+This document defines the 47-method Python API surface for GUI integration.
 
 ## Design Principles
 
@@ -85,56 +85,66 @@ class ScoreInfo:
 | 21 | `set_on_cancelled(fn)` | `fn() → None` | Cancellation acknowledged |
 | 22 | `set_on_download_completed(fn)` | `fn(path) → None` | YouTube download finished |
 
-### Page Management (6)
+### Page Management (10)
+
+Pages are read and changed through this interface only.  Callers (the GUI and
+the tests) never touch the store's internal lists, so how pages are held can
+change without rewriting them.  `get_page` returns a `PageState` view carrying
+the page's index, image, boundary row, file and status; `set_page_status`
+changes one page's status and the change survives the read-back.
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
 | 23 | `get_page_count()` | `→ int` | Number of stored pages |
-| 24 | `get_page_thumbnail(index)` | `int → bytes\|None` | PNG bytes, 320px wide |
-| 25 | `get_page_full(index)` | `int → bytes\|None` | PNG bytes, full resolution |
-| 26 | `remove_page(index)` | `int → None` | Remove page before PDF gen |
-| 27 | `reorder_pages(new_order)` | `list[int] → None` | Reorder by index list |
-| 28 | `clear_pages()` | `→ None` | Remove all pages |
+| 24 | `add_page(image, boundary_row, file, status)` | `np.ndarray, int?, str?, PageStatus? → int` | Append a page, return its index |
+| 25 | `set_pages(pages)` | `list[Page\|Frame\|np.ndarray] → None` | Replace all pages at once |
+| 26 | `get_page(index)` | `int → PageState` | Read a page's index, image, boundary row, file, status |
+| 27 | `set_page_status(index, status)` | `int, PageStatus → None` | Change one page's status |
+| 28 | `get_page_thumbnail(index)` | `int → bytes\|None` | PNG bytes, 320px wide |
+| 29 | `get_page_full(index)` | `int → bytes\|None` | PNG bytes, full resolution |
+| 30 | `remove_page(index)` | `int → None` | Remove page before PDF gen |
+| 31 | `reorder_pages(new_order)` | `list[int] → None` | Reorder by index list |
+| 32 | `clear_pages()` | `→ None` | Remove all pages |
 
 ### PDF Generation (2)
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 29 | `generate_pdf(output_path, title)` | `str, str? → None` | Generate PDF on background thread |
-| 30 | `regenerate_from_dir(score_dir, output_path)` | `str, str? → None` | Load pages from dir, generate PDF |
+| 33 | `generate_pdf(output_path, title)` | `str, str? → None` | Generate PDF on background thread |
+| 34 | `regenerate_from_dir(score_dir, output_path)` | `str, str? → None` | Load pages from dir, generate PDF |
 
 ### YouTube Download (1)
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 31 | `download_youtube(url, fmt, scan_fmt)` | `str, str, str → None` | Download on background thread |
+| 35 | `download_youtube(url, fmt, scan_fmt)` | `str, str, str → None` | Download on background thread |
 
 ### Score Management (4)
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 32 | `list_saved_scores(output_folder)` | `str → list[ScoreInfo]` | List existing scores in directory |
-| 33 | `load_saved_score(path)` | `str → int` | Load pages from existing score |
-| 34 | `delete_saved_score(path)` | `str → None` | Delete score directory |
-| 35 | `save_metadata(score_dir, data)` | `str, dict → None` | Write metadata.json |
+| 36 | `list_saved_scores(output_folder)` | `str → list[ScoreInfo]` | List existing scores in directory |
+| 37 | `load_saved_score(path)` | `str → int` | Load pages from existing score |
+| 38 | `delete_saved_score(path)` | `str → None` | Delete score directory |
+| 39 | `save_metadata(score_dir, data)` | `str, dict → None` | Write metadata.json |
 
 ### Re-extraction Helpers (6)
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 36 | `has_loaded_score()` | `→ bool` | Is an existing score loaded? |
-| 37 | `get_loaded_score_path()` | `→ str\|None` | Path of loaded score |
-| 38 | `get_loaded_score_metadata()` | `→ dict` | metadata.json contents |
-| 39 | `is_loading_from_scratch()` | `→ bool` | True if no loaded score |
-| 40 | `get_first_page_image()` | `→ np.ndarray\|None` | First page for preview |
+| 40 | `has_loaded_score()` | `→ bool` | Is an existing score loaded? |
+| 41 | `get_loaded_score_path()` | `→ str\|None` | Path of loaded score |
+| 42 | `get_loaded_score_metadata()` | `→ dict` | metadata.json contents |
+| 43 | `is_loading_from_scratch()` | `→ bool` | True if no loaded score |
+| 44 | `get_first_page_image()` | `→ np.ndarray\|None` | First page for preview |
 
 ### Lifecycle (3)
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 41 | `cleanup()` | `→ None` | Close video, clear pages |
-| 42 | `is_busy()` | `→ bool` | Any background thread alive? |
-| 43 | `set_debug_mode(enabled)` | `bool → None` | Enable/disable debug mode |
+| 45 | `cleanup()` | `→ None` | Close video, clear pages |
+| 46 | `is_busy()` | `→ bool` | Any background thread alive? |
+| 47 | `set_debug_mode(enabled)` | `bool → None` | Enable/disable debug mode |
 
 ## Threading Model
 

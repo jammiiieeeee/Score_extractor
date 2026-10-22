@@ -49,6 +49,23 @@ class Page:
     status: PageStatus = PageStatus.KEEP
 
 
+@dataclass(frozen=True)
+class PageState:
+    """A read-only view of one page, as seen by a caller.
+
+    Carries the page's position in the score together with the facts the page
+    knows about itself (image, boundary row, file, status).  Callers read page
+    state through this view so they never depend on how pages are stored; the
+    storage is free to change without touching them.
+    """
+
+    index: int
+    image: np.ndarray
+    boundary_row: Optional[int] = None
+    file: Optional[str] = None
+    status: PageStatus = PageStatus.KEEP
+
+
 @dataclass
 class Frame:
     image: np.ndarray

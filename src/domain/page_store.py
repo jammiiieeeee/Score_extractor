@@ -1,24 +1,25 @@
 import cv2
 import numpy as np
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Union
 
-from src.domain.models import Frame
+from src.domain.models import Frame, Page
 
 
 @dataclass
 class PageStore:
     """Encapsulates the page state.
 
-    Holds one copy of each page: _pages (the frames) plus _png_cache (the
-    encoded PNG of that same page, for full-size rendering).
-    Every mutation keeps the two lists the same length and in the same order.
+    Holds one copy of each page: _pages (the page objects, each carrying its
+    own image, boundary row, file and status) plus _png_cache (the encoded PNG
+    of that same page, for full-size rendering).  Every mutation keeps the two
+    lists the same length and in the same order.
     """
 
-    _pages: List[Frame] = field(default_factory=list)
+    _pages: List[Page] = field(default_factory=list)
     _png_cache: List[Optional[bytes]] = field(default_factory=list)
 
-    # ── Queries ───────────────────────────────────────────────────────
+    # Queries -------------------------------------------------------------
 
     def __len__(self) -> int:
         return len(self._pages)
@@ -26,20 +27,27 @@ class PageStore:
     def __bool__(self) -> bool:
         return len(self._pages) > 0
 
-    def __getitem__(self, index: int) -> Frame:
+    def __getitem__(self, index: int) -> Page:
         return self._pages[index]
 
-    def get(self, index: int) -> Frame:
+    def get(self, index: int) -> Page:
         return self._pages[index]
 
     def get_image(self, index: int) -> np.ndarray:
         return self._pages[index].image
 
-    def all_frames(self) -> List[Frame]:
+    def all_pages(self) -> List[Page]:
         return list(self._pages)
 
     def all_images(self) -> List[np.ndarray]:
-        return [f.image for f in self._pages]
+        return [p.image for p in self._pages]
+
+    @staticmethod
+    def as_page(page: Union[Page, Frame]) -> Page:
+        """Accept either a Page or a bare Frame and return a Page."""
+        if isinstance(page, Page):
+            return page
+        return Page(image=page.image)
 
     @staticmethod
     def encode_png(img: np.ndarray) -> Optional[bytes]:
@@ -71,18 +79,19 @@ class PageStore:
         self._png_cache[index] = png
         return png
 
-    # ── Mutations ─────────────────────────────────────────────────────
+    # Mutations -----------------------------------------------------------
 
-    def add(self, frame: Frame, png: Optional[bytes] = None) -> int:
+    def add(self, page: Union[Page, Frame], png: Optional[bytes] = None) -> int:
         """Append a page. Returns the new index."""
-        self._pages.append(frame)
-        self._png_cache.append(png if png is not None else self.encode_png(frame.image))
+        page = self.as_page(page)
+        self._pages.append(page)
+        self._png_cache.append(png if png is not None else self.encode_png(page.image))
         return len(self._pages) - 1
 
-    def set_pages(self, frames: List[Frame]) -> None:
+    def set_pages(self, pages: List[Union[Page, Frame]]) -> None:
         """Replace working pages entirely (e.g. after extraction completes)."""
-        self._pages = list(frames)
-        self._png_cache = [self.encode_png(f.image) for f in frames]
+        self._pages = [self.as_page(p) for p in pages]
+        self._png_cache = [self.encode_png(p.image) for p in self._pages]
 
     def remove(self, index: int) -> None:
         if index < 0 or index >= len(self._pages):
