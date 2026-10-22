@@ -1,7 +1,6 @@
 import io
 from pathlib import Path
-from typing import List, Optional
-import numpy as np
+from typing import List
 import cv2
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
@@ -9,11 +8,13 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from src.domain.interfaces import IPdfService
+from src.domain.models import Page
+from src.domain.page_crop import crop_page
 from src.domain.value_objects.config import ScoreConfig
 
 class PdfService(IPdfService):
-    def create_pdf(self, images: List[np.ndarray], output_path: Path, config: ScoreConfig,
-                   title_hint: str = "", crop_rows: Optional[List[Optional[int]]] = None) -> None:
+    def create_pdf(self, pages: List[Page], output_path: Path, config: ScoreConfig,
+                   title_hint: str = "") -> None:
         c = canvas.Canvas(str(output_path), pagesize=A4)
         width, height = A4
 
@@ -37,34 +38,18 @@ class PdfService(IPdfService):
         c.drawCentredString(width / 2, height - margin, title)
         y_offset -= 40
 
-        for idx, img in enumerate(images):
-            # Crop to PDF output region.  The images are always full merged
-            # frames (single-crop model): extraction never crops, only records
-            # the measured boundary row per page.  The crop is decided from
-            # boundary_mode:
+        for page in pages:
+            # The page images are always full merged frames (single-crop
+            # model): extraction never crops, it only records the boundary row
+            # measured for the page.  The crop itself is decided by the shared
+            # rule in src/domain/page_crop.py, from the page and the config:
             #   off    -> no crop (full frame)
             #   manual -> fixed default_crop_ratio for every page
             #   auto   -> crop at (boundary_row - offset) for pages that have a
             #             row, else default_crop_ratio
-            # ``crop_rows`` holds the *measured* boundary rows (offset-free),
-            # so a changed offset takes effect on regeneration.  The row was
-            # measured on the same merged frame that is saved as the page
-            # image, so it is already in this image's pixel space.
-            img_h = img.shape[0]
-            y_start = 0
-            mode = getattr(config, "boundary_mode", "manual")
-            offset = int(getattr(config, "boundary_offset_px", 0))
-            if mode == "off":
-                y_end = img_h
-            elif mode == "auto":
-                row = crop_rows[idx] if (crop_rows is not None and idx < len(crop_rows)) else None
-                if row is None:
-                    y_end = int(img_h * config.default_crop_ratio)
-                else:
-                    y_end = max(1, min(int(row) - offset, img_h))
-            else:  # manual / legacy
-                y_end = int(img_h * config.default_crop_ratio)
-            cropped_img = img[y_start:y_end, :]
+            # The row was measured on the same merged frame that is saved as
+            # the page image, so it is already in this image's pixel space.
+            cropped_img = crop_page(page, config)
 
             success, buf = cv2.imencode('.png', cropped_img)
             if not success:

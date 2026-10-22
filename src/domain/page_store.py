@@ -1,26 +1,25 @@
 import cv2
 import numpy as np
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 
-from src.domain.models import Frame
+from src.domain.models import Frame, Page
 
 
 @dataclass
 class PageStore:
-    """Encapsulates the dual-list page state.
+    """Encapsulates the page state.
 
-    Manages _pages + _page_png_cache (working copy) and
-    _original_pages + _original_png_cache (untouched originals for re-crop).
-    Every mutation is atomic — the four lists are always in sync.
+    Holds one copy of each page: _pages (the page objects, each carrying its
+    own image, boundary row, file and status).  The encoded PNG of a page is
+    cached against that page itself, so there is no second list to keep in
+    step - a cache entry belongs to the page it was made from.
     """
 
-    _pages: List[Frame] = field(default_factory=list)
-    _png_cache: List[Optional[bytes]] = field(default_factory=list)
-    _original_pages: List[Frame] = field(default_factory=list)
-    _original_png_cache: List[Optional[bytes]] = field(default_factory=list)
+    _pages: List[Page] = field(default_factory=list)
+    _png_cache: Dict[Page, bytes] = field(default_factory=dict)
 
-    # ── Queries ───────────────────────────────────────────────────────
+    # Queries -------------------------------------------------------------
 
     def __len__(self) -> int:
         return len(self._pages)
@@ -28,23 +27,34 @@ class PageStore:
     def __bool__(self) -> bool:
         return len(self._pages) > 0
 
-    def __getitem__(self, index: int) -> Frame:
-        return self._pages[index]
+    def __getitem__(self, index: int) -> Page:
+        return self.get(index)
 
-    def get(self, index: int) -> Frame:
+    def get(self, index: int) -> Page:
+        """The page at that position.
+
+        Raises IndexError for any index outside the store, negative included:
+        a negative index must not silently address the last page.
+        """
+        if index < 0 or index >= len(self._pages):
+            raise IndexError(f"Page index {index} out of range (0-{len(self._pages) - 1})")
         return self._pages[index]
 
     def get_image(self, index: int) -> np.ndarray:
-        return self._pages[index].image
+        return self.get(index).image
 
-    def all_frames(self) -> List[Frame]:
+    def all_pages(self) -> List[Page]:
         return list(self._pages)
 
     def all_images(self) -> List[np.ndarray]:
-        return [f.image for f in self._pages]
+        return [p.image for p in self._pages]
 
-    def has_originals(self) -> bool:
-        return len(self._original_pages) > 0
+    @staticmethod
+    def as_page(page: Union[Page, Frame]) -> Page:
+        """Accept either a Page or a bare Frame and return a Page."""
+        if isinstance(page, Page):
+            return page
+        return Page(image=page.image)
 
     @staticmethod
     def encode_png(img: np.ndarray) -> Optional[bytes]:
@@ -70,30 +80,35 @@ class PageStore:
     def get_full_png(self, index: int) -> Optional[bytes]:
         if index < 0 or index >= len(self._pages):
             return None
-        if self._png_cache[index] is not None:
-            return self._png_cache[index]
-        png = self.encode_png(self._pages[index].image)
-        self._png_cache[index] = png
+        page = self._pages[index]
+        cached = self._png_cache.get(page)
+        if cached is not None:
+            return cached
+        png = self.encode_png(page.image)
+        if png is None:
+            return None
+        self._png_cache[page] = png
         return png
 
-    # ── Mutations ─────────────────────────────────────────────────────
+    # Mutations -----------------------------------------------------------
 
-    def add(self, frame: Frame, png: Optional[bytes] = None) -> int:
+    def add(self, page: Union[Page, Frame], png: Optional[bytes] = None) -> int:
         """Append a page. Returns the new index."""
-        self._pages.append(frame)
-        self._png_cache.append(png if png is not None else self.encode_png(frame.image))
+        page = self.as_page(page)
+        self._pages.append(page)
+        if png is not None:
+            self._png_cache[page] = png
         return len(self._pages) - 1
 
-    def set_pages(self, frames: List[Frame]) -> None:
+    def set_pages(self, pages: List[Union[Page, Frame]]) -> None:
         """Replace working pages entirely (e.g. after extraction completes)."""
-        self._pages = list(frames)
-        self._png_cache = [self.encode_png(f.image) for f in frames]
+        self._pages = [self.as_page(p) for p in pages]
+        self._png_cache = {}
 
     def remove(self, index: int) -> None:
-        if index < 0 or index >= len(self._pages):
-            raise IndexError(f"Page index {index} out of range (0-{len(self._pages) - 1})")
+        page = self.get(index)
         self._pages.pop(index)
-        self._png_cache.pop(index)
+        self._png_cache.pop(page, None)
 
     def reorder(self, new_order: List[int]) -> None:
         if len(new_order) != len(self._pages):
@@ -101,22 +116,8 @@ class PageStore:
         if set(new_order) != set(range(len(self._pages))):
             raise ValueError("New order must be a permutation of 0..N-1")
         self._pages = [self._pages[i] for i in new_order]
-        self._png_cache = [self._png_cache[i] for i in new_order]
 
     def clear(self) -> None:
-        """Clear all pages AND originals (full reset)."""
+        """Clear all pages (full reset)."""
         self._pages.clear()
         self._png_cache.clear()
-        self._original_pages.clear()
-        self._original_png_cache.clear()
-
-    def clear_working(self) -> None:
-        """Clear only working pages, keep originals."""
-        self._pages.clear()
-        self._png_cache.clear()
-
-    # ── Original management (for loaded scores) ─────────────────────
-
-    def set_originals(self, frames: List[Frame]) -> None:
-        self._original_pages = list(frames)
-        self._original_png_cache = [self.encode_png(f.image) for f in frames]

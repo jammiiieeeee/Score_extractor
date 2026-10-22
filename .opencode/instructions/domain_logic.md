@@ -104,11 +104,81 @@ class Frame:
     ssim_score: float = 0.0    # Similarity to previous frame
 ```
 
+### Page
+
+One page of a score, with everything known about it. A page carries its own
+image and the facts measured for that image, so an image and its measurements
+cannot drift apart.
+
+```python
+class PageStatus(str, Enum):
+    KEEP = "keep"              # the page belongs to the score
+    EXCLUDED = "excluded"      # taken out by hand (page selection)
+    DUPLICATE = "duplicate"    # repeats an earlier page
+
+@dataclass(eq=False)
+class Page:
+    image: np.ndarray          # BGR image (shared with the frame, not copied)
+    boundary_row: Optional[int]  # measured boundary row, None when none was found
+    attempt_number: int        # the extraction attempt that produced the page
+    file: Optional[str]        # the PNG the page was written to
+    status: PageStatus = PageStatus.KEEP
+```
+
+Extraction produces one `Page` per committed page (duplicates get none).
+`boundary_row` is `None` when no boundary was detected — the absence is
+recorded, never a guess. Only `KEEP` is produced today; `EXCLUDED` and
+`DUPLICATE` are reserved for page selection.
+
+A page also describes itself for a saved score: `page.to_record()` gives the
+record written into `metadata.json` (attempt number, boundary row, status)
+and `Page.from_record()` reads one back.
+
+### PageState
+
+A read-only view of one page, as handed to callers. It carries the page's
+position in the score together with the facts the page knows about itself, so
+callers read page state without depending on how pages are stored.
+
+```python
+@dataclass(frozen=True)
+class PageState:
+    index: int                 # the page's position in the score
+    image: np.ndarray          # BGR image
+    boundary_row: Optional[int]
+    file: Optional[str]
+    status: PageStatus
+```
+
+### PageStore
+
+`src/domain/page_store.py` holds one `Page` object per page (image, boundary
+row, file, status) plus a cache of each page's encoded PNG. The cache is keyed
+by the page itself, so it cannot fall out of step with the page list. The
+store accepts either `Page` or `Frame` (a bare frame becomes a `Page` with
+default facts) so old callers keep working during the migration.
+
+An index outside the store is an `IndexError`, negative included - a negative
+index must never address the last page by accident.
+
+### Crop rule
+
+`src/domain/page_crop.py` holds the one rule that decides how far a page is
+kept. It reads the page itself, so an image and its crop cannot drift apart.
+
+- `crop_end_row(page, config)` → the row where the crop ends (exclusive)
+- `crop_page(page, config)` → the cropped image (a view of the page image)
+- `off` → whole frame; `manual` → `default_crop_ratio`;
+  `auto` → the page's measured `boundary_row` (lifted by
+  `boundary_offset_px`), falling back to `default_crop_ratio` without a row
+- The PDF uses this rule; any other consumer (a page preview) can call it
+  directly
+
 ## Interfaces
 
 `src/domain/interfaces.py` defines:
 - `IVideoService`: `open_video()`, `read_frame_at()`, `read_next_frame()`, `skip_frames()`, `read_full_frame_at()`, `merge_frames()`, `get_original_size()`, `get_fps()`, `get_total_frames()`, `close()`
 - `IOcrService`: `initialize()`, `is_enabled()`, `get_leftmost_number()`
 - `IPdfService`: `create_pdf()`
-- `IFileService`: `prepare_output_dir()`, `load_page_images()`
+- `IFileService`: `prepare_output_dir()`, `load_page_images()`, `load_page_images_with_paths()`, `delete_page_image()`
 - `_NoopOcrService`: Fallback when OCR is disabled or fails

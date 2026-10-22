@@ -242,9 +242,8 @@ class TestExtractionToPdf:
         assert meta_path.exists(), f"metadata.json should exist at {meta_path}"
 
     def test_generate_pdf_from_synthetic_images(self, api, synthetic_images, tmp_path):
-        from src.domain.models import Frame
-        for i, img in enumerate(synthetic_images):
-            api._pages.add(Frame(img, float(i), i))
+        for img in synthetic_images:
+            api.add_page(img)
 
         pdf_path = str(tmp_path / "synthetic.pdf")
         api.generate_pdf(pdf_path)

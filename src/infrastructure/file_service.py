@@ -2,7 +2,7 @@ import cv2
 import re
 import numpy as np
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from src.domain.interfaces import IFileService
 
 class FileService(IFileService):
@@ -49,17 +49,35 @@ class FileService(IFileService):
         return path
 
     def load_page_images(self, score_dir: Path) -> List[np.ndarray]:
+        return [image for _, image in self.load_page_images_with_paths(score_dir)]
+
+    def load_page_images_with_paths(self, score_dir: Path) -> List[Tuple[Path, np.ndarray]]:
+        """The saved pages, each with the file it came from.
+
+        The file travels with its image, so a page can be deleted again later
+        without guessing which file belongs to it.
+        """
         files = sorted(
             (score_dir / "photos").glob("page_*_merged.png"),
             key=lambda f: int(f.stem.split("_")[1])
         )
-        images = []
+        pages = []
         for f in files:
             file_bytes = np.fromfile(str(f), dtype=np.uint8)
             img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
             if img is not None:
-                images.append(img)
-        return images
+                pages.append((f, img))
+        return pages
+
+    def delete_page_image(self, path: str) -> bool:
+        """Delete one saved page image. Returns True when a file was removed."""
+        if not path:
+            return False
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError:
+            return False
+        return True
 
     def list_saved_scores(self, output_folder: str) -> List[dict]:
         results = []

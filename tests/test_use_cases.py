@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.application.use_cases import ExtractScoreUseCase, GeneratePdfUseCase, ExtractRequest
 from src.domain.value_objects.config import ScoreConfig
-from src.domain.models import Frame
+from src.domain.models import Frame, Page, PageStatus
 from src.domain.interfaces import _NoopOcrService
 from tests.conftest import (
     StubVideoService, StubOcrService, StubFileService, StubPdfService,
@@ -147,19 +147,81 @@ class TestExtractScoreUseCase:
 
 
 @pytest.mark.unit
+class TestExtractScoreUseCasePageRecords:
+    """The extraction produces one page object per committed page."""
+
+    def _make_uc(self, frames, fps=30.0, work_dir=None):
+        svc = StubVideoService([f.image for f in frames], fps=fps)
+        ocr = StubOcrService(enabled=False)
+        file_svc = StubFileService(work_dir or Path(os.environ.get("TEMP", ".")))
+        cfg = ScoreConfig(frame_check_interval=0.01)
+        return ExtractScoreUseCase(svc, ocr, file_svc, cfg)
+
+    def _make_frames(self, n=10, width=800, height=600):
+        frames = []
+        for i in range(n):
+            shade = int(50 + (i * 30) % 200)
+            frames.append(Frame(make_solid_image(width, height, (shade, shade, shade)),
+                                float(i) / 30.0, i))
+        return frames
+
+    def _run(self, tmp_path, n_frames=10):
+        frames = self._make_frames(n_frames)
+        uc = self._make_uc(frames, work_dir=tmp_path)
+        out = tmp_path / "output"
+        out.mkdir()
+        (out / "photos").mkdir()
+        return uc.execute(ExtractRequest("fake.mp4", out, no_ocr=True, start_time=0.0))
+
+    def test_one_record_per_committed_page(self, tmp_path):
+        result = self._run(tmp_path)
+        assert len(result.pages) >= 1
+        assert len(result.page_records) == len(result.pages)
+
+    def test_record_carries_the_page_image_without_copying_it(self, tmp_path):
+        result = self._run(tmp_path)
+        for record, frame in zip(result.page_records, result.pages):
+            assert record.image is frame.image
+
+    def test_every_record_is_kept(self, tmp_path):
+        result = self._run(tmp_path)
+        assert all(r.status is PageStatus.KEEP for r in result.page_records)
+
+    def test_record_carries_attempt_number_and_file(self, tmp_path):
+        result = self._run(tmp_path)
+        for record in result.page_records:
+            assert record.attempt_number >= 1
+            assert record.file is not None
+            assert Path(record.file).exists()
+
+    def test_record_without_detected_row_keeps_none(self, tmp_path):
+        result = self._run(tmp_path)
+        assert all(r.boundary_row is None for r in result.page_records)
+
+
+@pytest.mark.unit
 class TestGeneratePdfUseCase:
     """Tests for GeneratePdfUseCase.execute()."""
 
-    def test_generate_pdf_with_frames(self, tmp_path):
+    def test_generate_pdf_with_pages(self, tmp_path):
         pdf_svc = StubPdfService()
         cfg = ScoreConfig()
         uc = GeneratePdfUseCase(pdf_svc, cfg)
-        frames = [Frame(make_solid_image(), 1.0, 0)]
+        pages = [Page(image=make_solid_image())]
         out_path = tmp_path / "test_output.pdf"
-        uc.execute(frames, str(out_path))
+        uc.execute(pages, str(out_path))
         assert len(pdf_svc.calls) == 1
 
-    def test_generate_pdf_empty_frames(self, tmp_path):
+    def test_generate_pdf_passes_the_pages_through(self, tmp_path):
+        pdf_svc = StubPdfService()
+        cfg = ScoreConfig()
+        uc = GeneratePdfUseCase(pdf_svc, cfg)
+        pages = [Page(image=make_solid_image(), boundary_row=42)]
+        out_path = tmp_path / "test_output.pdf"
+        uc.execute(pages, str(out_path))
+        assert pdf_svc.calls[0]["pages"] == pages
+
+    def test_generate_pdf_empty_pages(self, tmp_path):
         pdf_svc = StubPdfService()
         cfg = ScoreConfig()
         uc = GeneratePdfUseCase(pdf_svc, cfg)
@@ -171,7 +233,7 @@ class TestGeneratePdfUseCase:
         pdf_svc = StubPdfService()
         cfg = ScoreConfig()
         uc = GeneratePdfUseCase(pdf_svc, cfg)
-        frames = [Frame(make_solid_image(), 1.0, 0)]
+        pages = [Page(image=make_solid_image())]
         out_path = tmp_path / "subdir" / "output.pdf"
-        uc.execute(frames, str(out_path))
+        uc.execute(pages, str(out_path))
         assert out_path.parent.exists()

@@ -12,7 +12,8 @@ from src.infrastructure.pdf_service import PdfService
 from src.infrastructure.file_service import FileService
 from src.infrastructure.download_service import DownloadService
 from src.application.use_cases import ExtractScoreUseCase, GeneratePdfUseCase, ExtractRequest
-from src.domain.models import Frame
+from src.application.saved_score import read_saved_score
+from src.domain.models import Page
 
 
 def load_config(config_path: str) -> ScoreConfig:
@@ -63,28 +64,38 @@ def main():
 
     config = load_config(args.config)
 
-    if args.crop_ratio is not None:
-        config.default_crop_ratio = args.crop_ratio
-
     if args.from_dir:
         score_dir = Path(args.from_dir)
         if not score_dir.is_dir():
             print(f"[ERROR] Dir not found: {args.from_dir}")
             sys.exit(1)
 
-        images = FileService().load_page_images(score_dir)
-        if not images:
-            print(f"[ERROR] No images in {score_dir}/photos/")
+        # The score is read the way it was saved: the recorded pages, with
+        # the crop they were cropped with.
+        file_service = FileService()
+        saved = read_saved_score(score_dir, file_service, config)
+        if not saved.pages:
+            print(f"[ERROR] No images in {args.from_dir}/photos/")
             sys.exit(1)
 
-        print(f"Loaded {len(images)} images from {args.from_dir}")
+        # A ratio given on the command line wins over the saved one.
+        if args.crop_ratio is not None:
+            config.default_crop_ratio = args.crop_ratio
+
+        print(f"Loaded {len(saved.pages)} pages from {args.from_dir}")
 
         output_path = args.output or str(score_dir / f"{score_dir.name}.pdf")
         pdf_service = PdfService()
-        pdf_service.create_pdf(images, Path(output_path), config, title_hint=Path(output_path).stem)
+        pdf_service.create_pdf(
+            saved.pages,
+            Path(output_path), config, title_hint=Path(output_path).stem,
+        )
         print(f"\nPDF saved: {output_path}")
 
     else:
+        if args.crop_ratio is not None:
+            config.default_crop_ratio = args.crop_ratio
+
         # Determine video path - handle video URLs
         video_path = args.input
         is_youtube = False
@@ -161,18 +172,16 @@ def main():
                 on_progress=lambda pct, msg: print(f"\r  [{pct:5.1f}%] {msg}", end="", flush=True),
             ))
             pages = result.pages
-            manifest = result.manifest
             print(f"\nExtracted: {len(pages)} pages")
 
             if pages:
                 print(f"PDF: {output_pdf}")
-                crop_rows = [e.boundary_row for e in manifest if not e.is_duplicate] if manifest else None
+                pdf_pages = result.page_records or [Page(image=f.image) for f in pages]
                 pdf_service.create_pdf(
-                    [page.image for page in pages],
+                    pdf_pages,
                     Path(output_pdf),
                     config,
                     title_hint=score_name,
-                    crop_rows=crop_rows,
                 )
                 print(f"PDF saved: {output_pdf}")
 

@@ -2359,14 +2359,16 @@ class ExtractTab(QWidget):
         try:
             count = self._api.load_saved_score(score_path)
             meta = self._api.get_loaded_score_metadata()
-            self._loaded_original_ratio = meta.get("crop_ratio", 0.35)
+            self._loaded_original_ratio = meta.get("crop_ratio")
             self._has_existing_score = True
             self._project_dir = score_path
             p = Path(score_path)
             self.project_edit.setText(p.name)
             self.pdf_name_edit.setText(p.name)
-            self.crop_spin.setValue(self._loaded_original_ratio)
-            self.crop_original_label.setText(f"(was {int(self._loaded_original_ratio * 100)}%)")
+            # Show the score with the crop it was saved with.
+            self._load_crop_controls()
+            if self._loaded_original_ratio is not None:
+                self.crop_original_label.setText(f"(was {int(self._loaded_original_ratio * 100)}%)")
 
             # Load associated video for preview if available
             video_path = meta.get("video_path", "")
@@ -2381,7 +2383,8 @@ class ExtractTab(QWidget):
                 if video_path and not os.path.exists(video_path):
                     self._log(f"Video missing: {video_path}")
 
-            self._log(f"Loaded {count} pages (crop {int(self._loaded_original_ratio * 100)}%)")
+            ratio = self._api.get_config()["default_crop_ratio"]
+            self._log(f"Loaded {count} pages (crop {int(ratio * 100)}%)")
             self._refresh_completer()
             self._update_state()
         except Exception as e:
@@ -2932,20 +2935,12 @@ class ExtractTab(QWidget):
         self._log(f"Review: {kept} pages kept")
 
     def _apply_page_removals(self, removed: list[int]):
-        """Drop pages from the in-memory store and their files on disk.
+        """Drop pages from the score and their files from disk.
 
-        Disk files are numbered by extraction attempt (gaps when duplicates
-        were skipped), so store indices map to the sorted file list, not to
-        the numbers in the filenames.
+        Each page knows the file it was written to, so the file that goes with
+        a removed page is the one that gets deleted - never another page's.
         """
-        photos = Path(self.get_project_dir()) / "photos"
-        files = sorted(
-            photos.glob("page_*_merged.png"),
-            key=lambda f: int(f.stem.split("_")[1]),
-        )
         for idx in sorted(removed, reverse=True):
-            if 0 <= idx < len(files):
-                files[idx].unlink(missing_ok=True)
             try:
                 self._api.remove_page(idx)
             except IndexError:

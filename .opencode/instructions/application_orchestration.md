@@ -32,7 +32,11 @@ Orchestrates the full extraction pipeline. Constructor takes:
 - `on_log`, `on_progress`, `on_page_detected`, `is_cancelled` — callbacks
 - `original_video_path: Optional[str]` — for YouTube dual-download workflow
 
-Returns `List[Frame]`.
+Returns `ExtractResult`:
+- `pages: List[Frame]` — the committed pages (old list, still in place)
+- `manifest: List[PageManifestEntry]` — one entry per attempt
+- `page_records: List[Page]` — one page object per committed page, carrying
+  its image, boundary row, attempt number, file and status
 
 ### `FrameStepper` (`src/application/extraction_components.py`)
 
@@ -61,10 +65,28 @@ Handles the commit pipeline for each detected page pair:
 5. Deduplication (OCR → Global → Row)
 6. Save to disk via `file_service.save_page_image()`
 7. Debug artifact writing (A/B frames, bar profile text)
+8. Build the page object (`Page`) for the committed page
+
+`committer.pages` returns the committed pages in commit order — one per
+committed page, duplicates get none. The page shares its image with the frame
+that was appended to the page list, so the pixels are stored once.
 
 ### `BarProfilePlotter` (`src/application/extraction_components.py`)
 
 Optional matplotlib diagnostic plots. Lazy-imports matplotlib. Only instantiated when `debug=True`.
+
+### `read_saved_score()` (`src/application/saved_score.py`)
+
+The one place that reads a score directory. It returns the pages of a saved
+score and puts the config on the crop the score was saved with:
+- `read_saved_score(score_dir, file_service, config)` → `SavedScore(pages, metadata)`
+- `read_metadata(score_dir)` → the metadata of a score (empty when there is none)
+- `pages_from_records(saved, metadata)` → the pages, from the page records
+- `apply_saved_crop(config, metadata)` → the crop the score was saved with
+
+Both the GUI (`GuiApi.load_saved_score`, `GuiApi.regenerate_from_dir`) and the
+command line (`main.py --from-dir`) read a score through here, so both see the
+same pages, cropped the same way.
 
 ### `Deduplicator` (`src/domain/deduplication.py`)
 
@@ -77,9 +99,11 @@ Also provides bar profile validation: `check_bar_profile()` → `(has_clean, has
 
 ### `PageStore` (`src/domain/page_store.py`)
 
-In-memory page storage. Handles:
-- Working pages + original pages (for loaded-score preview/regeneration)
-- `set_originals()` / `has_originals()` — for loaded-score mode
+In-memory page storage. Holds **one copy** of each page:
+- `_pages` — the page objects (the only copy of the pixel data); each page
+  carries its own image, boundary row, file and status
+- `_png_cache` — the encoded PNG of a page, keyed by that page (full-size
+  rendering), so it cannot fall out of step with the page list
 - Thumbnail generation (320px wide PNG)
 - Full-resolution PNG encoding
 
@@ -100,7 +124,21 @@ main.py / gui_api.py
        │    ├─ Deduplicator.is_duplicate(existing, merged)
        │    └─ file_service.save_page_image()
        ├─ FrameStepper.tail_scan()  →  trim end-credits
-       └─ return unique_pages: List[Frame]
+       └─ return ExtractResult(pages, manifest, page_records)
+```
+
+## Data Flow: Reading a Saved Score
+
+```
+app_gui.py (user opens a score)      main.py --from-dir ./output/Sonata/
+  └─ GuiApi.load_saved_score(dir)      └─ read_saved_score(dir, file_service, config)
+       └─ read_saved_score(dir, ...)        ├─ read_metadata(dir)
+            ├─ read_metadata(dir)            ├─ file_service.load_page_images_with_paths(dir)
+            ├─ file_service.load_page_      ├─ pages_from_records(...)  →  pages with their rows
+            │   images_with_paths(dir)      └─ apply_saved_crop(config, metadata)
+            ├─ pages_from_records(...)
+            └─ apply_saved_crop(config, metadata)
+                 └─ PdfService.create_pdf(pages, ...) → the shared crop rule
 ```
 
 ## Data Flow: GUI Re-extraction
@@ -108,11 +146,12 @@ main.py / gui_api.py
 ```
 app_gui.py (user adjusts crop slider)
   └─ GuiApi.update_config({"default_crop_ratio": ratio})
-       └─ stored in config; applied once by PdfService at PDF generation
+       └─ stored in config; applied once by the crop rule at PDF generation
 
 app_gui.py (user clicks "Regenerate PDF")
   └─ GuiApi.generate_pdf(output_path)
-       └─ PdfService.create_pdf(pages.all_images(), ..., crop_rows)
+       └─ PdfService.create_pdf(pages.all_pages(), ...)
+            └─ each page cropped by the shared rule (src/domain/page_crop.py)
 ```
 
 ## Data Flow: YouTube Download

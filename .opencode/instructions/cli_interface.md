@@ -34,17 +34,24 @@ python main.py input_video.mp4 --output-dir ./output --score-name "Sonata"
 ```
 1. Opens video, initializes OCR (unless `--no-ocr`)
 2. Runs `ExtractScoreUseCase.execute()`
-3. Explicitly crops each page using `config.default_crop_ratio`
-4. Calls `PdfService.create_pdf()` with pre-cropped images
+3. Hands the extracted pages (image + measured boundary row) to the PDF builder
+4. Calls `PdfService.create_pdf()` — the shared crop rule crops each page
 5. Debug artifacts saved to `<output_dir>/debug/` if `--debug`
 
 ### Regeneration Mode (`--from-dir`)
 ```
-python main.py --from-dir ./output/Sonata/photos/ -o sonata.pdf
+python main.py --from-dir ./output/Sonata/ -o sonata.pdf
 ```
-1. Loads page images from `<dir>/` via `FileService.load_page_images()`
-2. Calls `PdfService.create_pdf()` directly (no cropping — images already cropped)
-3. Default output: `<dir>/<dir_name>.pdf`
+1. Reads the score with `read_saved_score()` - the page images, the page
+   records written with them, and the crop the score was saved with
+2. The config is put on the saved crop, so the score is read the way it was
+   cropped (`--crop-ratio` still wins over the saved ratio)
+3. Calls `PdfService.create_pdf()` with those pages - the same crop rule the
+   GUI uses, so the PDF keeps the bottom of every page
+4. Default output: `<dir>/<dir_name>.pdf`
+
+The GUI reads a score through the same `read_saved_score()`, so the command
+line and the GUI produce the same pages, cropped the same way.
 
 ## YouTube Download
 

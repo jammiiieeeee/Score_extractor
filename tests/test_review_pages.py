@@ -9,6 +9,8 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import cv2
+import numpy as np
 import pytest
 from PyQt6.QtWidgets import QApplication
 
@@ -118,61 +120,73 @@ class TestGeneratingPdfFlag:
 
 
 class TestPageRemovals:
-    class FakeStore:
-        def __init__(self, count: int):
-            self.pages = list(range(count))
-            self.removed = []
+    """Removing a page deletes that page's file and no other."""
 
-        def remove_page(self, index: int):
-            self.pages.pop(index)
-
-        def get_page_count(self):
-            return len(self.pages)
-
-    def _make_project(self, tab, tmp_path, files):
-        tab.project_edit.setText("ReviewTest")
-        tab._parent_dir = str(tmp_path)
-        photos = tmp_path / "ReviewTest" / "photos"
+    def _saved_score(self, tmp_path, names):
+        """A score on disk with the given page files, loaded into the API."""
+        photos = tmp_path / "photos"
         photos.mkdir(parents=True, exist_ok=True)
-        for name in files:
-            (photos / name).write_bytes(b"x")
+        paths = []
+        for name in names:
+            path = photos / name
+            cv2.imwrite(str(path), np.full((40, 40, 3), 90, dtype=np.uint8))
+            paths.append(path)
+        api = GuiApi()
+        api.load_saved_score(str(tmp_path))
+        return api, paths
 
     def test_removes_correct_files_despite_gaps(self, tab, tmp_path):
-        files = ["page_001_merged.png", "page_003_merged.png", "page_005_merged.png"]
-        self._make_project(tab, tmp_path, files)
-        store = self.FakeStore(3)
-        tab._api = store
+        api, paths = self._saved_score(
+            tmp_path, ["page_001_merged.png", "page_003_merged.png", "page_005_merged.png"]
+        )
+        tab._api = api
 
         tab._apply_page_removals([1])
 
-        # Store index 1 maps to the 2nd file in sorted order (page_003),
-        # not to page_002 which never existed (duplicate attempts were skipped).
-        remaining = sorted(p.name for p in (tmp_path / "ReviewTest" / "photos").iterdir())
+        # The page knows its own file, so the file that goes is page_003 -
+        # the page_002 that never existed (duplicate attempts were skipped)
+        # is not touched, and neither is any other page's file.
+        remaining = sorted(p.name for p in (tmp_path / "photos").iterdir())
         assert remaining == ["page_001_merged.png", "page_005_merged.png"], remaining
-        assert store.pages == [0, 2]
+        assert api.get_page_count() == 2
+        api.cleanup()
 
     def test_removes_multiple_highest_first(self, tab, tmp_path):
-        files = [
+        api, paths = self._saved_score(tmp_path, [
             "page_001_merged.png", "page_002_merged.png", "page_003_merged.png",
             "page_004_merged.png", "page_005_merged.png",
-        ]
-        self._make_project(tab, tmp_path, files)
-        store = self.FakeStore(5)
-        tab._api = store
+        ])
+        tab._api = api
 
         tab._apply_page_removals([1, 3])
 
-        remaining = sorted(p.name for p in (tmp_path / "ReviewTest" / "photos").iterdir())
+        remaining = sorted(p.name for p in (tmp_path / "photos").iterdir())
         assert remaining == ["page_001_merged.png", "page_003_merged.png", "page_005_merged.png"]
-        assert store.pages == [0, 2, 4]
+        assert api.get_page_count() == 3
+        api.cleanup()
 
     def test_removing_all_leaves_empty_photos(self, tab, tmp_path):
-        self._make_project(tab, tmp_path, ["page_001_merged.png", "page_003_merged.png"])
-        store = self.FakeStore(2)
-        tab._api = store
+        api, paths = self._saved_score(
+            tmp_path, ["page_001_merged.png", "page_003_merged.png"]
+        )
+        tab._api = api
 
         tab._apply_page_removals([0, 1])
 
-        remaining = sorted(p.name for p in (tmp_path / "ReviewTest" / "photos").iterdir())
+        remaining = sorted(p.name for p in (tmp_path / "photos").iterdir())
         assert remaining == []
-        assert store.pages == []
+        assert api.get_page_count() == 0
+        api.cleanup()
+
+    def test_the_removed_page_takes_its_own_file(self, tab, tmp_path):
+        api, paths = self._saved_score(
+            tmp_path, ["page_001_merged.png", "page_003_merged.png", "page_005_merged.png"]
+        )
+        tab._api = api
+
+        tab._apply_page_removals([1])
+
+        assert not paths[1].exists()
+        assert paths[0].exists()
+        assert paths[2].exists()
+        api.cleanup()

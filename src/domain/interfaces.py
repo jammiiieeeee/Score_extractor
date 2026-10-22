@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, List, Tuple
 
-from src.domain.models import MergeResult
+from src.domain.models import MergeResult, Page
 
 class IVideoService(ABC):
     @abstractmethod
@@ -80,6 +80,16 @@ class IFileService(ABC):
         pass
 
     @abstractmethod
+    def load_page_images_with_paths(self, score_dir: Path) -> List[Tuple[Path, np.ndarray]]:
+        """Loads the saved pages, each with the file it came from."""
+        pass
+
+    @abstractmethod
+    def delete_page_image(self, path: str) -> bool:
+        """Deletes one saved page image. Returns True when a file was removed."""
+        pass
+
+    @abstractmethod
     def list_saved_scores(self, output_folder: str) -> List[dict]:
         """Lists score dirs under output_folder that contain photos/.
         Returns list of {path, page_count, created, score_name}."""
@@ -120,6 +130,10 @@ class _NoopOcrService(IOcrService):
 
 class IPdfService(ABC):
     @abstractmethod
-    def create_pdf(self, images: List[np.ndarray], output_path: Path, config, title_hint: str = "",
-                   crop_rows: Optional[List[Optional[int]]] = None) -> None:
+    def create_pdf(self, pages: List[Page], output_path: Path, config, title_hint: str = "") -> None:
+        """Build a PDF from pages.
+
+        Each page is cropped by the shared crop rule (src/domain/page_crop.py),
+        so an image and its crop can never drift apart.
+        """
         pass
