@@ -16,7 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.application.extraction_components import PageCommitter
 from src.domain.value_objects.config import ScoreConfig
-from src.domain.models import Frame
+from src.domain.models import Frame, PageStatus
+from src.domain.boundary_detector import BoundaryDetector
 from src.domain.deduplication import Deduplicator
 from src.domain.bar_profile_calibrator import BarProfileCalibrator
 from tests.conftest import (
@@ -207,6 +208,109 @@ class TestPageCommitterCommit:
         committer.commit(a, b, pages, out_dir, 1, False, lambda msg: None, None, is_first=True)
         saved_files = list((out_dir / "photos").glob("page_*_merged.png"))
         assert len(saved_files) == 1
+
+
+@pytest.mark.unit
+class TestPageCommitterPageRecords:
+    """The committer produces one page object per committed page."""
+
+    def _make_committer(self, config=None, work_dir=None, boundary_detector=None):
+        cfg = config or ScoreConfig()
+        frames = [make_solid_image(800, 600) for _ in range(10)]
+        video_svc = StubVideoService(frames, fps=30.0)
+        ocr_svc = StubOcrService(enabled=False)
+        file_svc = StubFileService(work_dir or Path(os.environ.get("TEMP", ".")))
+        dedup = Deduplicator(cfg, ocr_svc)
+        committer = PageCommitter(
+            video_svc, file_svc, ocr_svc, cfg, dedup,
+            orig_w=800, orig_h=600, boundary_detector=boundary_detector,
+        )
+        return committer, file_svc
+
+    def _ensure_dirs(self, tmp_path):
+        out_dir = tmp_path / "score"
+        out_dir.mkdir(exist_ok=True)
+        (out_dir / "photos").mkdir(exist_ok=True)
+        (out_dir / "debug").mkdir(exist_ok=True)
+        return out_dir
+
+    @staticmethod
+    def _split_frame(height=400, width=200, split=250, top=230, bottom=30):
+        """Bright score area above ``split``, dark visualizer below it."""
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        frame[:split] = top
+        frame[split:] = bottom
+        return frame
+
+    def test_committed_page_carries_image_attempt_file_and_status(self, tmp_path):
+        committer, _ = self._make_committer(work_dir=tmp_path)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+        a = Frame(make_solid_image(800, 600, (50, 50, 50)), 1.0, 30)
+        b = Frame(make_solid_image(800, 600, (100, 100, 100)), 2.0, 60)
+        committer.commit(a, b, pages, out_dir, 1, False, lambda msg: None, None, is_first=True)
+
+        assert len(committer.pages) == 1
+        page = committer.pages[0]
+        assert page.image is pages[0].image
+        assert page.attempt_number == 1
+        assert page.status is PageStatus.KEEP
+        assert page.file is not None
+        assert page.file.endswith("page_001_merged.png")
+        assert Path(page.file).exists()
+
+    def test_duplicate_page_produces_no_page_object(self, tmp_path):
+        cfg = ScoreConfig(bar_min_diff_threshold=100.0)
+        committer, _ = self._make_committer(config=cfg, work_dir=tmp_path)
+        out_dir = self._ensure_dirs(tmp_path)
+        identical = make_solid_image(800, 600, (128, 128, 128))
+        pages = []
+        a1 = Frame(identical.copy(), 1.0, 30)
+        b1 = Frame(identical.copy(), 2.0, 60)
+        committer.commit(a1, b1, pages, out_dir, 1, False, lambda msg: None, None, is_first=True)
+        a2 = Frame(identical.copy(), 4.0, 120)
+        b2 = Frame(identical.copy(), 5.0, 150)
+        committer.commit(a2, b2, pages, out_dir, 2, False, lambda msg: None, None, is_first=False)
+
+        assert len(pages) == 1
+        assert len(committer.pages) == 1
+
+    def test_page_without_detected_boundary_row_records_none(self, tmp_path):
+        committer, _ = self._make_committer(work_dir=tmp_path)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+        a = Frame(make_solid_image(800, 600, (50, 50, 50)), 1.0, 30)
+        b = Frame(make_solid_image(800, 600, (100, 100, 100)), 2.0, 60)
+        committer.commit(a, b, pages, out_dir, 1, False, lambda msg: None, None, is_first=True)
+
+        assert committer.pages[0].boundary_row is None
+
+    def test_page_records_the_detected_boundary_row(self, tmp_path):
+        detector = BoundaryDetector(min_contrast=20.0)
+        committer, _ = self._make_committer(work_dir=tmp_path, boundary_detector=detector)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+        frame = self._split_frame()
+        a = Frame(frame.copy(), 1.0, 30)
+        b = Frame(frame.copy(), 2.0, 60)
+        committer.commit(a, b, pages, out_dir, 1, False, lambda msg: None, None, is_first=True)
+
+        row = committer.pages[0].boundary_row
+        assert row is not None
+        assert abs(row - 250) <= 12
+
+    def test_detector_without_a_boundary_keeps_row_none(self, tmp_path):
+        detector = BoundaryDetector(min_contrast=50.0)
+        committer, _ = self._make_committer(work_dir=tmp_path, boundary_detector=detector)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+        flat = make_solid_image(800, 600, (128, 128, 128))
+        a = Frame(flat.copy(), 1.0, 30)
+        b = Frame(flat.copy(), 2.0, 60)
+        committer.commit(a, b, pages, out_dir, 1, False, lambda msg: None, None, is_first=True)
+
+        assert len(committer.pages) == 1
+        assert committer.pages[0].boundary_row is None
 
 
 def _create_test_video(path, width, height, fps=30.0, n_frames=120):

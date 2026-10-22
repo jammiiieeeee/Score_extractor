@@ -15,7 +15,7 @@ from typing import Callable, List, Optional, TextIO
 from skimage.metrics import structural_similarity as ssim
 
 from src.domain.value_objects.config import ScoreConfig
-from src.domain.models import Frame, PageManifestEntry
+from src.domain.models import Frame, Page, PageManifestEntry, PageStatus
 from src.domain.interfaces import IVideoService, IOcrService, IFileService
 from src.domain.deduplication import Deduplicator
 from src.domain.bar_profile_calibrator import BarProfileCalibrator
@@ -306,6 +306,17 @@ class PageCommitter:
         self._last_boundary_before_h: Optional[int] = None
         self._pending: List[_PendingCommit] = []
         self._calibration_logged = False
+        self._pages: List[Page] = []
+
+    @property
+    def pages(self) -> List[Page]:
+        """The committed pages, in commit order.
+
+        One page object per committed page - duplicates never get one.  Each
+        page holds the same image as the frame that was appended to the page
+        list, so the pixels are stored once.
+        """
+        return list(self._pages)
 
     def _ensure_original_dims(self):
         if self._original_dim_probed or not self._original_video_path:
@@ -593,7 +604,14 @@ class PageCommitter:
         if not is_dup:
             frame = Frame(analysis.merged.copy(), frame_a.timestamp, frame_a.index)
             unique_pages.append(frame)
-            self.file_service.save_page_image(output_dir, page_num, analysis.merged)
+            saved_path = self.file_service.save_page_image(output_dir, page_num, analysis.merged)
+            self._pages.append(Page(
+                image=frame.image,
+                boundary_row=analysis.boundary_row,
+                attempt_number=page_num,
+                file=str(saved_path) if saved_path else None,
+                status=PageStatus.KEEP,
+            ))
             log(f"  New page detected at {frame_a.timestamp:.2f}s (Index: {frame_a.index})")
             if on_page_detected:
                 on_page_detected(len(unique_pages) - 1, analysis.merged)

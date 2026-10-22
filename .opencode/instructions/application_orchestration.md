@@ -32,7 +32,11 @@ Orchestrates the full extraction pipeline. Constructor takes:
 - `on_log`, `on_progress`, `on_page_detected`, `is_cancelled` — callbacks
 - `original_video_path: Optional[str]` — for YouTube dual-download workflow
 
-Returns `List[Frame]`.
+Returns `ExtractResult`:
+- `pages: List[Frame]` — the committed pages (old list, still in place)
+- `manifest: List[PageManifestEntry]` — one entry per attempt
+- `page_records: List[Page]` — one page object per committed page, carrying
+  its image, boundary row, attempt number, file and status
 
 ### `FrameStepper` (`src/application/extraction_components.py`)
 
@@ -61,6 +65,11 @@ Handles the commit pipeline for each detected page pair:
 5. Deduplication (OCR → Global → Row)
 6. Save to disk via `file_service.save_page_image()`
 7. Debug artifact writing (A/B frames, bar profile text)
+8. Build the page object (`Page`) for the committed page
+
+`committer.pages` returns the committed pages in commit order — one per
+committed page, duplicates get none. The page shares its image with the frame
+that was appended to the page list, so the pixels are stored once.
 
 ### `BarProfilePlotter` (`src/application/extraction_components.py`)
 
@@ -100,7 +109,7 @@ main.py / gui_api.py
        │    ├─ Deduplicator.is_duplicate(existing, merged)
        │    └─ file_service.save_page_image()
        ├─ FrameStepper.tail_scan()  →  trim end-credits
-       └─ return unique_pages: List[Frame]
+       └─ return ExtractResult(pages, manifest, page_records)
 ```
 
 ## Data Flow: GUI Re-extraction

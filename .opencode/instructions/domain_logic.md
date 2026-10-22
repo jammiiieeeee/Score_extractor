@@ -104,6 +104,32 @@ class Frame:
     ssim_score: float = 0.0    # Similarity to previous frame
 ```
 
+### Page
+
+One page of a score, with everything known about it. A page carries its own
+image and the facts measured for that image, so an image and its measurements
+cannot drift apart.
+
+```python
+class PageStatus(str, Enum):
+    KEEP = "keep"              # the page belongs to the score
+    EXCLUDED = "excluded"      # taken out by hand (page selection)
+    DUPLICATE = "duplicate"    # repeats an earlier page
+
+@dataclass(eq=False)
+class Page:
+    image: np.ndarray          # BGR image (shared with the frame, not copied)
+    boundary_row: Optional[int]  # measured boundary row, None when none was found
+    attempt_number: int        # the extraction attempt that produced the page
+    file: Optional[str]        # the PNG the page was written to
+    status: PageStatus = PageStatus.KEEP
+```
+
+Extraction produces one `Page` per committed page (duplicates get none).
+`boundary_row` is `None` when no boundary was detected — the absence is
+recorded, never a guess. Only `KEEP` is produced today; `EXCLUDED` and
+`DUPLICATE` are reserved for page selection.
+
 ## Interfaces
 
 `src/domain/interfaces.py` defines:

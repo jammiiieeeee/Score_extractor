@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from src.domain.models import Frame
+from src.domain.models import Frame, Page, PageStatus
 
 
 @pytest.mark.unit
@@ -43,5 +43,57 @@ class TestFrame:
     def test_inequality_different_index(self):
         img = np.zeros((10, 10, 3), dtype=np.uint8)
         a = Frame(image=img, timestamp=1.0, index=0)
-        b = Frame(image=img, timestamp=1.0, index=1)
+        b = Frame(image=img, timestamp=2.0, index=1)
         assert a.index != b.index
+
+
+@pytest.mark.unit
+class TestPageStatus:
+    def test_vocabulary(self):
+        assert PageStatus.KEEP.value == "keep"
+        assert PageStatus.EXCLUDED.value == "excluded"
+        assert PageStatus.DUPLICATE.value == "duplicate"
+
+    def test_built_from_value(self):
+        assert PageStatus("keep") is PageStatus.KEEP
+        assert PageStatus("excluded") is PageStatus.EXCLUDED
+        assert PageStatus("duplicate") is PageStatus.DUPLICATE
+
+    def test_compares_as_string(self):
+        assert PageStatus.KEEP == "keep"
+
+
+@pytest.mark.unit
+class TestPage:
+    def test_carries_everything_known_about_a_page(self):
+        img = np.zeros((100, 200, 3), dtype=np.uint8)
+        page = Page(
+            image=img,
+            boundary_row=250,
+            attempt_number=3,
+            file="/tmp/page_003_merged.png",
+            status=PageStatus.KEEP,
+        )
+        assert page.image.shape == (100, 200, 3)
+        assert page.boundary_row == 250
+        assert page.attempt_number == 3
+        assert page.file == "/tmp/page_003_merged.png"
+        assert page.status is PageStatus.KEEP
+
+    def test_defaults(self):
+        page = Page(image=np.zeros((10, 10, 3), dtype=np.uint8))
+        assert page.boundary_row is None
+        assert page.attempt_number == 0
+        assert page.file is None
+        assert page.status is PageStatus.KEEP
+
+    def test_missing_boundary_row_stays_none(self):
+        """A page without a detected row records the absence, not a guess."""
+        page = Page(image=np.zeros((10, 10, 3), dtype=np.uint8), boundary_row=None)
+        assert page.boundary_row is None
+
+    def test_status_can_be_changed(self):
+        page = Page(image=np.zeros((10, 10, 3), dtype=np.uint8))
+        page.status = PageStatus.EXCLUDED
+        assert page.status is PageStatus.EXCLUDED
+

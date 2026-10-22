@@ -5,7 +5,7 @@ from dataclasses import dataclass, field as dc_field
 from typing import Callable, List, Optional, TextIO
 
 from src.domain.value_objects.config import ScoreConfig
-from src.domain.models import Frame, PageManifestEntry
+from src.domain.models import Frame, Page, PageManifestEntry
 from src.domain.interfaces import IVideoService, IOcrService, IPdfService, IFileService
 from src.domain.deduplication import Deduplicator
 from src.domain.bar_profile_calibrator import BarProfileCalibrator
@@ -32,6 +32,7 @@ class ExtractRequest:
 class ExtractResult:
     pages: List[Frame]
     manifest: List[PageManifestEntry]
+    page_records: List[Page] = dc_field(default_factory=list)
 
 
 class ExtractScoreUseCase:
@@ -162,7 +163,24 @@ class ExtractScoreUseCase:
         if log_file:
             log_file.close()
 
-        return ExtractResult(pages=unique_pages, manifest=manifest_entries)
+        return ExtractResult(
+            pages=unique_pages,
+            manifest=manifest_entries,
+            page_records=self._collect_page_records(committer, unique_pages),
+        )
+
+    @staticmethod
+    def _collect_page_records(committer: PageCommitter, unique_pages: List[Frame]) -> List[Page]:
+        """The page records of the pages that survived extraction.
+
+        The end-credit scan drops trailing pages, so the records are trimmed to
+        the same count - both lists then describe the same pages, in the same
+        order.
+        """
+        records = committer.pages
+        if len(records) > len(unique_pages):
+            records = records[:len(unique_pages)]
+        return records
 
 
 class GeneratePdfUseCase:
