@@ -34,8 +34,8 @@ python main.py input_video.mp4 --output-dir ./output --score-name "Sonata"
 ```
 1. Opens video, initializes OCR (unless `--no-ocr`)
 2. Runs `ExtractScoreUseCase.execute()`
-3. Explicitly crops each page using `config.default_crop_ratio`
-4. Calls `PdfService.create_pdf()` with pre-cropped images
+3. Hands the extracted pages (image + measured boundary row) to the PDF builder
+4. Calls `PdfService.create_pdf()` — the shared crop rule crops each page
 5. Debug artifacts saved to `<output_dir>/debug/` if `--debug`
 
 ### Regeneration Mode (`--from-dir`)
@@ -43,7 +43,8 @@ python main.py input_video.mp4 --output-dir ./output --score-name "Sonata"
 python main.py --from-dir ./output/Sonata/photos/ -o sonata.pdf
 ```
 1. Loads page images from `<dir>/` via `FileService.load_page_images()`
-2. Calls `PdfService.create_pdf()` directly (no cropping — images already cropped)
+2. Calls `PdfService.create_pdf()` with those images as pages (no measured
+   boundary row, so the fixed ratio applies)
 3. Default output: `<dir>/<dir_name>.pdf`
 
 ## YouTube Download

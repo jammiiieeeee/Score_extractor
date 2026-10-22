@@ -34,19 +34,33 @@
 
 ### PDF Generation
 
-`create_pdf(images, output_path, config, title_hint)`:
-- Receives **pre-cropped** images (caller is responsible for cropping)
-- Layout: dynamic strips per page based on image width vs A4 width
-- Default strips_per_page: `max(1, int(img_w / 595))` where 595 = A4 width in points
-- Page size: custom `Rect(0, 0, a4_width, strip_height_in_points)`
-- **No cropping logic** — was removed in double-crop bug fix (commit `048c68b`)
+`create_pdf(pages, output_path, config, title_hint)`:
+- Receives **pages** (`Page` objects) — a page carries its own image and the
+  boundary row measured for it, so an image and its crop cannot drift apart
+- Crops every page with the shared crop rule (`src/domain/page_crop.py`)
+- Layout: one strip per page, scaled to the usable A4 width (595 − 2×36 = 523 pt)
+- A new PDF page starts when the next strip would not fit above the bottom margin
+- Title drawn at the top of the first page (CJK font, fallback to Helvetica)
+
+### Crop rule (`src/domain/page_crop.py`)
+
+- `crop_end_row(page, config)` → the row where the page's crop ends (exclusive)
+- `crop_page(page, config)` → the cropped image (a view of the page image)
+- `boundary_mode = "off"` → keep the whole frame
+- `boundary_mode = "manual"` → keep `default_crop_ratio` of the frame
+- `boundary_mode = "auto"` → keep up to the page's measured `boundary_row`,
+  lifted by `boundary_offset_px`; fall back to `default_crop_ratio` when the
+  page has no measured row
+- The crop is top-anchored: the sheet music is kept, the visualizer below it
+  is dropped
+- Any consumer can call the rule directly — the PDF does, a page preview can
 
 ### ReportLab Layout
 
 - Uses `reportlab.lib.pagesizes` for A4 dimensions
-- `SimpleDocTemplate` with `Frame` for each strip
+- `canvas.Canvas` — one PDF page holds as many strips as fit
 - Each strip: full-width image scaled to fit
-- Title page with `title_hint` as document title
+- Title on the first page, from `title_hint` (or the file stem)
 - No dynamic bar erase in PDF — bar is already removed during extraction
 
 ## Spatial Anchoring

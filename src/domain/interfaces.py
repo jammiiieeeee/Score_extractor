@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, List, Tuple
 
-from src.domain.models import MergeResult
+from src.domain.models import MergeResult, Page
 
 class IVideoService(ABC):
     @abstractmethod
@@ -120,6 +120,10 @@ class _NoopOcrService(IOcrService):
 
 class IPdfService(ABC):
     @abstractmethod
-    def create_pdf(self, images: List[np.ndarray], output_path: Path, config, title_hint: str = "",
-                   crop_rows: Optional[List[Optional[int]]] = None) -> None:
+    def create_pdf(self, pages: List[Page], output_path: Path, config, title_hint: str = "") -> None:
+        """Build a PDF from pages.
+
+        Each page is cropped by the shared crop rule (src/domain/page_crop.py),
+        so an image and its crop can never drift apart.
+        """
         pass

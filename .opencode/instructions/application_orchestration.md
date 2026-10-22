@@ -117,11 +117,12 @@ main.py / gui_api.py
 ```
 app_gui.py (user adjusts crop slider)
   └─ GuiApi.update_config({"default_crop_ratio": ratio})
-       └─ stored in config; applied once by PdfService at PDF generation
+       └─ stored in config; applied once by the crop rule at PDF generation
 
 app_gui.py (user clicks "Regenerate PDF")
   └─ GuiApi.generate_pdf(output_path)
-       └─ PdfService.create_pdf(pages.all_images(), ..., crop_rows)
+       └─ PdfService.create_pdf(pages.all_pages(), ...)
+            └─ each page cropped by the shared rule (src/domain/page_crop.py)
 ```
 
 ## Data Flow: YouTube Download

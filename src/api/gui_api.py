@@ -648,18 +648,15 @@ class GuiApi:
 
     def _run_generate_pdf(self, output_path: str, title: Optional[str] = None):
         try:
-            images = self._pages.all_images()
+            pages = self._pages.all_pages()
             final_title = title if title else Path(output_path).stem
             output = Path(output_path)
             output.parent.mkdir(parents=True, exist_ok=True)
 
-            self._emit_log(f"PDF: {len(images)} pages...")
+            self._emit_log(f"PDF: {len(pages)} pages...")
             self._emit_progress("generating_pdf", 0.0, "Generating PDF...")
 
-            self._pdf_service.create_pdf(
-                images, output, self._config, title_hint=final_title,
-                crop_rows=self._current_crop_rows(),
-            )
+            self._pdf_service.create_pdf(pages, output, self._config, title_hint=final_title)
 
             self._emit_progress("generating_pdf", 100.0, "PDF generated successfully")
             self._emit_completed(len(self._pages))
@@ -795,9 +792,10 @@ class GuiApi:
         """Per-page measured boundary rows, read from the pages themselves.
 
         Entries are ints (auto boundary row, offset-free) or None (no per-page
-        row; PdfService then applies the fixed ratio, or no crop when
+        row; the crop rule then applies the fixed ratio, or no crop when
         boundary_mode is 'off').  Derived from the pages so an image and its
-        crop can never drift apart.
+        crop can never drift apart.  Used for the saved metadata, so a score
+        can be reopened with the same crop.
         """
         return [p.boundary_row for p in self._pages.all_pages()]
 

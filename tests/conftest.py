@@ -332,13 +332,12 @@ class StubPdfService(IPdfService):
     def __init__(self):
         self.calls = []
 
-    def create_pdf(self, images, output_path, config, title_hint="", crop_rows=None):
+    def create_pdf(self, pages, output_path, config, title_hint=""):
         self.calls.append({
-            "images": images,
+            "pages": pages,
             "output_path": output_path,
             "config": config,
             "title_hint": title_hint,
-            "crop_rows": crop_rows,
         })
 
 

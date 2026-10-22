@@ -190,16 +190,15 @@ class GeneratePdfUseCase:
         self.config = config
         self._log = on_log
 
-    def execute(self, frames: List[Frame], output_path: str):
-        if not frames:
+    def execute(self, pages: List[Page], output_path: str):
+        if not pages:
             self._log("[WARN] No pages — PDF skipped")
             return
 
-        images = [f.image for f in frames]
         final_title = Path(output_path).stem
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
 
-        self._log(f"PDF: {len(frames)} pages...")
-        self.pdf_service.create_pdf(images, output, self.config, title_hint=final_title)
+        self._log(f"PDF: {len(pages)} pages...")
+        self.pdf_service.create_pdf(pages, output, self.config, title_hint=final_title)
         self._log(f"PDF saved: {output_path}")

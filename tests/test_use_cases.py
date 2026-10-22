@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.application.use_cases import ExtractScoreUseCase, GeneratePdfUseCase, ExtractRequest
 from src.domain.value_objects.config import ScoreConfig
-from src.domain.models import Frame, PageStatus
+from src.domain.models import Frame, Page, PageStatus
 from src.domain.interfaces import _NoopOcrService
 from tests.conftest import (
     StubVideoService, StubOcrService, StubFileService, StubPdfService,
@@ -203,16 +203,25 @@ class TestExtractScoreUseCasePageRecords:
 class TestGeneratePdfUseCase:
     """Tests for GeneratePdfUseCase.execute()."""
 
-    def test_generate_pdf_with_frames(self, tmp_path):
+    def test_generate_pdf_with_pages(self, tmp_path):
         pdf_svc = StubPdfService()
         cfg = ScoreConfig()
         uc = GeneratePdfUseCase(pdf_svc, cfg)
-        frames = [Frame(make_solid_image(), 1.0, 0)]
+        pages = [Page(image=make_solid_image())]
         out_path = tmp_path / "test_output.pdf"
-        uc.execute(frames, str(out_path))
+        uc.execute(pages, str(out_path))
         assert len(pdf_svc.calls) == 1
 
-    def test_generate_pdf_empty_frames(self, tmp_path):
+    def test_generate_pdf_passes_the_pages_through(self, tmp_path):
+        pdf_svc = StubPdfService()
+        cfg = ScoreConfig()
+        uc = GeneratePdfUseCase(pdf_svc, cfg)
+        pages = [Page(image=make_solid_image(), boundary_row=42)]
+        out_path = tmp_path / "test_output.pdf"
+        uc.execute(pages, str(out_path))
+        assert pdf_svc.calls[0]["pages"] == pages
+
+    def test_generate_pdf_empty_pages(self, tmp_path):
         pdf_svc = StubPdfService()
         cfg = ScoreConfig()
         uc = GeneratePdfUseCase(pdf_svc, cfg)
@@ -224,7 +233,7 @@ class TestGeneratePdfUseCase:
         pdf_svc = StubPdfService()
         cfg = ScoreConfig()
         uc = GeneratePdfUseCase(pdf_svc, cfg)
-        frames = [Frame(make_solid_image(), 1.0, 0)]
+        pages = [Page(image=make_solid_image())]
         out_path = tmp_path / "subdir" / "output.pdf"
-        uc.execute(frames, str(out_path))
+        uc.execute(pages, str(out_path))
         assert out_path.parent.exists()

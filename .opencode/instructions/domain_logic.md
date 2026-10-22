@@ -153,6 +153,20 @@ row, file, status) plus a cache of each page's encoded PNG. Every mutation
 keeps the page list and the PNG cache the same length and order. The store
 accepts either `Page` or `Frame` (a bare frame becomes a `Page` with default
 facts) so old callers keep working during the migration.
+
+### Crop rule
+
+`src/domain/page_crop.py` holds the one rule that decides how far a page is
+kept. It reads the page itself, so an image and its crop cannot drift apart.
+
+- `crop_end_row(page, config)` → the row where the crop ends (exclusive)
+- `crop_page(page, config)` → the cropped image (a view of the page image)
+- `off` → whole frame; `manual` → `default_crop_ratio`;
+  `auto` → the page's measured `boundary_row` (lifted by
+  `boundary_offset_px`), falling back to `default_crop_ratio` without a row
+- The PDF uses this rule; any other consumer (a page preview) can call it
+  directly
+
 ## Interfaces
 
 `src/domain/interfaces.py` defines:

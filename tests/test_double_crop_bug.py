@@ -1,9 +1,9 @@
 """
-Tests verifying PdfService crops images correctly.
+Tests verifying the crop rule crops pages correctly.
 
 After the fix:
-- PdfService.create_pdf() crops images using config settings
-- Callers pass uncropped images
+- The crop lives in one place (src/domain/page_crop.py)
+- The PDF crops pages through that rule
 - User can regenerate PDF with different crop ratio
 
 Run: pytest tests/test_double_crop_bug.py -v
@@ -20,7 +20,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.domain.models import Frame
+from src.domain.models import Frame, Page
+from src.domain.page_crop import crop_page
 from src.domain.page_store import PageStore
 from src.domain.value_objects.config import ScoreConfig
 from src.infrastructure.pdf_service import PdfService
@@ -48,11 +49,8 @@ def make_marker_image(width=800, height=1000, marker_row=0):
 
 
 def crop_image(img, config):
-    """Apply the same crop logic as PdfService.create_pdf — returns cropped image."""
-    img_h = img.shape[0]
-    y_start = 0
-    y_end = int(img_h * config.default_crop_ratio)
-    return img[y_start:y_end, :]
+    """Crop an image with the shared crop rule — the same one the PDF uses."""
+    return crop_page(Page(image=img), config)
 
 
 # ── Tests ────────────────────────────────────────────────────────────────
@@ -102,7 +100,7 @@ class TestPdfServiceCrops:
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "test.pdf"
             pdf_service = PdfService()
-            pdf_service.create_pdf([img], output, config)
+            pdf_service.create_pdf([Page(image=img)], output, config)
             assert output.exists(), "PDF file should exist"
             assert output.stat().st_size > 0, "PDF should not be empty"
 
