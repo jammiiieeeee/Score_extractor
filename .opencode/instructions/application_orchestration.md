@@ -75,6 +75,19 @@ that was appended to the page list, so the pixels are stored once.
 
 Optional matplotlib diagnostic plots. Lazy-imports matplotlib. Only instantiated when `debug=True`.
 
+### `read_saved_score()` (`src/application/saved_score.py`)
+
+The one place that reads a score directory. It returns the pages of a saved
+score and puts the config on the crop the score was saved with:
+- `read_saved_score(score_dir, file_service, config)` → `SavedScore(pages, metadata)`
+- `read_metadata(score_dir)` → the metadata of a score (empty when there is none)
+- `pages_from_records(saved, metadata)` → the pages, from the page records
+- `apply_saved_crop(config, metadata)` → the crop the score was saved with
+
+Both the GUI (`GuiApi.load_saved_score`, `GuiApi.regenerate_from_dir`) and the
+command line (`main.py --from-dir`) read a score through here, so both see the
+same pages, cropped the same way.
+
 ### `Deduplicator` (`src/domain/deduplication.py`)
 
 Three-stage dedup pipeline:
@@ -112,6 +125,20 @@ main.py / gui_api.py
        │    └─ file_service.save_page_image()
        ├─ FrameStepper.tail_scan()  →  trim end-credits
        └─ return ExtractResult(pages, manifest, page_records)
+```
+
+## Data Flow: Reading a Saved Score
+
+```
+app_gui.py (user opens a score)      main.py --from-dir ./output/Sonata/
+  └─ GuiApi.load_saved_score(dir)      └─ read_saved_score(dir, file_service, config)
+       └─ read_saved_score(dir, ...)        ├─ read_metadata(dir)
+            ├─ read_metadata(dir)            ├─ file_service.load_page_images_with_paths(dir)
+            ├─ file_service.load_page_      ├─ pages_from_records(...)  →  pages with their rows
+            │   images_with_paths(dir)      └─ apply_saved_crop(config, metadata)
+            ├─ pages_from_records(...)
+            └─ apply_saved_crop(config, metadata)
+                 └─ PdfService.create_pdf(pages, ...) → the shared crop rule
 ```
 
 ## Data Flow: GUI Re-extraction

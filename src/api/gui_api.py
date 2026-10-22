@@ -21,6 +21,7 @@ from src.infrastructure.file_service import FileService
 from src.infrastructure.download_service import DownloadService
 from src.infrastructure.diagnostics_service import generate_html_report
 from src.application.use_cases import ExtractScoreUseCase, ExtractRequest
+from src.application.saved_score import read_metadata, read_saved_score
 
 
 @dataclass
@@ -723,15 +724,13 @@ class GuiApi:
             raise RuntimeError("Extraction or PDF generation already in progress")
 
         sb_path = Path(score_dir)
-        metadata = self._read_metadata(sb_path)
-        saved = self._file_service.load_page_images_with_paths(sb_path)
-        if not saved:
+        saved = read_saved_score(sb_path, self._file_service, self._config)
+        if not saved.pages:
             raise RuntimeError(f"No page images found in {score_dir}/photos/")
 
         self._loaded_score_path = score_dir
-        self._loaded_score_metadata = metadata
-        self._apply_saved_crop(metadata)
-        self._pages.set_pages(self._pages_from_saved(saved, metadata))
+        self._loaded_score_metadata = saved.metadata
+        self._pages.set_pages(saved.pages)
 
         if output_path is None:
             output_path = str(sb_path / f"{sb_path.name}.pdf")
@@ -747,48 +746,12 @@ class GuiApi:
         return [ScoreInfo(**r) for r in results]
 
     def load_saved_score(self, path: str) -> int:
-        score_dir = Path(path)
-        metadata = self._read_metadata(score_dir)
-        saved = self._file_service.load_page_images_with_paths(score_dir)
+        saved = read_saved_score(Path(path), self._file_service, self._config)
 
         self._loaded_score_path = path
-        self._loaded_score_metadata = metadata
-        self._apply_saved_crop(metadata)
-        self._pages.set_pages(self._pages_from_saved(saved, metadata))
+        self._loaded_score_metadata = saved.metadata
+        self._pages.set_pages(saved.pages)
         return len(self._pages)
-
-    def _pages_from_saved(self, saved: list, metadata: dict) -> list[Page]:
-        """The pages of a saved score, with the crop they were saved with.
-
-        A score saved now carries one record per page.  A score saved before
-        that carries a bare list of boundary rows, which is read as a fallback.
-        """
-        records = metadata.get("pages")
-        if records is not None:
-            pages = []
-            for i, (file_path, img) in enumerate(saved):
-                record = records[i] if i < len(records) else {}
-                pages.append(Page.from_record(record, img, file=str(file_path)))
-            return pages
-
-        rows = metadata.get("page_boundary_rows") or []
-        return [
-            Page(image=img, boundary_row=rows[i] if i < len(rows) else None,
-                 file=str(file_path))
-            for i, (file_path, img) in enumerate(saved)
-        ]
-
-    def _apply_saved_crop(self, metadata: dict) -> None:
-        """Use the crop the score was saved with, so it opens the same way."""
-        ratio = metadata.get("crop_ratio")
-        if ratio is not None:
-            self._config.default_crop_ratio = ratio
-        mode = metadata.get("boundary_mode")
-        if mode:
-            self._config.boundary_mode = mode
-        offset = metadata.get("boundary_offset_px")
-        if offset is not None:
-            self._config.boundary_offset_px = int(offset)
 
     def delete_saved_score(self, path: str) -> None:
         import shutil
@@ -820,15 +783,7 @@ class GuiApi:
         return None
 
     def _read_metadata(self, score_dir) -> dict:
-        score_dir = Path(score_dir)
-        meta_path = score_dir / "metadata.json"
-        if meta_path.exists():
-            try:
-                with open(str(meta_path), 'r') as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {}
+        return read_metadata(score_dir)
 
     @staticmethod
     def save_metadata(score_dir: str, data: dict) -> None:
