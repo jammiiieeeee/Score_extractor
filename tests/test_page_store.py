@@ -69,15 +69,17 @@ class TestPageStoreAdd:
 
     def test_add_with_explicit_png(self):
         store = PageStore()
+        page = _page(100)
         fake_png = b"\x89PNG_FAKE_DATA"
-        idx = store.add(_page(100), png=fake_png)
-        assert store._png_cache[idx] == fake_png
+        store.add(page, png=fake_png)
+        assert store._png_cache[page] == fake_png
 
-    def test_add_without_png_encodes(self):
+    def test_add_encodes_on_demand(self):
         store = PageStore()
-        idx = store.add(_page(100))
-        assert store._png_cache[idx] is not None
-        assert isinstance(store._png_cache[idx], bytes)
+        page = _page(100)
+        store.add(page)
+        assert store.get_full_png(0) is not None
+        assert isinstance(store._png_cache[page], bytes)
 
 
 @pytest.mark.unit
@@ -94,8 +96,10 @@ class TestPageStoreSetPages:
 
     def test_set_pages_encodes_png(self):
         store = PageStore()
-        store.set_pages([_page(10)])
-        assert store._png_cache[0] is not None
+        page = _page(10)
+        store.set_pages([page])
+        assert store.get_full_png(0) is not None
+        assert page in store._png_cache
 
 
 @pytest.mark.unit
@@ -119,6 +123,58 @@ class TestPageStoreRemove:
         store.add(_page(10))
         with pytest.raises(IndexError):
             store.remove(-1)
+
+
+@pytest.mark.unit
+class TestPageStoreIndex:
+    """An index outside the store is an error, negative included."""
+
+    def test_get_negative_raises(self):
+        store = PageStore()
+        store.add(_page(10))
+        with pytest.raises(IndexError):
+            store.get(-1)
+
+    def test_getitem_negative_raises(self):
+        store = PageStore()
+        store.add(_page(10))
+        with pytest.raises(IndexError):
+            store[-1]
+
+    def test_get_out_of_range_raises(self):
+        store = PageStore()
+        store.add(_page(10))
+        with pytest.raises(IndexError):
+            store.get(5)
+
+
+@pytest.mark.unit
+class TestPageStorePngCache:
+    """The PNG cache belongs to the page, so it cannot fall out of step."""
+
+    def test_the_cache_travels_with_a_reorder(self):
+        store = PageStore()
+        first = _page(10)
+        second = _page(20)
+        store.add(first)
+        store.add(second)
+        first_png = store.get_full_png(0)
+        second_png = store.get_full_png(1)
+
+        store.reorder([1, 0])
+
+        assert store.get_full_png(0) == second_png
+        assert store.get_full_png(1) == first_png
+
+    def test_a_removed_page_takes_its_cache_with_it(self):
+        store = PageStore()
+        page = _page(10)
+        store.add(page)
+        store.get_full_png(0)
+
+        store.remove(0)
+
+        assert page not in store._png_cache
 
 
 @pytest.mark.unit
@@ -158,7 +214,7 @@ class TestPageStoreClear:
         store.add(_page(10))
         store.clear()
         assert len(store) == 0
-        assert store._png_cache == []
+        assert store._png_cache == {}
 
 
 @pytest.mark.unit

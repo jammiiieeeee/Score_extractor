@@ -80,6 +80,16 @@ class IFileService(ABC):
         pass
 
     @abstractmethod
+    def load_page_images_with_paths(self, score_dir: Path) -> List[Tuple[Path, np.ndarray]]:
+        """Loads the saved pages, each with the file it came from."""
+        pass
+
+    @abstractmethod
+    def delete_page_image(self, path: str) -> bool:
+        """Deletes one saved page image. Returns True when a file was removed."""
+        pass
+
+    @abstractmethod
     def list_saved_scores(self, output_folder: str) -> List[dict]:
         """Lists score dirs under output_folder that contain photos/.
         Returns list of {path, page_count, created, score_name}."""

@@ -149,10 +149,13 @@ class PageState:
 ### PageStore
 
 `src/domain/page_store.py` holds one `Page` object per page (image, boundary
-row, file, status) plus a cache of each page's encoded PNG. Every mutation
-keeps the page list and the PNG cache the same length and order. The store
-accepts either `Page` or `Frame` (a bare frame becomes a `Page` with default
-facts) so old callers keep working during the migration.
+row, file, status) plus a cache of each page's encoded PNG. The cache is keyed
+by the page itself, so it cannot fall out of step with the page list. The
+store accepts either `Page` or `Frame` (a bare frame becomes a `Page` with
+default facts) so old callers keep working during the migration.
+
+An index outside the store is an `IndexError`, negative included - a negative
+index must never address the last page by accident.
 
 ### Crop rule
 
@@ -173,5 +176,5 @@ kept. It reads the page itself, so an image and its crop cannot drift apart.
 - `IVideoService`: `open_video()`, `read_frame_at()`, `read_next_frame()`, `skip_frames()`, `read_full_frame_at()`, `merge_frames()`, `get_original_size()`, `get_fps()`, `get_total_frames()`, `close()`
 - `IOcrService`: `initialize()`, `is_enabled()`, `get_leftmost_number()`
 - `IPdfService`: `create_pdf()`
-- `IFileService`: `prepare_output_dir()`, `load_page_images()`
+- `IFileService`: `prepare_output_dir()`, `load_page_images()`, `load_page_images_with_paths()`, `delete_page_image()`
 - `_NoopOcrService`: Fallback when OCR is disabled or fails

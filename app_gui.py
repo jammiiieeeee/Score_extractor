@@ -2932,20 +2932,12 @@ class ExtractTab(QWidget):
         self._log(f"Review: {kept} pages kept")
 
     def _apply_page_removals(self, removed: list[int]):
-        """Drop pages from the in-memory store and their files on disk.
+        """Drop pages from the score and their files from disk.
 
-        Disk files are numbered by extraction attempt (gaps when duplicates
-        were skipped), so store indices map to the sorted file list, not to
-        the numbers in the filenames.
+        Each page knows the file it was written to, so the file that goes with
+        a removed page is the one that gets deleted - never another page's.
         """
-        photos = Path(self.get_project_dir()) / "photos"
-        files = sorted(
-            photos.glob("page_*_merged.png"),
-            key=lambda f: int(f.stem.split("_")[1]),
-        )
         for idx in sorted(removed, reverse=True):
-            if 0 <= idx < len(files):
-                files[idx].unlink(missing_ok=True)
             try:
                 self._api.remove_page(idx)
             except IndexError:

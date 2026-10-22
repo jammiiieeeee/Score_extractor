@@ -503,9 +503,9 @@ class TestAddPage:
     def test_crop_rows_follow_the_pages(self, api, synthetic_images):
         api.add_page(synthetic_images[0], boundary_row=10)
         api.add_page(synthetic_images[1], boundary_row=20)
-        assert api._current_crop_rows() == [10, 20]
+        assert [api.get_page(i).boundary_row for i in range(2)] == [10, 20]
         api.reorder_pages([1, 0])
-        assert api._current_crop_rows() == [20, 10]
+        assert [api.get_page(i).boundary_row for i in range(2)] == [20, 10]
 
 
 class TestSetPages:
@@ -521,7 +521,7 @@ class TestSetPages:
             Page(synthetic_images[1], boundary_row=6),
         ])
         assert api.get_page(0).boundary_row == 5
-        assert api._current_crop_rows() == [5, 6]
+        assert [api.get_page(i).boundary_row for i in range(2)] == [5, 6]
 
 
 # ═══════════════════════════════════════════════════════════════════════════

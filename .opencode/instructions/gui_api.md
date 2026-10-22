@@ -102,8 +102,8 @@ changes one page's status and the change survives the read-back.
 | 27 | `set_page_status(index, status)` | `int, PageStatus → None` | Change one page's status |
 | 28 | `get_page_thumbnail(index)` | `int → bytes\|None` | PNG bytes, 320px wide |
 | 29 | `get_page_full(index)` | `int → bytes\|None` | PNG bytes, full resolution |
-| 30 | `remove_page(index)` | `int → None` | Remove page before PDF gen |
-| 31 | `reorder_pages(new_order)` | `list[int] → None` | Reorder by index list |
+| 30 | `remove_page(index)` | `int → None` | Remove a page and the file it was written to |
+| 31 | `reorder_pages(new_order)` | `list[int] → None` | Reorder by index list; each page keeps its crop and file |
 | 32 | `clear_pages()` | `→ None` | Remove all pages |
 
 ### PDF Generation (2)
@@ -111,7 +111,7 @@ changes one page's status and the change survives the read-back.
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
 | 33 | `generate_pdf(output_path, title)` | `str, str? → None` | Generate PDF on background thread |
-| 34 | `regenerate_from_dir(score_dir, output_path)` | `str, str? → None` | Load pages from dir, generate PDF |
+| 34 | `regenerate_from_dir(score_dir, output_path)` | `str, str? → None` | Load pages from dir with their saved crop, generate PDF |
 
 ### YouTube Download (1)
 

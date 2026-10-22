@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from dataclasses import dataclass, field
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from src.domain.models import Frame, Page
 
@@ -11,13 +11,13 @@ class PageStore:
     """Encapsulates the page state.
 
     Holds one copy of each page: _pages (the page objects, each carrying its
-    own image, boundary row, file and status) plus _png_cache (the encoded PNG
-    of that same page, for full-size rendering).  Every mutation keeps the two
-    lists the same length and in the same order.
+    own image, boundary row, file and status).  The encoded PNG of a page is
+    cached against that page itself, so there is no second list to keep in
+    step - a cache entry belongs to the page it was made from.
     """
 
     _pages: List[Page] = field(default_factory=list)
-    _png_cache: List[Optional[bytes]] = field(default_factory=list)
+    _png_cache: Dict[Page, bytes] = field(default_factory=dict)
 
     # Queries -------------------------------------------------------------
 
@@ -28,13 +28,20 @@ class PageStore:
         return len(self._pages) > 0
 
     def __getitem__(self, index: int) -> Page:
-        return self._pages[index]
+        return self.get(index)
 
     def get(self, index: int) -> Page:
+        """The page at that position.
+
+        Raises IndexError for any index outside the store, negative included:
+        a negative index must not silently address the last page.
+        """
+        if index < 0 or index >= len(self._pages):
+            raise IndexError(f"Page index {index} out of range (0-{len(self._pages) - 1})")
         return self._pages[index]
 
     def get_image(self, index: int) -> np.ndarray:
-        return self._pages[index].image
+        return self.get(index).image
 
     def all_pages(self) -> List[Page]:
         return list(self._pages)
@@ -73,10 +80,14 @@ class PageStore:
     def get_full_png(self, index: int) -> Optional[bytes]:
         if index < 0 or index >= len(self._pages):
             return None
-        if self._png_cache[index] is not None:
-            return self._png_cache[index]
-        png = self.encode_png(self._pages[index].image)
-        self._png_cache[index] = png
+        page = self._pages[index]
+        cached = self._png_cache.get(page)
+        if cached is not None:
+            return cached
+        png = self.encode_png(page.image)
+        if png is None:
+            return None
+        self._png_cache[page] = png
         return png
 
     # Mutations -----------------------------------------------------------
@@ -85,19 +96,19 @@ class PageStore:
         """Append a page. Returns the new index."""
         page = self.as_page(page)
         self._pages.append(page)
-        self._png_cache.append(png if png is not None else self.encode_png(page.image))
+        if png is not None:
+            self._png_cache[page] = png
         return len(self._pages) - 1
 
     def set_pages(self, pages: List[Union[Page, Frame]]) -> None:
         """Replace working pages entirely (e.g. after extraction completes)."""
         self._pages = [self.as_page(p) for p in pages]
-        self._png_cache = [self.encode_png(p.image) for p in self._pages]
+        self._png_cache = {}
 
     def remove(self, index: int) -> None:
-        if index < 0 or index >= len(self._pages):
-            raise IndexError(f"Page index {index} out of range (0-{len(self._pages) - 1})")
+        page = self.get(index)
         self._pages.pop(index)
-        self._png_cache.pop(index)
+        self._png_cache.pop(page, None)
 
     def reorder(self, new_order: List[int]) -> None:
         if len(new_order) != len(self._pages):
@@ -105,7 +116,6 @@ class PageStore:
         if set(new_order) != set(range(len(self._pages))):
             raise ValueError("New order must be a permutation of 0..N-1")
         self._pages = [self._pages[i] for i in new_order]
-        self._png_cache = [self._png_cache[i] for i in new_order]
 
     def clear(self) -> None:
         """Clear all pages (full reset)."""

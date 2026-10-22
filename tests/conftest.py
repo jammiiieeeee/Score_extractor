@@ -297,17 +297,26 @@ class StubFileService(IFileService):
         return path
 
     def load_page_images(self, score_dir: Path) -> List[np.ndarray]:
+        return [image for _, image in self.load_page_images_with_paths(score_dir)]
+
+    def load_page_images_with_paths(self, score_dir: Path) -> List[Tuple[Path, np.ndarray]]:
         files = sorted(
             (score_dir / "photos").glob("page_*_merged.png"),
             key=lambda f: int(f.stem.split("_")[1]),
         )
-        images = []
+        pages = []
         for f in files:
             file_bytes = np.fromfile(str(f), dtype=np.uint8)
             img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
             if img is not None:
-                images.append(img)
-        return images
+                pages.append((f, img))
+        return pages
+
+    def delete_page_image(self, path: str) -> bool:
+        if not path:
+            return False
+        Path(path).unlink(missing_ok=True)
+        return True
 
     def list_saved_scores(self, output_folder: str) -> List[dict]:
         results = []

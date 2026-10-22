@@ -87,8 +87,10 @@ Also provides bar profile validation: `check_bar_profile()` → `(has_clean, has
 ### `PageStore` (`src/domain/page_store.py`)
 
 In-memory page storage. Holds **one copy** of each page:
-- `_pages` — the page frames (the only copy of the pixel data)
-- `_png_cache` — the encoded PNG of that same page, for full-size rendering
+- `_pages` — the page objects (the only copy of the pixel data); each page
+  carries its own image, boundary row, file and status
+- `_png_cache` — the encoded PNG of a page, keyed by that page (full-size
+  rendering), so it cannot fall out of step with the page list
 - Thumbnail generation (320px wide PNG)
 - Full-resolution PNG encoding
 
