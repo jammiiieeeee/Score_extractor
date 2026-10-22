@@ -2359,14 +2359,16 @@ class ExtractTab(QWidget):
         try:
             count = self._api.load_saved_score(score_path)
             meta = self._api.get_loaded_score_metadata()
-            self._loaded_original_ratio = meta.get("crop_ratio", 0.35)
+            self._loaded_original_ratio = meta.get("crop_ratio")
             self._has_existing_score = True
             self._project_dir = score_path
             p = Path(score_path)
             self.project_edit.setText(p.name)
             self.pdf_name_edit.setText(p.name)
-            self.crop_spin.setValue(self._loaded_original_ratio)
-            self.crop_original_label.setText(f"(was {int(self._loaded_original_ratio * 100)}%)")
+            # Show the score with the crop it was saved with.
+            self._load_crop_controls()
+            if self._loaded_original_ratio is not None:
+                self.crop_original_label.setText(f"(was {int(self._loaded_original_ratio * 100)}%)")
 
             # Load associated video for preview if available
             video_path = meta.get("video_path", "")
@@ -2381,7 +2383,8 @@ class ExtractTab(QWidget):
                 if video_path and not os.path.exists(video_path):
                     self._log(f"Video missing: {video_path}")
 
-            self._log(f"Loaded {count} pages (crop {int(self._loaded_original_ratio * 100)}%)")
+            ratio = self._api.get_config()["default_crop_ratio"]
+            self._log(f"Loaded {count} pages (crop {int(ratio * 100)}%)")
             self._refresh_completer()
             self._update_state()
         except Exception as e:

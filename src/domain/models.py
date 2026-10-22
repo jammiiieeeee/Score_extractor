@@ -48,6 +48,43 @@ class Page:
     file: Optional[str] = None
     status: PageStatus = PageStatus.KEEP
 
+    def to_record(self) -> dict:
+        """How this page is written into a saved score.
+
+        One record per page, so a saved score describes the same pages the
+        extraction produced.
+        """
+        return {
+            "attempt": self.attempt_number,
+            "boundary_row": self.boundary_row,
+            "status": self.status.value,
+        }
+
+    @classmethod
+    def from_record(cls, record: dict, image: np.ndarray,
+                    file: Optional[str] = None) -> "Page":
+        """Rebuild a page from a saved record.
+
+        A record that is short or unreadable still gives a usable page: the
+        facts that are missing fall back to their defaults.
+        """
+        row = record.get("boundary_row")
+        try:
+            status = PageStatus(record.get("status", PageStatus.KEEP.value))
+        except ValueError:
+            status = PageStatus.KEEP
+        try:
+            attempt = int(record.get("attempt", 0))
+        except (TypeError, ValueError):
+            attempt = 0
+        return cls(
+            image=image,
+            boundary_row=int(row) if row is not None else None,
+            attempt_number=attempt,
+            file=file,
+            status=status,
+        )
+
 
 @dataclass(frozen=True)
 class PageState:

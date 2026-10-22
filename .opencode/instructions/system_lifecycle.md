@@ -19,6 +19,30 @@ output/<score_name>/
 └── metadata.json
 ```
 
+### metadata.json
+
+```json
+{
+  "score_name": "My Score",
+  "crop_ratio": 0.32,
+  "boundary_mode": "auto",
+  "boundary_offset_px": 0,
+  "page_count": 3,
+  "extraction_date": "2026-01-01T12:00:00",
+  "pages": [
+    {"attempt": 1, "boundary_row": 197, "status": "keep"},
+    {"attempt": 2, "boundary_row": 211, "status": "keep"},
+    {"attempt": 4, "boundary_row": null, "status": "keep"}
+  ]
+}
+```
+
+`pages` holds one record per page - the attempt that produced it, the
+boundary row measured on it, and its status - and is always written, even
+when no page had a row.  A score saved before this format carries
+`page_boundary_rows` (a bare list of rows) instead; it is still read, as a
+fallback.
+
 ## Temporary Files
 
 - **No UUID sandbox** — files go directly into the score directory

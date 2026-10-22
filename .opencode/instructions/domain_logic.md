@@ -130,6 +130,10 @@ Extraction produces one `Page` per committed page (duplicates get none).
 recorded, never a guess. Only `KEEP` is produced today; `EXCLUDED` and
 `DUPLICATE` are reserved for page selection.
 
+A page also describes itself for a saved score: `page.to_record()` gives the
+record written into `metadata.json` (attempt number, boundary row, status)
+and `Page.from_record()` reads one back.
+
 ### PageState
 
 A read-only view of one page, as handed to callers. It carries the page's
