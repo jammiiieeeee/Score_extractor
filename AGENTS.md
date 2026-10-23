@@ -1,5 +1,15 @@
 # Agent Instructions
 
+## Orientation
+
+- **Repo map: `docs/agents/repo-map.md`** — it is already loaded in context.
+  Use it to find files; do **not** Glob / Grep / `ls` / `tree` to orient yourself.
+- The map lists every module, entry point, test group and tool. Read the one file
+  it names, then work.
+- If the map is wrong or incomplete, fix it in the same session — see its
+  [Maintenance](docs/agents/repo-map.md#maintenance) section. That is what
+  keeps the next session from having to rescan.
+
 ## Package Manager
 - Use **pip**: `pip install -r requirements.txt`
 
@@ -16,6 +26,7 @@
 ## Architecture
 - Clean Architecture: `src/api` → `src/application` → `src/domain` ← `src/infrastructure`
 - Entry points: `app_gui.py` (PyQt6 GUI), `main.py` (CLI)
+- Repo map: `docs/agents/repo-map.md` (loaded automatically, keep it current)
 - Specs: `.opencode/instructions/master_map.md`
 
 ## Testing
