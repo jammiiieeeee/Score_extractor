@@ -1055,46 +1055,202 @@ class GettingStartedDialog(QDialog):
         layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
 
-# ── Page Preview Dialog ──────────────────────────────────────────────
+# ── Review Pages (PDF-like viewer) ──────────────────────────────────
 
-class PagePreviewDialog(QDialog):
-    def __init__(self, pixmap: QPixmap, title: str, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(f"Page Preview — {title}")
-        self.resize(900, 700)
-
-        layout = QVBoxLayout(self)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        label = QLabel()
-        label.setPixmap(pixmap)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        scroll.setWidget(label)
-        layout.addWidget(scroll)
-
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
-        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+A4_WIDTH_PT = 595.28
+A4_HEIGHT_PT = 841.89
+PDF_MARGIN_PT = 36
+PDF_TITLE_GAP_PT = 40
+SCREEN_DPI = 96.0
+POINTS_PER_INCH = 72.0
 
 
-# ── Review Pages Dialog ──────────────────────────────────────────────
+class ReviewSheet(QWidget):
+    """One white A4 sheet, laid out exactly like a page of the final PDF.
 
-class ReviewPagesDialog(QDialog):
-    """Inspect captured pages before the PDF is saved.
-
-    Each page shows a thumbnail and a "Keep" checkbox. Clicking a
-    thumbnail opens the full page for close inspection. When accepted,
-    kept_mask() reports which pages survive (in capture order).
+    Page images are stacked at full width and flow onto the next sheet when
+    they run out of room. Only the first sheet carries the title.
     """
 
-    def __init__(self, api: GuiApi, parent=None):
+    def __init__(self, title: str = "", parent=None):
+        super().__init__(parent)
+        self._title = title
+        self._items: list[tuple[QPixmap, float, float, float, float]] = []
+        self._scale = 1.0
+
+    def set_items(self, items: list[tuple[QPixmap, float, float, float, float]]):
+        self._items = items
+        self.update()
+
+    def set_scale(self, px_per_pt: float):
+        self._scale = px_per_pt
+        self.update()
+
+    def paintEvent(self, _event):
+        from PyQt6.QtCore import QRectF
+        from PyQt6.QtGui import QPainter, QColor, QFont, QFontMetricsF
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.fillRect(self.rect(), QColor("#ffffff"))
+
+        scale = self._scale
+
+        if self._title:
+            font = QFont("Segoe UI")
+            font.setPixelSize(max(8, round(18 * scale)))
+            font.setBold(True)
+            metrics = QFontMetricsF(font)
+            painter.setFont(font)
+            painter.setPen(QColor("#111111"))
+            painter.drawText(
+                QRectF(PDF_MARGIN_PT * scale,
+                       PDF_MARGIN_PT * scale - metrics.ascent(),
+                       (A4_WIDTH_PT - 2 * PDF_MARGIN_PT) * scale,
+                       metrics.height()),
+                int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop),
+                self._title,
+            )
+
+        for pixmap, x, y, width, height in self._items:
+            painter.drawPixmap(
+                QRectF(x * scale, y * scale, width * scale, height * scale),
+                pixmap,
+                QRectF(pixmap.rect()),
+            )
+        painter.end()
+
+
+class PdfReviewView(QWidget):
+    """Scrolling stack of A4 sheets, packed exactly like the final PDF."""
+
+    GUTTER_PT = 30
+    GAP_PT = 16
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._sheets: list[ReviewSheet] = []
+        self._labels: list[QLabel] = []
+        self._label_items: list[tuple[int, float, QLabel]] = []
+        self._px_per_pt = SCREEN_DPI / POINTS_PER_INCH
+
+    @staticmethod
+    def _layout_sheets(pages: list[tuple[QPixmap, int]], title: str):
+        """Pack pages onto A4 sheets the way PdfService does."""
+        usable_w = A4_WIDTH_PT - 2 * PDF_MARGIN_PT
+        sheets: list[dict] = []
+        current = {"title": title, "items": []}
+        cursor = PDF_MARGIN_PT + (PDF_TITLE_GAP_PT if title else 0)
+
+        for index, (pixmap, attempt) in enumerate(pages):
+            draw_w = usable_w
+            draw_h = draw_w * pixmap.height() / pixmap.width()
+            if cursor + draw_h > A4_HEIGHT_PT - PDF_MARGIN_PT:
+                sheets.append(current)
+                current = {"title": "", "items": []}
+                cursor = PDF_MARGIN_PT
+            current["items"].append(
+                (index, attempt, pixmap, PDF_MARGIN_PT, cursor, draw_w, draw_h))
+            cursor += draw_h
+
+        sheets.append(current)
+        return sheets
+
+    def set_content(self, pages: list[tuple[QPixmap, int]], title: str):
+        for child in list(self.children()):
+            if isinstance(child, QWidget):
+                child.setParent(None)
+                child.deleteLater()
+        self._sheets = []
+        self._labels = []
+        self._label_items = []
+
+        for sheet_index, layout in enumerate(self._layout_sheets(pages, title)):
+            sheet = ReviewSheet(layout["title"], self)
+            sheet.setObjectName("reviewSheet")
+            sheet.set_items([
+                (pixmap, x, y, width, height)
+                for _index, _attempt, pixmap, x, y, width, height in layout["items"]
+            ])
+            self._sheets.append(sheet)
+
+            for _index, attempt, _pixmap, _x, y, _w, _h in layout["items"]:
+                label = QLabel(str(attempt), self)
+                _set_widget_class(label, "muted")
+                label.setAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+                self._labels.append(label)
+                self._label_items.append((sheet_index, y, label))
+
+        self.apply_scale(self._px_per_pt)
+
+    def apply_scale(self, px_per_pt: float):
+        self._px_per_pt = px_per_pt
+        sheet_w = max(1, round(A4_WIDTH_PT * px_per_pt))
+        sheet_h = max(1, round(A4_HEIGHT_PT * px_per_pt))
+        gutter = max(20, round(self.GUTTER_PT * px_per_pt))
+        gap = max(8, round(self.GAP_PT * px_per_pt))
+        pad = SPACE_LG
+
+        for index, sheet in enumerate(self._sheets):
+            y = pad + index * (sheet_h + gap)
+            sheet.set_scale(px_per_pt)
+            sheet.setFixedSize(sheet_w, sheet_h)
+            sheet.move(pad + gutter, y)
+            sheet.show()
+
+        for sheet_index, item_y, label in self._label_items:
+            sheet_y = pad + sheet_index * (sheet_h + gap)
+            label.setGeometry(
+                pad, sheet_y + round(item_y * px_per_pt) + SPACE_XS,
+                gutter - SPACE_SM, 20)
+            label.show()
+
+        count = len(self._sheets)
+        height = pad * 2 + max(0, count * (sheet_h + gap) - gap)
+        self.setFixedSize(pad * 2 + gutter + sheet_w, height)
+
+    def paintEvent(self, _event):
+        from PyQt6.QtGui import QPainter, QColor
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(BG))
+        painter.end()
+
+
+class ReviewScrollArea(QScrollArea):
+    """A scroll area whose Ctrl+wheel zooms instead of scrolling."""
+
+    zoom_requested = pyqtSignal(float)
+
+    def wheelEvent(self, event):
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            steps = event.angleDelta().y() / 120.0
+            if steps:
+                self.zoom_requested.emit(1.15 ** steps)
+                event.accept()
+                return
+        super().wheelEvent(event)
+
+
+class ReviewPagesDialog(QDialog):
+    """Review captured pages as they will print.
+
+    Pages are shown as A4 sheets with the PDF's margins and title, one sheet
+    per captured page, with the fixed capture-order number outside each
+    sheet. Fit-width is the default; Ctrl+wheel zooms and 100% is actual size.
+    """
+
+    def __init__(self, api: GuiApi, title: str = "", parent=None):
         super().__init__(parent)
         self._api = api
         self._count = api.get_page_count()
-        self._kept = [True] * self._count
+        self._title = title or ""
+        self._fit_width = True
+        self._px_per_pt = SCREEN_DPI / POINTS_PER_INCH
 
         self.setWindowTitle(f"Review Pages \u2014 {self._count} captured")
-        self.resize(1100, 750)
+        self.resize(1100, 800)
         self.setStyleSheet(
             STYLESHEET.replace("__CHECK_PLACEHOLDER__", CHECK_INDICATOR_PATH)
             .replace("__CHEVRON_PLACEHOLDER__", CHEVRON_PATH)
@@ -1107,126 +1263,123 @@ class ReviewPagesDialog(QDialog):
         root.setSpacing(SPACE_MD)
 
         header = QHBoxLayout()
-        title = QLabel("Review before saving")
-        _set_widget_class(title, "title")
-        header.addWidget(title)
+        title_label = QLabel("Review before saving")
+        _set_widget_class(title_label, "title")
+        header.addWidget(title_label)
         header.addStretch()
-        select_all = QPushButton("Select All")
-        _set_widget_class(select_all, "secondary")
-        select_all.clicked.connect(self._select_all)
-        deselect_all = QPushButton("Deselect All")
-        _set_widget_class(deselect_all, "secondary")
-        deselect_all.clicked.connect(self._deselect_all)
-        header.addWidget(select_all)
-        header.addWidget(deselect_all)
+        count_label = QLabel(f"{self._count} pages")
+        _set_widget_class(count_label, "muted")
+        header.addWidget(count_label)
+        self._zoom_label = QLabel("")
+        _set_widget_class(self._zoom_label, "muted")
+        header.addWidget(self._zoom_label)
+        self._zoom_100 = QPushButton("100%")
+        _set_widget_class(self._zoom_100, "secondary")
+        self._zoom_100.clicked.connect(lambda: self.set_zoom_percent(100))
+        header.addWidget(self._zoom_100)
         root.addLayout(header)
 
         hint = QLabel(
-            "Uncheck any page to keep it out of the PDF. "
-            "Click a thumbnail to inspect it up close. "
-            "Arrow keys to navigate, Space to toggle.")
+            "These pages print as shown. Ctrl + wheel to zoom, "
+            "or 100% for actual size.")
         _set_widget_class(hint, "muted")
         root.addWidget(hint)
 
-        tiles = QWidget()
-        grid = QGridLayout(tiles)
-        grid.setSpacing(SPACE_MD)
-        cols = 2
-        self._checks: list[QCheckBox] = []
-        self._thumbs: list[QLabel] = []
-        thumb_w = 400
-        for i in range(self._count):
-            tile = QWidget()
-            tile.setObjectName("roundedWidget")
-            box = QVBoxLayout(tile)
-            box.setSpacing(SPACE_XS)
-
-            thumb = QLabel()
-            thumb.setFixedWidth(thumb_w)
-            thumb.setMinimumHeight(260)
-            thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            thumb.setCursor(Qt.CursorShape.PointingHandCursor)
-            thumb.setScaledContents(False)
-            png = api.get_page_thumbnail(i)
-            pix = QPixmap()
-            if png and pix.loadFromData(png):
-                scaled = pix.scaledToWidth(
-                    thumb_w - 10, Qt.TransformationMode.SmoothTransformation)
-                if scaled.height() > 300:
-                    scaled = scaled.copy(0, 0, scaled.width(), min(scaled.height(), 300))
-                thumb.setPixmap(scaled)
-            thumb.mousePressEvent = (lambda _e, idx=i: self._preview_page(idx))
-            self._thumbs.append(thumb)
-
-            check = QCheckBox(f"Page {i + 1}")
-            check.setChecked(True)
-            check.toggled.connect(lambda _on, idx=i: self._on_toggled(idx))
-
-            box.addWidget(thumb, 0, Qt.AlignmentFlag.AlignHCenter)
-            box.addWidget(check, 0, Qt.AlignmentFlag.AlignHCenter)
-            self._checks.append(check)
-            grid.addWidget(tile, i // cols, i % cols)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(tiles)
-        scroll.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        root.addWidget(scroll, 1)
-
-        self._summary = QLabel("")
-        root.addWidget(self._summary)
+        self._view = PdfReviewView()
+        self._scroll = ReviewScrollArea()
+        self._scroll.setWidget(self._view)
+        self._scroll.setWidgetResizable(False)
+        self._scroll.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        self._scroll.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._scroll.zoom_requested.connect(self._on_wheel_zoom)
+        root.addWidget(self._scroll, 1)
 
         footer = QHBoxLayout()
         footer.addStretch()
-        close_btn = QPushButton("Cancel")
-        _set_widget_class(close_btn, "secondary")
-        close_btn.clicked.connect(self.reject)
-        save_btn = QPushButton("Save changes")
-        save_btn.clicked.connect(self.accept)
-        footer.addWidget(close_btn)
-        footer.addWidget(save_btn)
+        done_btn = QPushButton("Done")
+        done_btn.clicked.connect(self.accept)
+        footer.addWidget(done_btn)
         root.addLayout(footer)
 
-        self._update_summary()
-        scroll.setFocus()
+        self._build_pages()
+        self._update_zoom_label()
+        self._scroll.setFocus()
 
-    def _select_all(self):
-        for c in self._checks:
-            c.setChecked(True)
+    def _build_pages(self):
+        pages: list[tuple[QPixmap, int]] = []
+        for index in range(self._count):
+            png = self._api.get_page_cropped(index)
+            pixmap = QPixmap()
+            if not png or not pixmap.loadFromData(png):
+                pixmap = QPixmap(800, 500)
+                pixmap.fill(Qt.GlobalColor.white)
+            attempt = index + 1
+            try:
+                attempt = self._api.get_page(index).attempt_number or attempt
+            except Exception:
+                pass
+            pages.append((pixmap, attempt))
+        self._view.set_content(pages, self._title)
 
-    def _deselect_all(self):
-        for c in self._checks:
-            c.setChecked(False)
+    def _available_width(self) -> int:
+        width = self._scroll.viewport().width()
+        if width <= 0:
+            width = self.width() - 2 * SPACE_LG
+        return width
+
+    def _fit_scale(self) -> float:
+        usable = self._available_width() - 2 * SPACE_LG
+        return max(0.1, usable / (A4_WIDTH_PT + PdfReviewView.GUTTER_PT))
+
+    def _apply_fit(self):
+        self._fit_width = True
+        self._px_per_pt = self._fit_scale()
+        self._view.apply_scale(self._px_per_pt)
+        self._update_zoom_label()
+
+    def set_zoom_percent(self, percent: int):
+        self._fit_width = False
+        self._px_per_pt = max(0.1, (percent / 100.0) * SCREEN_DPI / POINTS_PER_INCH)
+        self._view.apply_scale(self._px_per_pt)
+        self._update_zoom_label()
+
+    def zoom_percent(self) -> int:
+        return round(self._px_per_pt / (SCREEN_DPI / POINTS_PER_INCH) * 100)
+
+    def is_fit_width(self) -> bool:
+        return self._fit_width
+
+    def _zoom_by(self, factor: float):
+        self._fit_width = False
+        self._px_per_pt = min(5.0, max(0.1, self._px_per_pt * factor))
+        self._view.apply_scale(self._px_per_pt)
+        self._update_zoom_label()
+
+    def _on_wheel_zoom(self, factor: float):
+        self._zoom_by(factor)
+
+    def _update_zoom_label(self):
+        self._zoom_label.setText("Fit width" if self._fit_width else f"{self.zoom_percent()}%")
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._fit_width:
+            self._apply_fit()
+        self._scroll.verticalScrollBar().setValue(0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._fit_width:
+            self._apply_fit()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
             self.reject()
-        elif event.key() == Qt.Key.Key_Space:
-            focused = self.focusWidget()
-            if isinstance(focused, QCheckBox):
-                focused.toggle()
+        elif event.key() == Qt.Key.Key_0 and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            self.set_zoom_percent(100)
         else:
             super().keyPressEvent(event)
-
-    def _update_summary(self):
-        kept = sum(self._kept)
-        if kept == self._count:
-            self._summary.setText("All pages will be in the PDF.")
-        else:
-            self._summary.setText(f"{kept} of {self._count} pages will be in the PDF.")
-
-    def _on_toggled(self, idx: int):
-        self._kept[idx] = self._checks[idx].isChecked()
-        self._update_summary()
-
-    def _preview_page(self, idx: int):
-        png = self._api.get_page_full(idx)
-        pix = QPixmap()
-        if png and pix.loadFromData(png):
-            PagePreviewDialog(pix, f"Page {idx + 1}", self).exec()
-
-    def kept_mask(self) -> list[bool]:
-        return list(self._kept)
 
 
 # ── Config Tab ───────────────────────────────────────────────────────
@@ -2923,13 +3076,13 @@ class ExtractTab(QWidget):
             self._reset_ui()
             return False
 
+    def _review_title(self) -> str:
+        """The title the PDF will print: PDF name first, otherwise the project."""
+        return self.pdf_name_edit.text().strip() or self.get_project_name()
+
     def _review_before_save(self):
-        """Show the review dialog so pages can be dropped before the PDF is made."""
-        dlg = ReviewPagesDialog(self._api, self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            removed = [i for i, keep in enumerate(dlg.kept_mask()) if not keep]
-            if removed:
-                self._apply_page_removals(removed)
+        """Show the pages as they will print before the PDF is made."""
+        ReviewPagesDialog(self._api, self._review_title(), self).exec()
         kept = self._api.get_page_count()
         self.page_badge.setText(f"Pages: {kept}")
         self._log(f"Review: {kept} pages kept")
@@ -2950,15 +3103,7 @@ class ExtractTab(QWidget):
     def _on_review_pages(self):
         if self._api.get_page_count() == 0:
             return
-        dlg = ReviewPagesDialog(self._api, self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            removed = [i for i, keep in enumerate(dlg.kept_mask()) if not keep]
-            if removed:
-                self._apply_page_removals(removed)
-            self.page_badge.setText(f"Pages: {self._api.get_page_count()}")
-            self._update_state()
-            if removed:
-                self._log("Regenerate the PDF to apply the change")
+        ReviewPagesDialog(self._api, self._review_title(), self).exec()
 
     def on_pdf_completed(self, page_count: int):
         output_path = self.get_output_path()

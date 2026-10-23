@@ -13,6 +13,7 @@ from typing import Optional, Callable, List
 
 from src.domain.value_objects.config import ScoreConfig
 from src.domain.models import Page, PageState, PageStatus, PageManifestEntry
+from src.domain.page_crop import crop_page
 from src.domain.page_store import PageStore
 from src.infrastructure.video_service import VideoService
 from src.infrastructure.ocr_service import OcrService
@@ -585,6 +586,7 @@ class GuiApi:
             boundary_row=page.boundary_row,
             file=page.file,
             status=page.status,
+            attempt_number=page.attempt_number,
         )
 
     def set_page_status(self, index: int, status: PageStatus) -> None:
@@ -612,6 +614,11 @@ class GuiApi:
 
     def get_page_full(self, index: int) -> Optional[bytes]:
         return self._pages.get_full_png(index)
+
+    def get_page_cropped(self, index: int) -> Optional[bytes]:
+        """The page as it will print - cropped by the shared crop rule."""
+        page = self._pages.get(index)
+        return PageStore.encode_png(crop_page(page, self._config))
 
     def remove_page(self, index: int) -> None:
         """Drop a page from the score, and its file from disk.

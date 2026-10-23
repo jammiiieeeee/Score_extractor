@@ -123,6 +123,7 @@ class PageState:
     boundary_row: Optional[int] = None
     file: Optional[str] = None
     status: PageStatus = PageStatus.KEEP
+    attempt_number: int = 0
 
 
 @dataclass

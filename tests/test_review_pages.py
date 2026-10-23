@@ -1,8 +1,9 @@
-"""Tests for the page review loop and completion peak in the GUI.
+"""Tests for the page review window and completion peak in the GUI.
 
-Covers the brass live page-count badge, the ReviewPagesDialog keep-mask,
-and the store/file removal mapping (disk files are numbered by extraction
-attempt, so gaps exist when duplicates were skipped).
+Covers the brass live page-count badge, the PDF-like ReviewPagesDialog
+(title, capture labels, zoom), and the store/file removal mapping (disk
+files are numbered by extraction attempt, so gaps exist when duplicates
+were skipped).
 """
 
 import os
@@ -32,46 +33,119 @@ def tab(qapp):
     mw.close()
 
 
+def _page_png(width: int = 160, height: int = 60) -> bytes:
+    ok, buf = cv2.imencode(".png", np.full((height, width, 3), 200, dtype=np.uint8))
+    assert ok
+    return buf.tobytes()
+
+
 class FakePageApi:
-    def __init__(self, count: int):
+    def __init__(self, count: int, png: bytes | None = None):
         self.count = count
+        self._png = png or _page_png()
 
     def get_page_count(self):
         return self.count
 
-    def get_page_thumbnail(self, index: int):
-        return b"thumb" + str(index).encode()
+    def get_page_cropped(self, index: int):
+        return self._png
 
-    def get_page_full(self, index: int):
-        return b"full" + str(index).encode()
+    def get_page(self, index: int):
+        class _Page:
+            attempt_number = index + 1
+        return _Page()
 
 
 class TestReviewPagesDialog:
-    def test_all_kept_by_default(self, qapp):
-        dlg = ReviewPagesDialog(FakePageApi(4))
-        assert dlg._count == 4
-        assert dlg.kept_mask() == [True, True, True, True]
-        assert dlg._summary.text() == "All pages will be in the PDF."
+    def test_stacks_pages_onto_a4_sheets_like_the_pdf(self, qapp):
+        dlg = ReviewPagesDialog(FakePageApi(10), "Sonata")
+        dlg.show()
+        qapp.processEvents()
+        assert dlg._count == 10
+        assert len(dlg._view._sheets) < dlg._count
+        packed = sum(len(s._items) for s in dlg._view._sheets)
+        assert packed == 10
+        assert "10 captured" in dlg.windowTitle()
         dlg.close()
 
-    def test_unchecking_updates_mask_and_summary(self, qapp):
-        dlg = ReviewPagesDialog(FakePageApi(3))
-        dlg._checks[1].setChecked(False)
-        assert dlg.kept_mask() == [True, False, True]
-        assert "2 of 3" in dlg._summary.text()
-        dlg._checks[0].setChecked(False)
-        assert dlg.kept_mask() == [False, False, True]
-        assert "1 of 3" in dlg._summary.text()
+    def test_first_sheet_carries_the_title(self, qapp):
+        dlg = ReviewPagesDialog(FakePageApi(10), "Sonata")
+        assert dlg._view._sheets[0]._title == "Sonata"
+        assert all(s._title == "" for s in dlg._view._sheets[1:])
         dlg.close()
 
-    def test_checked_state_survives_mask_query(self, qapp):
-        dlg = ReviewPagesDialog(FakePageApi(2))
-        dlg._checks[0].setChecked(False)
-        dlg._checks[1].setChecked(False)
-        assert dlg.kept_mask() == [False, False]
-        dlg._checks[0].setChecked(True)
-        assert dlg.kept_mask() == [True, False]
+    def test_capture_labels_sit_outside_the_sheets(self, qapp):
+        dlg = ReviewPagesDialog(FakePageApi(10), "Sonata")
+        dlg.show()
+        qapp.processEvents()
+        assert [label.text() for label in dlg._view._labels] == [
+            str(i) for i in range(1, 11)]
+        sheet_left = min(s.geometry().left() for s in dlg._view._sheets)
+        for label in dlg._view._labels:
+            assert label.geometry().right() < sheet_left
         dlg.close()
+
+    def test_fit_width_is_the_default(self, qapp):
+        dlg = ReviewPagesDialog(FakePageApi(2), "Sonata")
+        dlg.show()
+        qapp.processEvents()
+        assert dlg.is_fit_width() is True
+        assert dlg._zoom_label.text() == "Fit width"
+        dlg.close()
+
+    def test_100_percent_control(self, qapp):
+        dlg = ReviewPagesDialog(FakePageApi(2), "Sonata")
+        dlg.set_zoom_percent(100)
+        assert dlg.is_fit_width() is False
+        assert dlg.zoom_percent() == 100
+        assert dlg._zoom_label.text() == "100%"
+        dlg.close()
+
+    def test_wheel_zoom_leaves_fit_width(self, qapp):
+        dlg = ReviewPagesDialog(FakePageApi(2), "Sonata")
+        dlg.set_zoom_percent(100)
+        dlg._zoom_by(1.15)
+        assert dlg.is_fit_width() is False
+        assert dlg.zoom_percent() == 115
+        dlg.close()
+
+    def test_opens_at_the_top(self, qapp):
+        dlg = ReviewPagesDialog(FakePageApi(2), "Sonata")
+        dlg.show()
+        qapp.processEvents()
+        assert dlg._scroll.verticalScrollBar().value() == 0
+        dlg.close()
+
+
+class TestReviewTitle:
+    def test_pdf_name_wins(self, tab):
+        tab.project_edit.setText("Project")
+        tab.pdf_name_edit.setText("Printed")
+        assert tab._review_title() == "Printed"
+
+    def test_project_name_is_the_fallback(self, tab):
+        tab.project_edit.setText("Project")
+        tab.pdf_name_edit.setText("")
+        assert tab._review_title() == "Project"
+
+    def test_review_pages_opens_the_window(self, tab, monkeypatch):
+        calls = []
+
+        class FakeDialog:
+            def __init__(self, api, title, parent):
+                calls.append(title)
+
+            def exec(self):
+                return 0
+
+        monkeypatch.setattr("app_gui.ReviewPagesDialog", FakeDialog)
+        tab._api.get_page_count = lambda: 2
+        tab.project_edit.setText("Project")
+        tab.pdf_name_edit.setText("Printed")
+
+        tab._on_review_pages()
+
+        assert calls == ["Printed"]
 
 
 class TestPageBadge:
