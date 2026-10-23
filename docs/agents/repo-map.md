@@ -124,6 +124,7 @@ run_pipeline.py ──────► GuiApi (scripted)
 
 Max 10 lines, newest first. Older lines get dropped (git has the history).
 
+- 2026-10-23 — extraction keeps every candidate as a page (duplicates/blank/guard-rail/end-credit flagged); saved-score reload matches photos by attempt — `src/application/extraction_components.py`, `src/application/use_cases.py`, `src/application/saved_score.py`, `src/domain/models.py`
 - 2026-10-23 — page candidates recorded separately, PDF prints KEEP pages only — `src/domain/models.py`, `src/application/extraction_components.py`, `src/infrastructure/pdf_service.py`
 - 2026-10-23 — map created from a one-time repo scan; plugin guard added.
 

@@ -33,12 +33,15 @@ Orchestrates the full extraction pipeline. Constructor takes:
 - `original_video_path: Optional[str]` — for YouTube dual-download workflow
 
 Returns `ExtractResult`:
-- `pages: List[Frame]` — the committed pages (old list, still in place)
+- `pages: List[Frame]` — the keep-only pool used for deduplication (old list,
+  still in place)
 - `manifest: List[PageManifestEntry]` — one entry per attempt
-- `page_records: List[Page]` — one page object per committed page, carrying
-  its image, boundary row, attempt number, file and status
-- `candidates: List[PageCandidate]` — one record per analyzed page transition,
-  including duplicates, carrying attempt number, boundary row, file and status
+- `page_records: List[Page]` — one page object per analyzed page transition,
+  including duplicates, blank captures, guard-rail failures and end-credit
+  pages.  Each carries its image, boundary row, attempt number, file and status.
+  Only KEEP pages print.
+- `candidates: List[PageCandidate]` — the same transitions as lightweight
+  records (attempt number, boundary row, file, status), derived from the pages
 
 ### `FrameStepper` (`src/application/extraction_components.py`)
 
@@ -55,7 +58,8 @@ Key methods:
 - `step()` → `(Frame, ssim_score)` or `None`
 - `should_trigger(ssim_score)` → `bool`
 - `capture_a_b(trigger_frame)` → `(Frame, Frame)`
-- `tail_scan(ocr, unique_pages, ...)` → mutates `unique_pages` in place
+- `tail_scan(ocr, unique_pages, ...)` → the end-credit cutoff, or `None`.
+  Does not remove pages; the committer flags trailing pages as duplicate.
 
 ### `PageCommitter` (`src/application/extraction_components.py`)
 
@@ -69,9 +73,11 @@ Handles the commit pipeline for each detected page pair:
 7. Debug artifact writing (A/B frames, bar profile text)
 8. Build the page object (`Page`) for the committed page
 
-`committer.pages` returns the committed pages in commit order — one per
-committed page, duplicates get none. The page shares its image with the frame
-that was appended to the page list, so the pixels are stored once.
+`committer.pages` returns every analyzed page transition in commit order — one
+Page per candidate.  Kept pages share their image with the dedup-pool frame;
+duplicate candidates keep their own image and point at the file written under
+`candidates/`.  Deduplication still compares only against the `unique_pages`
+keep-only pool.
 
 ### `BarProfilePlotter` (`src/application/extraction_components.py`)
 
@@ -83,7 +89,9 @@ The one place that reads a score directory. It returns the pages of a saved
 score and puts the config on the crop the score was saved with:
 - `read_saved_score(score_dir, file_service, config)` → `SavedScore(pages, metadata)`
 - `read_metadata(score_dir)` → the metadata of a score (empty when there is none)
-- `pages_from_records(saved, metadata)` → the pages, from the page records
+- `pages_from_records(saved, metadata)` → the pages, from the page records.
+  Photos are matched to records by the page number in the file name, because
+  the records include duplicate candidates that have no photo.
 - `apply_saved_crop(config, metadata)` → the crop the score was saved with
 
 Both the GUI (`GuiApi.load_saved_score`, `GuiApi.regenerate_from_dir`) and the
@@ -125,7 +133,8 @@ main.py / gui_api.py
        │    ├─ OCR number extraction
        │    ├─ Deduplicator.is_duplicate(existing, merged)
        │    └─ file_service.save_page_image()
-       ├─ FrameStepper.tail_scan()  →  trim end-credits
+       ├─ FrameStepper.tail_scan()  →  end-credit cutoff (no trimming)
+       ├─ PageCommitter.mark_end_credits(cutoff)  →  trailing pages DUPLICATE
        └─ return ExtractResult(pages, manifest, page_records, candidates)
 ```
 

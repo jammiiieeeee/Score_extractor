@@ -153,11 +153,16 @@ class ExtractScoreUseCase:
                 )
                 manifest_entries.extend(entries)
 
-        stepper.tail_scan(effective_ocr, unique_pages, stepper.current_idx, r.end_offset, r.debug, log_file)
+        end_credit_cutoff = stepper.tail_scan(
+            effective_ocr, unique_pages, stepper.current_idx, r.end_offset, r.debug, log_file,
+        )
 
         manifest_entries.extend(committer.flush_pending(
             unique_pages, r.output_dir, r.debug, log, r.on_page_detected, plotter,
         ))
+
+        if end_credit_cutoff is not None:
+            committer.mark_end_credits(end_credit_cutoff)
 
         committer.release()
 
@@ -167,22 +172,9 @@ class ExtractScoreUseCase:
         return ExtractResult(
             pages=unique_pages,
             manifest=manifest_entries,
-            page_records=self._collect_page_records(committer, unique_pages),
+            page_records=committer.pages,
             candidates=committer.candidates,
         )
-
-    @staticmethod
-    def _collect_page_records(committer: PageCommitter, unique_pages: List[Frame]) -> List[Page]:
-        """The page records of the pages that survived extraction.
-
-        The end-credit scan drops trailing pages, so the records are trimmed to
-        the same count - both lists then describe the same pages, in the same
-        order.
-        """
-        records = committer.pages
-        if len(records) > len(unique_pages):
-            records = records[:len(unique_pages)]
-        return records
 
 
 class GeneratePdfUseCase:

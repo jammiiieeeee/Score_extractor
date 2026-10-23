@@ -121,8 +121,8 @@ class TestPageCommitterCommit:
         committer.commit(a, b, pages, out_dir, 1, False, lambda msg: None, cb, is_first=True)
         cb.assert_called_once()
 
-    def test_on_page_detected_not_called_for_duplicate(self, tmp_path):
-        """When guard rail rejects a page, callback is not called."""
+    def test_on_page_detected_called_for_duplicate_candidate(self, tmp_path):
+        """Every candidate is a page, so the duplicate is reported too."""
         cfg = ScoreConfig(bar_min_diff_threshold=100.0)
         committer, _, _, _ = self._make_committer(config=cfg, work_dir=tmp_path)
         cb = MagicMock()
@@ -137,7 +137,8 @@ class TestPageCommitterCommit:
         a2 = Frame(identical.copy(), 4.0, 120)
         b2 = Frame(identical.copy(), 5.0, 150)
         committer.commit(a2, b2, pages, out_dir, 2, False, lambda msg: None, cb, is_first=False)
-        cb.assert_not_called()
+        cb.assert_called_once()
+        assert cb.call_args[0][0] == 1
 
     def test_multiple_distinct_pages_committed(self, tmp_path):
         """Pages with different solid colors should pass pixel dedup."""
@@ -259,7 +260,7 @@ class TestPageCommitterPageRecords:
         assert page.file.endswith("page_001_merged.png")
         assert Path(page.file).exists()
 
-    def test_duplicate_page_produces_no_page_object(self, tmp_path):
+    def test_duplicate_page_produces_a_duplicate_page_object(self, tmp_path):
         cfg = ScoreConfig(bar_min_diff_threshold=100.0)
         committer, _ = self._make_committer(config=cfg, work_dir=tmp_path)
         out_dir = self._ensure_dirs(tmp_path)
@@ -273,7 +274,16 @@ class TestPageCommitterPageRecords:
         committer.commit(a2, b2, pages, out_dir, 2, False, lambda msg: None, None, is_first=False)
 
         assert len(pages) == 1
-        assert len(committer.pages) == 1
+        assert len(committer.pages) == 2
+        assert [p.status for p in committer.pages] == [
+            PageStatus.KEEP, PageStatus.DUPLICATE,
+        ]
+        duplicate = committer.pages[1]
+        assert duplicate.attempt_number == 2
+        assert duplicate.timestamp == 4.0
+        assert duplicate.file is not None
+        assert "candidates" in Path(duplicate.file).parts
+        assert Path(duplicate.file).exists()
 
     def test_candidate_records_every_attempt_including_duplicate(self, tmp_path):
         cfg = ScoreConfig(bar_min_diff_threshold=100.0)
@@ -294,7 +304,7 @@ class TestPageCommitterPageRecords:
         )
 
         assert len(pages) == 1
-        assert len(committer.pages) == 1
+        assert len(committer.pages) == 2
         candidates = committer.candidates
         assert all(isinstance(c, PageCandidate) for c in candidates)
         assert [p.status for p in candidates] == [PageStatus.KEEP, PageStatus.DUPLICATE]
@@ -355,6 +365,84 @@ class TestPageCommitterPageRecords:
         assert committer.candidates[1].status is PageStatus.DUPLICATE
         assert committer.candidates[0].boundary_row is not None
         assert committer.candidates[1].boundary_row == committer.candidates[0].boundary_row
+
+    def test_blank_candidate_is_retained_as_duplicate(self, tmp_path):
+        committer, _ = self._make_committer(work_dir=tmp_path)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+
+        dark = make_solid_image(800, 600, (40, 40, 40))
+        committer.commit(
+            Frame(dark.copy(), 1.0, 30), Frame(dark.copy(), 2.0, 60),
+            pages, out_dir, 1, False, lambda msg: None, None, is_first=True,
+        )
+
+        white = make_solid_image(800, 600, (255, 255, 255))
+        committer.commit(
+            Frame(white.copy(), 4.0, 120), Frame(white.copy(), 5.0, 150),
+            pages, out_dir, 2, False, lambda msg: None, None, is_first=False,
+            ssim_score=0.0,
+        )
+
+        assert len(pages) == 1
+        assert len(committer.pages) == 2
+        blank = committer.pages[1]
+        assert blank.status is PageStatus.DUPLICATE
+        assert blank.file and Path(blank.file).exists()
+
+    def test_guard_rail_failure_is_retained_as_duplicate(self, tmp_path):
+        cfg = ScoreConfig(bar_min_diff_threshold=100.0)
+        committer, _ = self._make_committer(config=cfg, work_dir=tmp_path)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+
+        dark = make_solid_image(800, 600, (40, 40, 40))
+        committer.commit(
+            Frame(dark.copy(), 1.0, 30), Frame(dark.copy(), 2.0, 60),
+            pages, out_dir, 1, False, lambda msg: None, None, is_first=True,
+        )
+
+        # A single moving bar gives one spike, which fails the clean-profile
+        # guard rail (needs 0 or 2).
+        a = make_solid_image(800, 600, (60, 60, 60))
+        b = make_solid_image(800, 600, (60, 60, 60))
+        a[:, 100:130, :] = 220
+        committer.commit(
+            Frame(a, 4.0, 120), Frame(b, 5.0, 150),
+            pages, out_dir, 2, False, lambda msg: None, None, is_first=False,
+            ssim_score=0.0,
+        )
+
+        assert len(pages) == 1
+        rejected = committer.pages[1]
+        assert rejected.status is PageStatus.DUPLICATE
+        assert rejected.file and Path(rejected.file).exists()
+
+    def test_end_credit_pages_are_kept_and_flagged_duplicate(self, tmp_path):
+        cfg = ScoreConfig(pixel_similarity_threshold=0.99)
+        committer, _ = self._make_committer(config=cfg, work_dir=tmp_path)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+
+        shades = [(20, 20, 20), (80, 80, 80), (140, 140, 140)]
+        for i, shade in enumerate(shades):
+            frame = make_solid_image(800, 600, shade)
+            committer.commit(
+                Frame(frame.copy(), float(i + 1), i * 30),
+                Frame(frame.copy(), float(i + 1) + 0.5, i * 30 + 10),
+                pages, out_dir, i + 1, False, lambda msg: None, None,
+                is_first=(i == 0), ssim_score=0.0,
+            )
+
+        assert len(committer.pages) == 3
+        committer.mark_end_credits(2.5)
+
+        assert [p.status for p in committer.pages] == [
+            PageStatus.KEEP, PageStatus.KEEP, PageStatus.DUPLICATE,
+        ]
+        assert len(pages) == 3
+        end_credit = committer.pages[2]
+        assert end_credit.file and Path(end_credit.file).exists()
 
     def test_page_without_detected_boundary_row_records_none(self, tmp_path):
         committer, _ = self._make_committer(work_dir=tmp_path)

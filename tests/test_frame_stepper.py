@@ -215,20 +215,25 @@ class TestFrameStepperTailScan:
         stepper, _ = self._make_stepper()
         pages = [Frame(make_solid_image(), 5.0, 150)]
         ocr = StubOcrService(enabled=True)
-        stepper.tail_scan(ocr, pages, 90, end_offset=5.0)
+        cutoff = stepper.tail_scan(ocr, pages, 90, end_offset=5.0)
+        assert cutoff is None
         assert len(pages) == 1
 
-    def test_tail_scan_with_ocr_detection(self):
+    def test_tail_scan_with_ocr_detection_returns_cutoff_without_trimming(self):
         stepper, svc = self._make_stepper(200)
         pages = [Frame(make_solid_image(), 5.0, 150)]
         ocr = StubOcrService(enabled=True)
         ocr.set_keywords_found(True)
-        stepper.tail_scan(ocr, pages, 100, end_offset=0.0)
-        assert len(pages) <= 1
+        cutoff = stepper.tail_scan(ocr, pages, 100, end_offset=0.0)
+        assert cutoff is not None
+        # The page list is left alone so the viewer can still show the pages.
+        assert len(pages) == 1
+        assert pages[0].timestamp == 5.0
 
     def test_tail_scan_no_ocr(self):
         stepper, _ = self._make_stepper(200)
         pages = [Frame(make_solid_image(), 5.0, 150)]
         ocr = StubOcrService(enabled=False)
-        stepper.tail_scan(ocr, pages, 100, end_offset=0.0)
+        cutoff = stepper.tail_scan(ocr, pages, 100, end_offset=0.0)
+        assert cutoff is None
         assert len(pages) == 1

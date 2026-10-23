@@ -47,6 +47,7 @@ class Page:
     attempt_number: int = 0
     file: Optional[str] = None
     status: PageStatus = PageStatus.KEEP
+    timestamp: float = 0.0
 
     def to_record(self) -> dict:
         """How this page is written into a saved score.

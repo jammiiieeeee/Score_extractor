@@ -123,6 +123,23 @@ class TestReopeningASavedScore:
         assert api.get_page(1).status is PageStatus.DUPLICATE
         assert api.get_page(2).boundary_row is None
 
+    def test_a_duplicate_record_does_not_shift_later_pages(self, api, tmp_path):
+        photos = tmp_path / "photos"
+        photos.mkdir(parents=True, exist_ok=True)
+        for number, shade in ((1, 10), (3, 30)):
+            cv2.imwrite(str(photos / f"page_{number:03d}_merged.png"), _image(shade))
+        api.save_metadata(str(tmp_path), {"pages": [
+            {"attempt": 1, "boundary_row": 111, "status": "keep"},
+            {"attempt": 2, "boundary_row": 222, "status": "duplicate"},
+            {"attempt": 3, "boundary_row": 333, "status": "keep"},
+        ]})
+
+        api.load_saved_score(str(tmp_path))
+
+        assert api.get_page_count() == 2
+        assert api.get_page(0).boundary_row == 111
+        assert api.get_page(1).boundary_row == 333
+
     def test_an_old_score_still_opens(self, api, tmp_path):
         _write_pages(tmp_path)
         api.save_metadata(str(tmp_path), {"crop_ratio": 0.4, "page_boundary_rows": [11, 22, 33]})

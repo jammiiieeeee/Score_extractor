@@ -11,7 +11,7 @@ carries a bare list of boundary rows, which is read as a fallback.
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from src.domain.interfaces import IFileService
 from src.domain.models import Page
@@ -56,6 +56,32 @@ def apply_saved_crop(config: ScoreConfig, metadata: dict) -> None:
         config.boundary_offset_px = int(offset)
 
 
+def _attempt_from_path(path) -> Optional[int]:
+    """The page number in a saved photo name (``page_003_merged.png`` -> 3)."""
+    try:
+        return int(Path(path).stem.split("_")[1])
+    except (IndexError, TypeError, ValueError):
+        return None
+
+
+def _record_for_file(records: list, path, index: int) -> dict:
+    """The record that belongs to a saved photo.
+
+    Saved photos keep only the printed pages, while the records include every
+    candidate.  Match on the attempt number in the file name so a duplicate
+    record cannot shift the rows and statuses of the pages after it.
+    """
+    attempt = _attempt_from_path(path)
+    if attempt is not None:
+        for record in records:
+            try:
+                if int(record.get("attempt")) == attempt:
+                    return record
+            except (AttributeError, TypeError, ValueError):
+                continue
+    return records[index] if index < len(records) else {}
+
+
 def pages_from_records(saved: list, metadata: dict) -> List[Page]:
     """The pages of a saved score, with the crop they were saved with.
 
@@ -63,11 +89,11 @@ def pages_from_records(saved: list, metadata: dict) -> List[Page]:
     """
     records = metadata.get("pages")
     if records is not None:
-        pages = []
-        for i, (file_path, img) in enumerate(saved):
-            record = records[i] if i < len(records) else {}
-            pages.append(Page.from_record(record, img, file=str(file_path)))
-        return pages
+        return [
+            Page.from_record(_record_for_file(records, file_path, i), img,
+                             file=str(file_path))
+            for i, (file_path, img) in enumerate(saved)
+        ]
 
     rows = metadata.get("page_boundary_rows") or []
     return [

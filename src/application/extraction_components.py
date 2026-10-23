@@ -190,10 +190,15 @@ class FrameStepper:
         self._unique_pages_ref = pages
 
     def tail_scan(self, ocr_service: IOcrService, unique_pages: list, current_idx: int,
-                  end_offset: float, debug: bool = False, log_file: Optional[TextIO] = None) -> None:
-        """Check last 20 seconds for 'Thank you' end-credits."""
+                  end_offset: float, debug: bool = False, log_file: Optional[TextIO] = None) -> Optional[float]:
+        """Check last 20 seconds for 'Thank you' end-credits.
+
+        Returns the timestamp after which pages are end-credits, or None when
+        there is nothing to trim.  Trailing pages are not removed: the caller
+        flags them instead, so the viewer can still show them.
+        """
         if end_offset > 0 or self.is_cancelled():
-            return
+            return None
         try:
             total_frames = self.video.get_total_frames()
             last_frame = total_frames - int(self.config.tail_scan_window * self.fps)
@@ -211,9 +216,8 @@ class FrameStepper:
                         break
                     if ocr_service.detect_keywords(tail_img, ["thank"]):
                         trim_time = tail_ts - 2.0
-                        self.on_log(f"  'Thank you' detected at {tail_ts:.1f}s, trimming after {trim_time:.1f}s.")
-                        unique_pages[:] = [p for p in unique_pages if p.timestamp <= trim_time]
-                        break
+                        self.on_log(f"  'Thank you' detected at {tail_ts:.1f}s, keeping pages after {trim_time:.1f}s as duplicates.")
+                        return trim_time
                     if debug:
                         texts = ocr_service.get_texts(tail_img)
                         if texts:
@@ -223,6 +227,7 @@ class FrameStepper:
                     self.on_log("  No 'Thank you' detected in final 20 seconds.")
         except Exception:
             pass
+        return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -307,40 +312,34 @@ class PageCommitter:
         self._pending: List[_PendingCommit] = []
         self._calibration_logged = False
         self._pages: List[Page] = []
-        self._candidates: List[PageCandidate] = []
 
     @property
     def pages(self) -> List[Page]:
-        """The committed keep pages, in commit order.
+        """Every analyzed page transition, in commit order.
 
-        Each page holds the same image as the frame that was appended to the
-        page list, so the pixels are stored once.  Duplicate candidates live
-        in ``candidates`` instead.
+        Kept pages and duplicate candidates are both real pages: each one
+        carries its own image, boundary row, file and status.  The keep-only
+        pool used for deduplication is the separate ``unique_pages`` list, so
+        recording a duplicate here never makes it a dedup reference.
         """
         return list(self._pages)
 
     @property
     def candidates(self) -> List[PageCandidate]:
-        """Every analyzed page transition, in commit order.
+        """Every analyzed page transition, as a lightweight record.
 
-        Includes both kept pages and duplicate candidates.  This is the record
-        of what extraction saw; it does not drive the PDF.
+        Derived from the pages, so a candidate's status always matches the
+        page it describes.
         """
-        return list(self._candidates)
-
-    def _record_candidate(
-        self,
-        boundary_row: Optional[int],
-        attempt_number: int,
-        file: Optional[str],
-        status: PageStatus,
-    ) -> None:
-        self._candidates.append(PageCandidate(
-            attempt_number=attempt_number,
-            boundary_row=boundary_row,
-            file=file,
-            status=status,
-        ))
+        return [
+            PageCandidate(
+                attempt_number=p.attempt_number,
+                boundary_row=p.boundary_row,
+                file=p.file,
+                status=p.status,
+            )
+            for p in self._pages
+        ]
 
     def _ensure_original_dims(self):
         if self._original_dim_probed or not self._original_video_path:
@@ -635,14 +634,12 @@ class PageCommitter:
                 attempt_number=page_num,
                 file=str(saved_path) if saved_path else None,
                 status=PageStatus.KEEP,
+                timestamp=frame_a.timestamp,
             )
             self._pages.append(page)
-            self._record_candidate(
-                analysis.boundary_row, page_num, page.file, PageStatus.KEEP,
-            )
             log(f"  New page detected at {frame_a.timestamp:.2f}s (Index: {frame_a.index})")
             if on_page_detected:
-                on_page_detected(len(unique_pages) - 1, analysis.merged)
+                on_page_detected(len(self._pages) - 1, analysis.merged)
         else:
             saved_path = None
             try:
@@ -651,11 +648,17 @@ class PageCommitter:
                 )
             except Exception as exc:
                 log(f"  [WARN] Could not save duplicate candidate: {exc}")
-            self._record_candidate(
-                analysis.boundary_row, page_num,
-                str(saved_path) if saved_path else None, PageStatus.DUPLICATE,
-            )
-            log(f"  Duplicate page skipped at {frame_a.timestamp:.2f}s")
+            self._pages.append(Page(
+                image=analysis.merged.copy(),
+                boundary_row=analysis.boundary_row,
+                attempt_number=page_num,
+                file=str(saved_path) if saved_path else None,
+                status=PageStatus.DUPLICATE,
+                timestamp=frame_a.timestamp,
+            ))
+            if on_page_detected:
+                on_page_detected(len(self._pages) - 1, analysis.merged)
+            log(f"  Duplicate page retained at {frame_a.timestamp:.2f}s")
 
         if plotter is not None and analysis.col_sums is not None:
             plot_path = output_dir / "diagnostics" / f"bar_profile_page_{page_num:03d}.png"
@@ -740,6 +743,16 @@ class PageCommitter:
         return self._flush_pending(
             unique_pages, output_dir, debug, log, on_page_detected, plotter,
         )
+
+    def mark_end_credits(self, cutoff: float) -> None:
+        """Flag pages captured after ``cutoff`` as duplicates.
+
+        End-credit pages stay in the score and keep their files, but they do
+        not print, so the PDF matches an extraction that trimmed them.
+        """
+        for page in self._pages:
+            if page.timestamp > cutoff and page.status is PageStatus.KEEP:
+                page.status = PageStatus.DUPLICATE
 
 
 # ═══════════════════════════════════════════════════════════════════════════

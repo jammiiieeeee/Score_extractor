@@ -148,7 +148,7 @@ class TestExtractScoreUseCase:
 
 @pytest.mark.unit
 class TestExtractScoreUseCasePageRecords:
-    """The extraction produces one page object per committed page."""
+    """The extraction produces one page object per analyzed candidate."""
 
     def _make_uc(self, frames, fps=30.0, work_dir=None):
         svc = StubVideoService([f.image for f in frames], fps=fps)
@@ -173,33 +173,39 @@ class TestExtractScoreUseCasePageRecords:
         (out / "photos").mkdir()
         return uc.execute(ExtractRequest("fake.mp4", out, no_ocr=True, start_time=0.0))
 
-    def test_one_record_per_committed_page(self, tmp_path):
+    def test_one_record_per_analyzed_candidate(self, tmp_path):
         result = self._run(tmp_path)
         assert len(result.pages) >= 1
-        assert len(result.page_records) == len(result.pages)
+        assert len(result.page_records) == len(result.candidates)
+        assert len(result.page_records) == len(result.manifest)
+        assert len(result.page_records) >= len(result.pages)
 
-    def test_candidates_are_available_without_changing_kept_pages(self, tmp_path):
+    def test_candidates_and_pages_describe_the_same_transitions(self, tmp_path):
         result = self._run(tmp_path)
-        assert len(result.candidates) == len(result.manifest)
-        assert len(result.page_records) == len(result.pages)
-        keep_candidates = [c for c in result.candidates if c.status is PageStatus.KEEP]
-        assert len(result.page_records) <= len(keep_candidates)
-        keep_attempts = {c.attempt_number for c in keep_candidates}
-        assert all(r.attempt_number in keep_attempts for r in result.page_records)
+        assert [p.attempt_number for p in result.page_records] == [
+            c.attempt_number for c in result.candidates
+        ]
+        assert [p.status for p in result.page_records] == [
+            c.status for c in result.candidates
+        ]
         assert all(c.file and Path(c.file).exists() for c in result.candidates)
         assert all(c.status in (PageStatus.KEEP, PageStatus.DUPLICATE)
                    for c in result.candidates)
         photos = tmp_path / "output" / "photos"
-        assert len(list(photos.glob("page_*_merged.png"))) == len(result.page_records)
+        keeps = [p for p in result.page_records if p.status is PageStatus.KEEP]
+        assert len(list(photos.glob("page_*_merged.png"))) == len(keeps)
 
-    def test_record_carries_the_page_image_without_copying_it(self, tmp_path):
+    def test_kept_records_share_the_page_image(self, tmp_path):
         result = self._run(tmp_path)
-        for record, frame in zip(result.page_records, result.pages):
-            assert record.image is frame.image
+        for record in result.page_records:
+            if record.status is PageStatus.KEEP:
+                assert any(record.image is frame.image for frame in result.pages)
 
-    def test_every_record_is_kept(self, tmp_path):
+    def test_records_may_include_duplicates_but_keep_pool_stays_clean(self, tmp_path):
         result = self._run(tmp_path)
-        assert all(r.status is PageStatus.KEEP for r in result.page_records)
+        assert all(r.status in (PageStatus.KEEP, PageStatus.DUPLICATE)
+                   for r in result.page_records)
+        assert all(isinstance(p, Frame) for p in result.pages)
 
     def test_record_carries_attempt_number_and_file(self, tmp_path):
         result = self._run(tmp_path)
@@ -211,6 +217,17 @@ class TestExtractScoreUseCasePageRecords:
     def test_record_without_detected_row_keeps_none(self, tmp_path):
         result = self._run(tmp_path)
         assert all(r.boundary_row is None for r in result.page_records)
+
+    def test_end_credit_scan_flags_pages_without_removing_them(self, tmp_path, monkeypatch):
+        from src.application.extraction_components import FrameStepper
+        monkeypatch.setattr(FrameStepper, "tail_scan", lambda self, *args, **kwargs: -1.0)
+
+        result = self._run(tmp_path)
+
+        assert len(result.page_records) == len(result.pages)
+        assert result.page_records
+        assert all(r.status is PageStatus.DUPLICATE for r in result.page_records)
+        assert all(r.file and Path(r.file).exists() for r in result.page_records)
 
 
 @pytest.mark.unit
