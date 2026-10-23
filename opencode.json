@@ -8,5 +8,6 @@
     "grep": {
       "*": "ask"
     }
-  }
+  },
+  "plugins": ["@dietrichgebert/ponytail"]
 }
