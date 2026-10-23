@@ -293,6 +293,7 @@ class PageCommitter:
         original_video_path: Optional[str] = None,
         calibrator: Optional[BarProfileCalibrator] = None,
         boundary_detector: Optional[BoundaryDetector] = None,
+        dedup_mode: str = "auto",
     ):
         self.video = video_service
         self.file_service = file_service
@@ -307,6 +308,7 @@ class PageCommitter:
         self._original_dim_probed = False
         self.calibrator = calibrator
         self.boundary_detector = boundary_detector
+        self.dedup_mode = dedup_mode
         self.boundary_mode = getattr(config, "boundary_mode", "auto")
         self._last_boundary_before_h: Optional[int] = None
         self._pending: List[_PendingCommit] = []
@@ -561,7 +563,7 @@ class PageCommitter:
         # previous page.  Skip the expensive pixel dedup to avoid
         # false rejections caused by similar staff-line layouts
         # across unrelated pages.
-        if not is_dup and (ssim_score is None or ssim_score >= self.config.dedup_skip_ssim):
+        if not is_dup and self.dedup_mode != "manual" and (ssim_score is None or ssim_score >= self.config.dedup_skip_ssim):
             for img in dedup_images:
                 if self.deduplicator.is_duplicate(img, merged, b_number=merged_number):
                     is_dup = True
@@ -606,11 +608,13 @@ class PageCommitter:
             log(f"  Dedup peaks: [{peak_str}] (n={len(analysis.bar_peaks)}, clean={analysis.has_clean_profile})")
 
         is_dup = analysis.is_dup
+        if self.dedup_mode == "manual":
+            is_dup = False
         guard_rail_passed = analysis.guard_rail_passed
-        if analysis.reject_reason:
+        if analysis.reject_reason and self.dedup_mode != "manual":
             log(f"  [SKIP] Page {page_num}: {analysis.reject_reason}, treated as duplicate")
 
-        if not is_dup:
+        if not is_dup and self.dedup_mode != "manual":
             # Reject pages that are mostly white (blank-ish frames that slipped
             # past the blank detector).  A real score page has substantial
             # ink content; a blank frame has high mean and low std.  Judged on
@@ -750,6 +754,8 @@ class PageCommitter:
         End-credit pages stay in the score and keep their files, but they do
         not print, so the PDF matches an extraction that trimmed them.
         """
+        if self.dedup_mode == "manual":
+            return
         for page in self._pages:
             if page.timestamp > cutoff and page.status is PageStatus.KEEP:
                 page.status = PageStatus.DUPLICATE

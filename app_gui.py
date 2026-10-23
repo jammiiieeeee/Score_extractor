@@ -2504,6 +2504,24 @@ class ExtractTab(QWidget):
         crop_row.addWidget(self.config_btn)
         layout.addLayout(crop_row)
 
+        # ── Duplicate detection ──
+        dedup_row = QHBoxLayout()
+        dedup_label = QLabel("Duplicates:")
+        dedup_label.setFixedWidth(115)
+        dedup_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.dedup_combo = QComboBox()
+        self.dedup_combo.addItem("Manual (flag them yourself)", "manual")
+        self.dedup_combo.addItem("Automatic (mark detected)", "auto")
+        self.dedup_combo.setToolTip(
+            "Manual — every captured page stays unflagged; use Review Pages to mark duplicates.\n"
+            "Automatic — system-detected duplicates are flagged and skipped in the PDF."
+        )
+        self.dedup_combo.setMinimumWidth(150)
+        dedup_row.addWidget(dedup_label)
+        dedup_row.addWidget(self.dedup_combo)
+        dedup_row.addStretch()
+        layout.addLayout(dedup_row)
+
         # ── Seek bar ──
         self.seek_bar = DualHandleSeekBar()
         self.seek_bar.setMinimumHeight(64)
@@ -3169,6 +3187,7 @@ class ExtractTab(QWidget):
             end_offset=end_offset,
             output_folder=self._parent_dir,
             score_name=project,
+            dedup_mode=self.dedup_combo.currentData(),
         )
         except RuntimeError as e:
             QMessageBox.warning(self, "Error", str(e))

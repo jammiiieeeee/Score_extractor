@@ -45,6 +45,9 @@ class TestExtractScoreUseCase:
         uc = ExtractScoreUseCase(svc, ocr, file_svc, cfg)
         return uc, svc, ocr, file_svc
 
+    def test_request_defaults_to_automatic_dedup(self, tmp_path):
+        assert ExtractRequest("fake.mp4", tmp_path).dedup_mode == "auto"
+
     def test_full_extraction(self, tmp_path):
         frames, fps = self._make_frames(10)
         uc, _, _, _ = self._make_uc(frames, fps, work_dir=tmp_path)

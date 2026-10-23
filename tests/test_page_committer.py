@@ -67,7 +67,8 @@ class MockOcrService:
 class TestPageCommitterCommit:
     """Tests for PageCommitter.commit()."""
 
-    def _make_committer(self, ocr_enabled=True, config=None, work_dir=None):
+    def _make_committer(self, ocr_enabled=True, config=None, work_dir=None,
+                        dedup_mode="auto"):
         cfg = config or ScoreConfig()
         fps = 30.0
         frames = [make_solid_image(800, 600) for _ in range(10)]
@@ -77,7 +78,7 @@ class TestPageCommitterCommit:
         dedup = Deduplicator(cfg, ocr_svc)
         committer = PageCommitter(
             video_svc, file_svc, ocr_svc, cfg, dedup,
-            orig_w=800, orig_h=600,
+            orig_w=800, orig_h=600, dedup_mode=dedup_mode,
         )
         return committer, file_svc, ocr_svc, dedup
 
@@ -215,7 +216,8 @@ class TestPageCommitterCommit:
 class TestPageCommitterPageRecords:
     """The committer produces one page object per committed page."""
 
-    def _make_committer(self, config=None, work_dir=None, boundary_detector=None):
+    def _make_committer(self, config=None, work_dir=None, boundary_detector=None,
+                        dedup_mode="auto"):
         cfg = config or ScoreConfig()
         frames = [make_solid_image(800, 600) for _ in range(10)]
         video_svc = StubVideoService(frames, fps=30.0)
@@ -225,6 +227,7 @@ class TestPageCommitterPageRecords:
         committer = PageCommitter(
             video_svc, file_svc, ocr_svc, cfg, dedup,
             orig_w=800, orig_h=600, boundary_detector=boundary_detector,
+            dedup_mode=dedup_mode,
         )
         return committer, file_svc
 
@@ -259,6 +262,47 @@ class TestPageCommitterPageRecords:
         assert page.file is not None
         assert page.file.endswith("page_001_merged.png")
         assert Path(page.file).exists()
+
+    def test_default_mode_is_automatic(self, tmp_path):
+        committer, _ = self._make_committer(work_dir=tmp_path)
+        assert committer.dedup_mode == "auto"
+
+    def test_manual_mode_leaves_candidates_unflagged(self, tmp_path):
+        cfg = ScoreConfig(bar_min_diff_threshold=100.0)
+        committer, _ = self._make_committer(
+            config=cfg, work_dir=tmp_path, dedup_mode="manual")
+        out_dir = self._ensure_dirs(tmp_path)
+        identical = make_solid_image(800, 600, (128, 128, 128))
+        pages = []
+
+        committer.commit(
+            Frame(identical.copy(), 1.0, 30), Frame(identical.copy(), 2.0, 60),
+            pages, out_dir, 1, False, lambda msg: None, None, is_first=True,
+        )
+        committer.commit(
+            Frame(identical.copy(), 4.0, 120), Frame(identical.copy(), 5.0, 150),
+            pages, out_dir, 2, False, lambda msg: None, None, is_first=False,
+        )
+
+        assert len(pages) == 2
+        assert [p.status for p in committer.candidates] == [
+            PageStatus.KEEP, PageStatus.KEEP,
+        ]
+        assert all("photos" in Path(p.file).parts for p in committer.candidates)
+
+    def test_manual_mode_does_not_flag_end_credits(self, tmp_path):
+        committer, _ = self._make_committer(work_dir=tmp_path, dedup_mode="manual")
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+        dark = make_solid_image(800, 600, (40, 40, 40))
+        committer.commit(
+            Frame(dark.copy(), 1.0, 30), Frame(dark.copy(), 2.0, 60),
+            pages, out_dir, 1, False, lambda msg: None, None, is_first=True,
+        )
+
+        committer.mark_end_credits(0.0)
+
+        assert committer.pages[0].status is PageStatus.KEEP
 
     def test_duplicate_page_produces_a_duplicate_page_object(self, tmp_path):
         cfg = ScoreConfig(bar_min_diff_threshold=100.0)

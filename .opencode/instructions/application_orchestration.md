@@ -31,6 +31,8 @@ Orchestrates the full extraction pipeline. Constructor takes:
 - `end_offset: float = 0.0` — stop processing N seconds before video end (0 = off)
 - `on_log`, `on_progress`, `on_page_detected`, `is_cancelled` — callbacks
 - `original_video_path: Optional[str]` — for YouTube dual-download workflow
+- `dedup_mode: str = "auto"` — `"auto"` flags system-detected duplicates;
+  `"manual"` leaves every candidate as KEEP (the GUI default)
 
 Returns `ExtractResult`:
 - `pages: List[Frame]` — the keep-only pool used for deduplication (old list,
@@ -68,7 +70,8 @@ Handles the commit pipeline for each detected page pair:
 2. Dynamic Bar Erase (merge full-res A+B via `video_service.merge_frames()`)
 3. Bar profile validation (peak count + left spike margin)
 4. OCR number extraction from merged full-res frames
-5. Deduplication (OCR → Global → Row)
+5. Deduplication (OCR → Global → Row) — skipped in `manual` mode, along with
+   blank-page and end-credit flagging
 6. Save to disk via `file_service.save_page_image()`
 7. Debug artifact writing (A/B frames, bar profile text)
 8. Build the page object (`Page`) for the committed page

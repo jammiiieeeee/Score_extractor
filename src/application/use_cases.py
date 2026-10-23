@@ -26,6 +26,7 @@ class ExtractRequest:
     on_page_detected: Optional[Callable[[int, np.ndarray], None]] = None
     is_cancelled: Callable[[], bool] = dc_field(default_factory=lambda: lambda: False)
     original_video_path: Optional[str] = None
+    dedup_mode: str = "auto"
 
 
 @dataclass
@@ -104,6 +105,7 @@ class ExtractScoreUseCase:
             original_video_path=r.original_video_path,
             calibrator=calibrator,
             boundary_detector=boundary_detector,
+            dedup_mode=r.dedup_mode,
         )
         stepper = FrameStepper(
             self.video_service, self.config,
@@ -161,7 +163,7 @@ class ExtractScoreUseCase:
             unique_pages, r.output_dir, r.debug, log, r.on_page_detected, plotter,
         ))
 
-        if end_credit_cutoff is not None:
+        if end_credit_cutoff is not None and r.dedup_mode != "manual":
             committer.mark_end_credits(end_credit_cutoff)
 
         committer.release()

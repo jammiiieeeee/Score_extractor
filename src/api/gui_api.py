@@ -358,7 +358,8 @@ class GuiApi:
 
     def start_extraction(self, video_path: Optional[str] = None, no_ocr: bool = False,
                          start_time: float = 2.0, end_offset: float = 0.0,
-                         output_folder: str = "", score_name: str = "") -> None:
+                         output_folder: str = "", score_name: str = "",
+                         dedup_mode: str = "auto") -> None:
         if self.is_busy():
             raise RuntimeError("Extraction or PDF generation already in progress")
 
@@ -378,7 +379,7 @@ class GuiApi:
 
         self._extraction_thread = threading.Thread(
             target=self._run_extraction,
-            args=(no_ocr, start_time, end_offset, self._debug_mode, output_folder, score_name, self._original_video_path),
+            args=(no_ocr, start_time, end_offset, self._debug_mode, output_folder, score_name, self._original_video_path, dedup_mode),
             daemon=True,
         )
         self._extraction_thread.start()
@@ -397,7 +398,8 @@ class GuiApi:
 
     def _run_extraction(self, no_ocr: bool, start_time: float, end_offset: float,
                         debug: bool, output_folder: str, score_name: str,
-                        original_video_path: Optional[str] = None):
+                        original_video_path: Optional[str] = None,
+                        dedup_mode: str = "auto"):
         try:
             score_dir = self._file_service.prepare_output_dir(output_folder, score_name)
 
@@ -430,6 +432,7 @@ class GuiApi:
                 on_progress=lambda pct, d: self._emit_progress("extracting", pct, d),
                 is_cancelled=lambda: self._cancel_flag,
                 original_video_path=original_video_path,
+                dedup_mode=dedup_mode,
             ))
             pages = result.page_records or result.pages
             manifest_entries = result.manifest

@@ -69,7 +69,7 @@ class ScoreInfo:
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 13 | `start_extraction(video_path, no_ocr, start_time, duration, output_folder, score_name)` | → None | Start extraction on background thread |
+| 13 | `start_extraction(video_path, no_ocr, start_time, duration, output_folder, score_name, dedup_mode="auto")` | → None | Start extraction on background thread |
 | 14 | `cancel_extraction()` | `→ None` | Set cancellation flag |
 | 15 | `get_extraction_state()` | `→ ExtractionState` | Current phase + metadata |
 

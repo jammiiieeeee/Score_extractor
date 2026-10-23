@@ -286,3 +286,19 @@ class TestMainWindowSignalDispatch:
         main_window.extract_tab.on_cancelled_with_pages = lambda pc: called.append(pc)
         main_window._on_cancelled_with_pages(7)
         assert called == [7]
+
+@pytest.mark.unit
+class TestDedupModeControl:
+
+    def test_gui_defaults_to_manual(self, tab):
+        assert tab.dedup_combo.currentData() == "manual"
+
+    def test_extraction_passes_selected_mode(self, tab, monkeypatch):
+        monkeypatch.setattr("os.path.exists", lambda p: True)
+        tab._video_path = "fake.mp4"
+        tab.project_edit.setText("ModeScore")
+        tab._parent_dir = ""
+        tab._api.start_extraction = MagicMock()
+        tab.dedup_combo.setCurrentIndex(tab.dedup_combo.findData("auto"))
+        tab._start_extraction()
+        assert tab._api.start_extraction.call_args.kwargs["dedup_mode"] == "auto"
