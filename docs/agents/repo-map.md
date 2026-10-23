@@ -7,7 +7,7 @@
 > If something here is wrong or missing, **fix it in the same session** and add
 > a line to [Recently changed](#recently-changed). See [Maintenance](#maintenance).
 
-Last verified: 2026-10-23 at `9e4e498`.
+Last verified: 2026-10-23 at `a12123c`.
 
 ## What this is
 
@@ -32,12 +32,10 @@ interfaces (OpenCV, PaddleOCR, ReportLab, yt-dlp). Nothing points inward.
 | `tests/` | Pytest suite (default run skips `-m slow`) |
 | `tools/` | One-off dev scripts, benchmarks, test media |
 | `scripts/` | Windows packaging (PyInstaller, shortcut) |
-| `.opencode/instructions/` | Module specs — start at `master_map.md` |
+| `.opencode/instructions/` | Module specs — one per module; the Spec column below names it |
 | `.opencode/plugins/` | `map-guard.js` — nudges the agent when a new file is missing from this map |
-| `.agents/skills/` | Installed agent skills (ponytail) |
-| `docs/agents/` | Agent config: this map, issue tracker, triage, domain docs |
-| `learning-records/`, `lessons/`, `reference/` | Written notes / generated lessons / architecture refs |
-| `archive/`, `.impeccable/` | Old test videos (unused) / UI critique state |
+| `.agents/skills/`, `docs/agents/` | Installed agent skills / agent config: this map, issue tracker, triage, domain docs |
+| `learning-records/`, `lessons/`, `reference/`, `archive/`, `.impeccable/` | Notes, generated lessons, arch refs, old test videos, UI critique state (not app code) |
 | `.github/workflows/` | CI: `test.yml` runs pytest |
 | root | `AGENTS.md`, `opencode.json`, `requirements.txt`, `pytest.ini`, `PRODUCT.md`, `DESIGN.md`, `CHANGELOG.md`, `RESOURCES.md` |
 
@@ -95,7 +93,7 @@ run_pipeline.py ──────► GuiApi (scripted)
 | Change GUI behaviour | `src/api/gui_api.py` first, then `app_gui.py` widgets |
 | Change a CLI flag | `main.py` |
 | Add a tunable | `src/domain/value_objects/config.py` |
-| Understand a design decision | `.opencode/instructions/master_map.md` |
+| Understand a design decision | The module's spec in `.opencode/instructions/` (ADRs when present) |
 
 ## Tests
 
@@ -124,6 +122,7 @@ run_pipeline.py ──────► GuiApi (scripted)
 
 Max 10 lines, newest first. Older lines get dropped (git has the history).
 
+- 2026-10-23 — single map: retired the old module map, merged the commit rule into `AGENTS.md` — `AGENTS.md`, `opencode.json`, `.opencode/instructions/`
 - 2026-10-23 — extraction keeps every candidate as a page (duplicates/blank/guard-rail/end-credit flagged); saved-score reload matches photos by attempt — `src/application/extraction_components.py`, `src/application/use_cases.py`, `src/application/saved_score.py`, `src/domain/models.py`
 - 2026-10-23 — page candidates recorded separately, PDF prints KEEP pages only — `src/domain/models.py`, `src/application/extraction_components.py`, `src/infrastructure/pdf_service.py`
 - 2026-10-23 — map created from a one-time repo scan; plugin guard added.

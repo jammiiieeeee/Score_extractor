@@ -27,7 +27,7 @@
 - Clean Architecture: `src/api` → `src/application` → `src/domain` ← `src/infrastructure`
 - Entry points: `app_gui.py` (PyQt6 GUI), `main.py` (CLI)
 - Repo map: `docs/agents/repo-map.md` (loaded automatically, keep it current)
-- Specs: `.opencode/instructions/master_map.md`
+- Module specs: `.opencode/instructions/` — the map's Spec column names the right one
 
 ## Testing
 - Default test run **skips slow tests** (`-m "not slow"`) — this avoids PaddleOCR import timeouts unless changes touch OCR code
@@ -45,11 +45,13 @@
 - Services implement interfaces from `src/domain/interfaces.py`
 - Extraction logic lives in `src/application/use_cases.py` and `extraction_components.py`
 - GUI orchestrator: `src/api/gui_api.py` — thin layer delegating to sub-modules
+- UI design tokens and rules: `DESIGN.md`
 - Output structure: `output/<score_name>/photos/` for kept page images, `candidates/` for duplicate candidates, `debug/` for artifacts
 - Windows-only: paths use backslashes, ffmpeg detected via WinGet fallback
 
-## Commit Attribution
-AI commits MUST include:
+## Commits
+- **Never commit without explicit permission.** Wait for the user to say "commit" (or similar). Do not commit after tests pass on your own initiative. If unsure, ask first.
+- When permitted, AI commits MUST include:
 ```
 Co-Authored-By: opencode <noreply@opencode.ai>
 ```
@@ -70,4 +72,4 @@ Issues live as GitHub issues on this repo. External PRs are not a triage surface
 Five canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
-Single-context layout: `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
+Glossary in `CONTEXT.md` and decisions in `docs/adr/` (when present; create lazily). See `docs/agents/domain.md`.
