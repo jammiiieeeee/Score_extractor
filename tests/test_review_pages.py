@@ -7,6 +7,7 @@ were skipped).
 """
 
 import os
+from unittest.mock import MagicMock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -163,37 +164,170 @@ class TestPageBadge:
 
 class TestCompletionPeak:
     def test_peak_status_and_review_button(self, tab):
+        for _ in range(7):
+            tab._api.add_page(np.full((60, 160, 3), 200, dtype=np.uint8))
         tab.on_pdf_completed(7)
         assert tab.status_label.text() == "Score ready — 7 pages in the PDF"
         assert tab._peak_style is True
         assert tab.status_label.property("class") == "count"
         assert not tab.review_btn.isHidden()
+        assert not tab.generate_btn.isHidden()
         assert tab.page_badge.text() == "Pages: 7"
+        tab._api.clear_pages()
 
     def test_peak_clears_when_status_reset(self, tab):
+        for _ in range(3):
+            tab._api.add_page(np.full((60, 160, 3), 200, dtype=np.uint8))
         tab.on_pdf_completed(3)
         tab._set_status("back to work")
         assert tab._peak_style is False
         assert tab.status_label.property("class") == "muted"
+        tab._api.clear_pages()
 
 
-class TestGeneratingPdfFlag:
-    """MainWindow must only arm _generating_pdf when on_completed started the PDF."""
+class TestExtractionReviewFlow:
+    """Extraction ends in Review Pages; the PDF waits for the user."""
 
-    def test_flag_stays_clear_when_no_pdf_started(self, tab):
-        mw = tab.window()
-        mw._generating_pdf = False
-        # Review dropped every page -> on_completed returns False
-        mw.extract_tab.on_completed = lambda _page_count: False
-        mw._on_completed(5)
-        assert mw._generating_pdf is False
+    @staticmethod
+    def _count_reviews(monkeypatch, tab):
+        calls = []
 
-    def test_flag_arms_when_pdf_started(self, tab):
-        mw = tab.window()
-        mw._generating_pdf = False
-        mw.extract_tab.on_completed = lambda _page_count: True
-        mw._on_completed(5)
-        assert mw._generating_pdf is True
+        class FakeDialog:
+            def __init__(self, api, title, parent):
+                calls.append(title)
+
+            def exec(self):
+                return 0
+
+        monkeypatch.setattr("app_gui.ReviewPagesDialog", FakeDialog)
+        tab._api.generate_pdf = MagicMock()
+        return calls
+
+    def test_completion_opens_review_and_stays_on_the_main_screen(
+            self, tab, monkeypatch):
+        calls = self._count_reviews(monkeypatch, tab)
+        tab._busy = True
+        tab._reextract_mode = False
+        tab.project_edit.setText("Project")
+        tab.pdf_name_edit.setText("Printed")
+
+        started_pdf = tab.on_completed(4)
+
+        assert calls == ["Printed"]
+        assert started_pdf is False
+        tab._api.generate_pdf.assert_not_called()
+        assert tab._busy is False
+
+    def test_cancel_with_pages_opens_review_and_does_not_generate(
+            self, tab, monkeypatch):
+        calls = self._count_reviews(monkeypatch, tab)
+        tab._busy = True
+        tab._video_path = None
+        tab._yt_video_paths = []
+        tab.project_edit.setText("Project")
+
+        tab.on_cancelled_with_pages(3)
+
+        assert calls == ["Project"]
+        tab._api.generate_pdf.assert_not_called()
+        assert tab._busy is False
+
+    def test_closing_review_returns_with_flags_saved(self, tab, monkeypatch):
+        calls = self._count_reviews(monkeypatch, tab)
+        tab._api.add_page(np.full((60, 160, 3), 200, dtype=np.uint8))
+        tab._busy = True
+
+        tab.on_completed(1)
+
+        assert calls
+        assert tab._busy is False
+        assert tab._has_existing_score is True
+        tab._api.clear_pages()
+
+
+class TestPdfGating:
+    """Generate PDF is enabled only while a page is included."""
+
+    @staticmethod
+    def _api_with_statuses(tab, statuses):
+        tab._api.clear_pages()
+        for status in statuses:
+            tab._api.add_page(
+                np.full((60, 160, 3), 200, dtype=np.uint8), status=status)
+
+    def test_generate_is_enabled_when_a_page_is_kept(self, tab):
+        self._api_with_statuses(
+            tab, [PageStatus.KEEP, PageStatus.DUPLICATE])
+        tab._busy = False
+
+        tab._update_state()
+
+        assert tab.generate_btn.isEnabled()
+        assert tab.generate_btn.text() == "Generate PDF"
+
+    def test_generate_is_disabled_when_nothing_is_included(self, tab):
+        self._api_with_statuses(
+            tab, [PageStatus.DUPLICATE, PageStatus.EXCLUDED])
+        tab._busy = False
+
+        tab._update_state()
+
+        assert not tab.generate_btn.isEnabled()
+        assert "No pages included" in tab.status_label.text()
+
+    def test_generate_refuses_when_nothing_is_included(self, tab, monkeypatch):
+        self._api_with_statuses(tab, [PageStatus.EXCLUDED])
+        tab.project_edit.setText("Score")
+        warnings = []
+        monkeypatch.setattr(
+            "app_gui.QMessageBox.warning",
+            lambda *args, **kwargs: warnings.append(args))
+        tab._api.generate_pdf = MagicMock()
+
+        tab._generate_pdf()
+
+        assert warnings and "No Pages Included" in warnings[0][1]
+        tab._api.generate_pdf.assert_not_called()
+
+    def test_loaded_score_review_updates_gating_without_regenerating(
+            self, tab, monkeypatch):
+        self._api_with_statuses(tab, [PageStatus.KEEP])
+        tab._has_existing_score = True
+        tab._busy = False
+        tab._api.generate_pdf = MagicMock()
+        calls = []
+
+        class FakeDialog:
+            def __init__(self, api, title, parent):
+                calls.append(title)
+                for index in range(api.get_page_count()):
+                    api.set_page_status(index, PageStatus.EXCLUDED)
+
+            def exec(self):
+                return 0
+
+        monkeypatch.setattr("app_gui.ReviewPagesDialog", FakeDialog)
+
+        tab._on_review_pages()
+
+        assert calls
+        tab._api.generate_pdf.assert_not_called()
+        assert not tab.generate_btn.isEnabled()
+        assert "No pages included" in tab.status_label.text()
+
+
+class TestIncludedPageCount:
+    def test_counts_only_kept_pages(self):
+        api = GuiApi()
+        api.add_page(np.full((20, 20, 3), 10, dtype=np.uint8))
+        api.add_page(np.full((20, 20, 3), 20, dtype=np.uint8),
+                     status=PageStatus.DUPLICATE)
+        api.add_page(np.full((20, 20, 3), 30, dtype=np.uint8),
+                     status=PageStatus.EXCLUDED)
+
+        assert api.get_page_count() == 3
+        assert api.get_included_page_count() == 1
+        api.cleanup()
 
 
 class TestDuplicateMarking:

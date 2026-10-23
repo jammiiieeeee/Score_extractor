@@ -438,6 +438,10 @@ class GuiApi:
             manifest_entries = result.manifest
 
             self._pages.set_pages(pages)
+            # Let Review Pages persist flags into this score right away, even
+            # before the user generates the PDF.
+            self._loaded_score_path = str(score_dir)
+            self._loaded_score_metadata = read_metadata(score_dir)
 
             if manifest_entries:
                 manifest_path = score_dir / "diagnostics" / "page_manifest.json"
@@ -460,6 +464,8 @@ class GuiApi:
                     self._emit_log(f"Extraction cancelled — {len(self._pages)} pages kept")
                 else:
                     self._pages.clear()
+                    self._loaded_score_path = None
+                    self._loaded_score_metadata = {}
                     self._state.phase = "idle"
                     import shutil
                     shutil.rmtree(score_dir, ignore_errors=True)
@@ -561,6 +567,14 @@ class GuiApi:
     def get_page_count(self) -> int:
         return len(self._pages)
 
+    def get_included_page_count(self) -> int:
+        """How many pages will print (status KEEP).
+
+        Duplicates and pages in the Trash stay in the score for review but do
+        not count as included, so the GUI can gate PDF generation on this.
+        """
+        return sum(1 for page in self._pages.all_pages() if page.is_printed())
+
     def add_page(self, image: np.ndarray, boundary_row: Optional[int] = None,
                  file: Optional[str] = None,
                  status: PageStatus = PageStatus.KEEP) -> int:
@@ -649,6 +663,10 @@ class GuiApi:
 
         if not self._pages:
             raise RuntimeError("No pages to generate PDF")
+        if self.get_included_page_count() == 0:
+            raise RuntimeError(
+                "No pages included - mark at least one page as Keep before "
+                "generating a PDF")
 
         self._state = ExtractionState("generating_pdf", len(self._pages), 0.0, 0.0)
         self._extraction_start_time = time.time()
@@ -663,17 +681,18 @@ class GuiApi:
     def _run_generate_pdf(self, output_path: str, title: Optional[str] = None):
         try:
             pages = self._pages.all_pages()
+            included_count = self.get_included_page_count()
             final_title = title if title else Path(output_path).stem
             output = Path(output_path)
             output.parent.mkdir(parents=True, exist_ok=True)
 
-            self._emit_log(f"PDF: {len(pages)} pages...")
+            self._emit_log(f"PDF: {included_count} pages...")
             self._emit_progress("generating_pdf", 0.0, "Generating PDF...")
 
             self._pdf_service.create_pdf(pages, output, self._config, title_hint=final_title)
 
             self._emit_progress("generating_pdf", 100.0, "PDF generated successfully")
-            self._emit_completed(len(self._pages))
+            self._emit_completed(included_count)
 
             score_dir = output.parent
 

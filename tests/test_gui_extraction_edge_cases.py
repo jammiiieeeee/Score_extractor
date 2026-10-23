@@ -192,24 +192,26 @@ class TestOnPageDetected:
 @pytest.mark.unit
 class TestOnCancelledWithPages:
 
-    def test_keep_dialog_yes_calls_generate_pdf(self, tab, monkeypatch):
-        from PyQt6.QtWidgets import QMessageBox
-        monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
-        tab._api.get_page_count = MagicMock(return_value=3)
+    def test_opens_review_and_does_not_generate_pdf(self, tab, monkeypatch):
+        calls = []
+
+        class FakeDialog:
+            def __init__(self, api, title, parent):
+                calls.append(title)
+
+            def exec(self):
+                return 0
+
+        monkeypatch.setattr("app_gui.ReviewPagesDialog", FakeDialog)
         tab._api.generate_pdf = MagicMock()
         tab._busy = True
-        tab._review_before_save = MagicMock()
-        tab.on_cancelled_with_pages(3)
-        tab._api.generate_pdf.assert_called_once()
-        assert tab._busy is False
+        tab.project_edit.setText("Cancelled score")
+        tab._yt_video_paths = []
 
-    def test_keep_dialog_no_clears_pages(self, tab, monkeypatch):
-        from PyQt6.QtWidgets import QMessageBox
-        monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
-        tab._api.clear_pages = MagicMock()
-        tab._busy = True
         tab.on_cancelled_with_pages(3)
-        tab._api.clear_pages.assert_called_once()
+
+        assert calls == ["Cancelled score"]
+        tab._api.generate_pdf.assert_not_called()
         assert tab._busy is False
 
 
@@ -241,13 +243,11 @@ class TestResetUI:
 @pytest.mark.unit
 class TestMainWindowSignalDispatch:
 
-    def test_on_completed_first_call_starts_pdf(self, main_window):
-        from app_gui import MainWindow
-        # First on_completed should start PDF generation
+    def test_on_completed_does_not_start_a_pdf(self, main_window):
         main_window._generating_pdf = False
-        main_window.extract_tab.on_completed = lambda _pc: True
+        main_window.extract_tab.on_completed = lambda _pc: False
         main_window._on_completed(5)
-        assert main_window._generating_pdf is True
+        assert main_window._generating_pdf is False
 
     def test_on_completed_second_call_is_pdf_done(self, main_window):
         from app_gui import MainWindow

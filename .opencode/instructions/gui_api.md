@@ -1,6 +1,6 @@
 # GUI API Specification
 
-This document defines the 47-method Python API surface for GUI integration.
+This document defines the Python API surface for GUI integration.
 
 ## Design Principles
 
@@ -105,46 +105,47 @@ flag survives a reload.
 | 29 | `get_page_full(index)` | `int → bytes\|None` | PNG bytes, full resolution |
 | 30 | `remove_page(index)` | `int → None` | Remove a page and the file it was written to |
 | 31 | `clear_pages()` | `→ None` | Remove all pages |
+| 32 | `get_included_page_count()` | `→ int` | Pages with status KEEP — the ones that print |
 
 ### PDF Generation (2)
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 32 | `generate_pdf(output_path, title)` | `str, str? → None` | Generate PDF on background thread |
-| 33 | `regenerate_from_dir(score_dir, output_path)` | `str, str? → None` | Load pages from dir with their saved crop, generate PDF |
+| 33 | `generate_pdf(output_path, title)` | `str, str? → None` | Generate PDF on background thread |
+| 34 | `regenerate_from_dir(score_dir, output_path)` | `str, str? → None` | Load pages from dir with their saved crop, generate PDF |
 
 ### YouTube Download (1)
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 34 | `download_youtube(url, fmt, scan_fmt)` | `str, str, str → None` | Download on background thread |
+| 35 | `download_youtube(url, fmt, scan_fmt)` | `str, str, str → None` | Download on background thread |
 
 ### Score Management (4)
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 35 | `list_saved_scores(output_folder)` | `str → list[ScoreInfo]` | List existing scores in directory |
-| 36 | `load_saved_score(path)` | `str → int` | Load pages from existing score |
-| 37 | `delete_saved_score(path)` | `str → None` | Delete score directory |
-| 38 | `save_metadata(score_dir, data)` | `str, dict → None` | Write metadata.json |
+| 36 | `list_saved_scores(output_folder)` | `str → list[ScoreInfo]` | List existing scores in directory |
+| 37 | `load_saved_score(path)` | `str → int` | Load pages from existing score |
+| 38 | `delete_saved_score(path)` | `str → None` | Delete score directory |
+| 39 | `save_metadata(score_dir, data)` | `str, dict → None` | Write metadata.json |
 
 ### Re-extraction Helpers (6)
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 39 | `has_loaded_score()` | `→ bool` | Is an existing score loaded? |
-| 40 | `get_loaded_score_path()` | `→ str\|None` | Path of loaded score |
-| 41 | `get_loaded_score_metadata()` | `→ dict` | metadata.json contents |
-| 42 | `is_loading_from_scratch()` | `→ bool` | True if no loaded score |
-| 43 | `get_first_page_image()` | `→ np.ndarray\|None` | First page for preview |
+| 40 | `has_loaded_score()` | `→ bool` | Is an existing score loaded? |
+| 41 | `get_loaded_score_path()` | `→ str\|None` | Path of loaded score |
+| 42 | `get_loaded_score_metadata()` | `→ dict` | metadata.json contents |
+| 43 | `is_loading_from_scratch()` | `→ bool` | True if no loaded score |
+| 44 | `get_first_page_image()` | `→ np.ndarray\|None` | First page for preview |
 
 ### Lifecycle (3)
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 44 | `cleanup()` | `→ None` | Close video, clear pages |
-| 45 | `is_busy()` | `→ bool` | Any background thread alive? |
-| 46 | `set_debug_mode(enabled)` | `bool → None` | Enable/disable debug mode |
+| 45 | `cleanup()` | `→ None` | Close video, clear pages |
+| 46 | `is_busy()` | `→ bool` | Any background thread alive? |
+| 47 | `set_debug_mode(enabled)` | `bool → None` | Enable/disable debug mode |
 
 ## Threading Model
 

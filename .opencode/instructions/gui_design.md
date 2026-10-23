@@ -60,14 +60,19 @@ Single unified interface driven by the **Project** field at the top.
 - QProgressBar (0–100%)
 - QTextEdit (read-only, max 140px)
 
-### Action Button (state-driven)
+### Action Buttons (state-driven)
 
-| State | Button text | Behavior |
-|-------|-------------|----------|
+| State | Buttons | Behavior |
+|-------|---------|----------|
 | New project + video ready | **Start Extraction** | Full pipeline |
-| Existing score loaded | **Regenerate PDF** | Re-crop + generate PDF |
-| Busy | **Extracting… (45%)** | Disabled |
-| PDF complete | **✓ Open PDF** | `os.startfile(output_path)` |
+| Extraction complete / existing score | **Review Pages**, **Generate PDF**, **Re-extract** | Review opens after extraction; Generate PDF stays disabled while no page is included and the status line explains how to restore one |
+| Existing score loaded | **Review Pages**, **Generate PDF**, **Re-extract** | Review edits flags; Generate PDF waits for the user |
+| Busy | **Cancel** | Calls `GuiApi.cancel_extraction()` |
+| PDF complete | **Open PDF**, **Review Pages**, **Generate PDF** | `os.startfile(output_path)`; editing flags in review only regenerates when the user presses Generate PDF |
+
+Review is part of the extraction flow: completing extraction, or cancelling
+after pages were captured, opens the review window. Closing it saves the page
+flags and returns to the main screen without generating a PDF.
 
 ### Cancel Button
 - Enabled only during extraction

@@ -122,6 +122,7 @@ run_pipeline.py ──────► GuiApi (scripted)
 
 Max 10 lines, newest first. Older lines get dropped (git has the history).
 
+- 2026-10-23 — extraction/cancel end in Review Pages, PDF now waits for the user and is gated on included pages — `app_gui.py`, `src/api/gui_api.py`, tests
 - 2026-10-23 — automatic/manual dedup mode: GUI defaults to manual, CLI and API default to automatic — `app_gui.py`, `src/api/gui_api.py`, `src/application/`, tests
 - 2026-10-23 — Review Pages can exclude pages by right-click/E into a Trash dialog with restore; excluded pages hide, persist and stay off the PDF — `app_gui.py`, `tests/test_review_pages.py`
 - 2026-10-23 — Review Pages can mark duplicates by click/D/shift+click, dims them and shows the count; PDF skips them — `app_gui.py`, `tests/test_review_pages.py`

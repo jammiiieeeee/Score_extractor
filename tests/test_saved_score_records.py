@@ -100,10 +100,11 @@ class TestTheSavedRecord:
     def test_the_status_is_written(self, api, tmp_path):
         page = Page(_image(10), boundary_row=100)
         page.status = PageStatus.EXCLUDED
+        kept = Page(_image(20), boundary_row=200)
 
-        meta = self._generate(api, tmp_path, [page])
+        meta = self._generate(api, tmp_path, [kept, page])
 
-        assert meta["pages"][0]["status"] == "excluded"
+        assert meta["pages"][1]["status"] == "excluded"
 
 
 class TestReopeningASavedScore:

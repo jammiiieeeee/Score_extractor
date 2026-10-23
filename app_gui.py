@@ -2591,11 +2591,13 @@ class ExtractTab(QWidget):
         self.extract_btn = QPushButton("Start Extraction")
         self.extract_btn.setEnabled(False)
         _fit_button_width(self.extract_btn)
-        self.regenerate_btn = QPushButton("Regenerate PDF")
-        self.regenerate_btn.setEnabled(False)
-        self.regenerate_btn.setVisible(False)
-        self.regenerate_btn.clicked.connect(self._regenerate_pdf)
-        _fit_button_width(self.regenerate_btn)
+        self.generate_btn = QPushButton("Generate PDF")
+        self.generate_btn.setEnabled(False)
+        self.generate_btn.setVisible(False)
+        self.generate_btn.clicked.connect(self._generate_pdf)
+        _fit_button_width(self.generate_btn)
+        # Older callers and tests use the pre-rename name.
+        self.regenerate_btn = self.generate_btn
         self.review_btn = QPushButton("Review Pages")
         _set_widget_class(self.review_btn, "secondary")
         self.review_btn.setVisible(False)
@@ -2612,7 +2614,7 @@ class ExtractTab(QWidget):
         _fit_button_width(self.cancel_btn)
         action_row.addWidget(self.reextract_btn)
         action_row.addWidget(self.extract_btn)
-        action_row.addWidget(self.regenerate_btn)
+        action_row.addWidget(self.generate_btn)
         action_row.addWidget(self.review_btn)
         action_row.addWidget(self.open_pdf_btn)
         action_row.addWidget(self.cancel_btn)
@@ -3065,13 +3067,14 @@ class ExtractTab(QWidget):
         has_project = bool(self.project_edit.text().strip())
         has_video = bool(self._video_path and os.path.exists(self._video_path))
         has_pages = self._api.get_page_count() > 0
+        included = self._api.get_included_page_count() if has_pages else 0
         can_act = not self._busy
 
-        dbg(f"_update_state: busy={self._busy}, reextract={self._reextract_mode}, has_existing={self._has_existing_score}, has_pages={has_pages}, has_project={has_project}, has_video={has_video}")
+        dbg(f"_update_state: busy={self._busy}, reextract={self._reextract_mode}, has_existing={self._has_existing_score}, has_pages={has_pages}, included={included}, has_project={has_project}, has_video={has_video}")
 
         self.cancel_btn.setVisible(self._busy)
         self.extract_btn.setVisible(False)
-        self.regenerate_btn.setVisible(False)
+        self.generate_btn.setVisible(False)
         self.review_btn.setVisible(False)
         self.open_pdf_btn.setVisible(False)
         self.reextract_btn.setVisible(False)
@@ -3084,14 +3087,28 @@ class ExtractTab(QWidget):
             self.extract_btn.setText("Start Extraction")
             self._set_status(
                 f"Re-extract: will replace {self._api.get_page_count()} pages")
-        elif self._has_existing_score and has_pages:
-            self.regenerate_btn.setVisible(True)
-            self.regenerate_btn.setEnabled(can_act)
+        elif has_pages:
             self.review_btn.setVisible(True)
-            self.review_btn.setEnabled(can_act and self._api.get_page_count() > 0)
+            self.review_btn.setEnabled(can_act)
+            self.generate_btn.setVisible(True)
+            self.generate_btn.setEnabled(can_act and included > 0)
+            self.generate_btn.setToolTip(
+                "" if included > 0 else
+                "No pages included - restore a page from Trash or mark one Keep.")
             self.reextract_btn.setVisible(True)
-            self._set_status(
-                f"Loaded {self._api.get_page_count()} pages — review, regenerate PDF, or re-extract")
+            self.reextract_btn.setEnabled(can_act)
+            total = self._api.get_page_count()
+            if included == 0:
+                self._set_status(
+                    "No pages included — restore a page from Trash or mark one "
+                    "Keep to generate a PDF")
+            elif self._has_existing_score:
+                self._set_status(
+                    f"Loaded {total} pages — review, generate PDF, or re-extract")
+            else:
+                self._set_status(
+                    f"Review complete — {included} of {total} pages included. "
+                    "Generate the PDF when ready.")
         elif has_project and has_video:
             self.extract_btn.setVisible(True)
             self.extract_btn.setEnabled(can_act)
@@ -3193,13 +3210,21 @@ class ExtractTab(QWidget):
             QMessageBox.warning(self, "Error", str(e))
             self._reset_ui()
 
-    def _regenerate_pdf(self):
-        dbg("_regenerate_pdf")
+    def _generate_pdf(self):
+        dbg("_generate_pdf")
         if self._busy:
             return
         output_path = self.get_output_path()
         if not output_path:
             QMessageBox.warning(self, "Error", "Please enter a score name.")
+            return
+        if self._api.get_included_page_count() == 0:
+            QMessageBox.warning(
+                self, "No Pages Included",
+                "No pages are included in the PDF.\n\n"
+                "Open Review Pages, restore a page from Trash, or mark a page "
+                "as Keep, then generate the PDF.")
+            self._update_state()
             return
 
         main_win = self.window()
@@ -3217,8 +3242,13 @@ class ExtractTab(QWidget):
 
         self._busy = True
         self.extract_btn.setVisible(False)
-        self.regenerate_btn.setVisible(False)
-        self.regenerate_btn.setEnabled(False)
+        self.generate_btn.setVisible(False)
+        self.generate_btn.setEnabled(False)
+        self.review_btn.setVisible(False)
+        self.review_btn.setEnabled(False)
+        self.reextract_btn.setVisible(False)
+        self.reextract_btn.setEnabled(False)
+        self.open_pdf_btn.setVisible(False)
         self.cancel_btn.setEnabled(False)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
@@ -3234,6 +3264,10 @@ class ExtractTab(QWidget):
                 main_win._generating_pdf = False
             QMessageBox.warning(self, "Error", str(e))
             self._reset_ui()
+
+    def _regenerate_pdf(self):
+        """Backwards-compatible alias for the renamed Generate PDF action."""
+        self._generate_pdf()
 
     def _cancel(self):
         if self._busy:
@@ -3297,7 +3331,7 @@ class ExtractTab(QWidget):
             self._log(f"  [Warn] Could not move downloaded video into project: {e}")
 
     def on_completed(self, page_count: int) -> bool:
-        """Finish extraction. Returns True if PDF generation was started."""
+        """Finish extraction, then let the user review before generating."""
         dbg(f"on_completed: page_count={page_count}")
         if page_count == 0:
             self._log("No pages captured \u2014 check that the video contains visible sheet music and the crop region covers the score. Try lowering sensitivity in Settings.")
@@ -3305,26 +3339,9 @@ class ExtractTab(QWidget):
             return False
 
         self._move_downloaded_videos()
-
         self._review_before_save()
-
-        if self._api.get_page_count() == 0:
-            self._log("All pages removed in review — no PDF generated")
-            self._busy = False
-            self._update_state()
-            self._set_status("No pages kept — re-extract to try again")
-            return False
-
-        output_path = self.get_output_path()
-        title = self.pdf_name_edit.text().strip() or None
-        self._watchdog.start(300000)
-        try:
-            self._api.generate_pdf(output_path, title=title)
-            return True
-        except (RuntimeError, ValueError, PermissionError) as e:
-            QMessageBox.warning(self, "Error", str(e))
-            self._reset_ui()
-            return False
+        self._finish_extraction()
+        return False
 
     def _review_title(self) -> str:
         """The title the PDF will print: PDF name first, otherwise the project."""
@@ -3333,9 +3350,22 @@ class ExtractTab(QWidget):
     def _review_before_save(self):
         """Show the pages as they will print before the PDF is made."""
         ReviewPagesDialog(self._api, self._review_title(), self).exec()
-        kept = self._api.get_page_count()
-        self.page_badge.setText(f"Pages: {kept}")
-        self._log(f"Review: {kept} pages kept")
+
+    def _after_review(self):
+        """Flags are already saved; reflect them on the main screen."""
+        total = self._api.get_page_count()
+        included = self._api.get_included_page_count()
+        self.page_badge.setText(f"Pages: {included} included")
+        self._log(f"Review: {included} of {total} pages included")
+
+    def _finish_extraction(self):
+        """Return to the main screen after extraction and review."""
+        self._busy = False
+        self._reextract_mode = False
+        self._has_existing_score = True
+        self._watchdog.stop()
+        self._after_review()
+        self._update_state()
 
     def _apply_page_removals(self, removed: list[int]):
         """Drop pages from the score and their files from disk.
@@ -3354,6 +3384,8 @@ class ExtractTab(QWidget):
         if self._api.get_page_count() == 0:
             return
         ReviewPagesDialog(self._api, self._review_title(), self).exec()
+        self._after_review()
+        self._update_state()
 
     def on_pdf_completed(self, page_count: int):
         output_path = self.get_output_path()
@@ -3363,12 +3395,9 @@ class ExtractTab(QWidget):
         self._reextract_mode = False
         self._busy = False
         self.cancel_btn.setEnabled(False)
-        self.extract_btn.setVisible(False)
-        self.regenerate_btn.setVisible(False)
+        self._update_state()
         self.open_pdf_btn.setVisible(True)
         self.open_pdf_btn.setEnabled(True)
-        self.review_btn.setVisible(True)
-        self.review_btn.setEnabled(True)
         self.page_badge.setText(f"Pages: {page_count}")
         self._set_status(f"Score ready — {page_count} pages in the PDF", peak=True)
         self._log(f"PDF saved: {output_path}")
@@ -3381,42 +3410,12 @@ class ExtractTab(QWidget):
 
     def on_cancelled_with_pages(self, page_count: int):
         dbg(f"on_cancelled_with_pages: {page_count}")
-        self._busy = False
-        self._watchdog.stop()
         self.cancel_btn.setEnabled(False)
         self.page_badge.setText(f"Pages: {page_count}")
-
-        reply = QMessageBox.question(
-            self, "Extraction Cancelled",
-            f"Extraction was stopped with {page_count} page(s) captured.\n\n"
-            "Would you like to keep these pages and review them, "
-            "or discard them and start over?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self._move_downloaded_videos()
-            self._review_before_save()
-            if self._api.get_page_count() == 0:
-                self._log("All pages removed in review — no PDF generated")
-                self._busy = False
-                self._update_state()
-                self._set_status("No pages kept — extract again to try")
-                return
-            output_path = self.get_output_path()
-            title = self.pdf_name_edit.text().strip() or None
-            try:
-                self._api.generate_pdf(output_path, title=title)
-                main_win = self.window()
-                if hasattr(main_win, '_generating_pdf'):
-                    main_win._generating_pdf = True
-            except (RuntimeError, ValueError, PermissionError) as e:
-                QMessageBox.warning(self, "Error", str(e))
-                self._reset_ui()
-        else:
-            self._api.clear_pages()
-            self._reset_ui()
-            self._set_status("Pages discarded — start over")
+        self._log(f"Extraction cancelled — {page_count} page(s) captured")
+        self._move_downloaded_videos()
+        self._review_before_save()
+        self._finish_extraction()
 
     def on_error(self, message: str):
         dbg(f"on_error: {message}")
@@ -3449,6 +3448,9 @@ class ExtractTab(QWidget):
         dbg("_reset_ui")
         self._busy = False
         self._reextract_mode = False
+        main_win = self.window()
+        if hasattr(main_win, '_generating_pdf'):
+            main_win._generating_pdf = False
         self._watchdog.stop()
         self.cancel_btn.setEnabled(False)
         self.open_pdf_btn.setVisible(False)
