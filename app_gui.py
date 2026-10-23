@@ -2345,8 +2345,21 @@ class ExtractTab(QWidget):
         self._parent_dir = self._settings.value("parent_dir", str(Path(__file__).resolve().parent / "output"))
         self._welcome_seen = bool(self._settings.value("onboarding_welcome_seen", False))
 
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._content = QWidget()
+        layout = QVBoxLayout(self._content)
+        layout.setContentsMargins(SPACE_MD, SPACE_MD, SPACE_MD, SPACE_MD)
         layout.setSpacing(SPACE_SM)
+        self._scroll.setWidget(self._content)
+        outer.addWidget(self._scroll)
 
         # ── Source toggle ──
         toggle_row = QHBoxLayout()
@@ -2618,7 +2631,8 @@ class ExtractTab(QWidget):
         action_row.addWidget(self.review_btn)
         action_row.addWidget(self.open_pdf_btn)
         action_row.addWidget(self.cancel_btn)
-        layout.addLayout(action_row)
+        action_row.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_MD)
+        outer.addLayout(action_row)
 
         # ── Connections ──
         self.project_edit.returnPressed.connect(self._on_project_entered)

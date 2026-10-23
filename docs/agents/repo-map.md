@@ -103,7 +103,7 @@ run_pipeline.py ──────► GuiApi (scripted)
 | Domain | `test_bar_profile_*`, `test_boundary_detector`, `test_deduplication`, `test_models`, `test_page_crop`, `test_page_store`, `test_page_lifecycle`, `test_config`, `test_double_crop_bug` |
 | Application | `test_use_cases`, `test_saved_score_records`, `test_cli*`, `test_integration_e2e`, `test_page_committer`, `test_frame_stepper`, `test_bar_profile_plotter` |
 | Infrastructure | `test_video_service`, `test_ocr_service`, `test_pdf_service`, `test_file_service`, `test_download_service`, `test_diagnostics_service` |
-| API / GUI | `test_gui_api*`, `test_gui_workflow`, `test_gui_sanitize`, `test_gui_extraction_edge_cases`, `test_gui_callbacks_resilience`, `test_review_pages`, `test_preview_seeker` |
+| API / GUI | `test_gui_api*`, `test_gui_workflow`, `test_gui_sanitize`, `test_gui_extraction_edge_cases`, `test_gui_callbacks_resilience`, `test_review_pages`, `test_preview_seeker`, `test_gui_visual` |
 
 ## Tools and scripts
 
@@ -122,6 +122,7 @@ run_pipeline.py ──────► GuiApi (scripted)
 
 Max 10 lines, newest first. Older lines get dropped (git has the history).
 
+- 2026-10-23 — Extract tab scrolls its content with a pinned action bar; visual suite refreshed and adopted — `app_gui.py`, `tests/`, `.gitignore`
 - 2026-10-23 — extraction/cancel end in Review Pages, PDF now waits for the user and is gated on included pages — `app_gui.py`, `src/api/gui_api.py`, tests
 - 2026-10-23 — automatic/manual dedup mode: GUI defaults to manual, CLI and API default to automatic — `app_gui.py`, `src/api/gui_api.py`, `src/application/`, tests
 - 2026-10-23 — Review Pages can exclude pages by right-click/E into a Trash dialog with restore; excluded pages hide, persist and stay off the PDF — `app_gui.py`, `tests/test_review_pages.py`
@@ -132,7 +133,6 @@ Max 10 lines, newest first. Older lines get dropped (git has the history).
 - 2026-10-23 — single map: retired the old module map, merged the commit rule into `AGENTS.md` — `AGENTS.md`, `opencode.json`, `.opencode/instructions/`
 - 2026-10-23 — extraction keeps every candidate as a page (duplicates/blank/guard-rail/end-credit flagged); saved-score reload matches photos by attempt — `src/application/extraction_components.py`, `src/application/use_cases.py`, `src/application/saved_score.py`, `src/domain/models.py`
 - 2026-10-23 — page candidates recorded separately, PDF prints KEEP pages only — `src/domain/models.py`, `src/application/extraction_components.py`, `src/infrastructure/pdf_service.py`
-- 2026-10-23 — map created from a one-time repo scan; plugin guard added.
 
 ## Maintenance
 

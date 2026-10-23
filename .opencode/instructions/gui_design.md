@@ -74,6 +74,11 @@ Review is part of the extraction flow: completing extraction, or cancelling
 after pages were captured, opens the review window. Closing it saves the page
 flags and returns to the main screen without generating a PDF.
 
+The Extract tab scrolls its form when the window is too short. The action bar
+stays pinned at the bottom, so Review Pages and Generate PDF remain reachable
+without scrolling. The crop preview keeps its 240px minimum height and never
+overlaps the controls beneath it.
+
 ### Cancel Button
 - Enabled only during extraction
 - Calls `GuiApi.cancel_extraction()`
