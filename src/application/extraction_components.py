@@ -15,7 +15,7 @@ from typing import Callable, List, Optional, TextIO
 from skimage.metrics import structural_similarity as ssim
 
 from src.domain.value_objects.config import ScoreConfig
-from src.domain.models import Frame, Page, PageManifestEntry, PageStatus
+from src.domain.models import Frame, Page, PageCandidate, PageManifestEntry, PageStatus
 from src.domain.interfaces import IVideoService, IOcrService, IFileService
 from src.domain.deduplication import Deduplicator
 from src.domain.bar_profile_calibrator import BarProfileCalibrator
@@ -307,16 +307,40 @@ class PageCommitter:
         self._pending: List[_PendingCommit] = []
         self._calibration_logged = False
         self._pages: List[Page] = []
+        self._candidates: List[PageCandidate] = []
 
     @property
     def pages(self) -> List[Page]:
-        """The committed pages, in commit order.
+        """The committed keep pages, in commit order.
 
-        One page object per committed page - duplicates never get one.  Each
-        page holds the same image as the frame that was appended to the page
-        list, so the pixels are stored once.
+        Each page holds the same image as the frame that was appended to the
+        page list, so the pixels are stored once.  Duplicate candidates live
+        in ``candidates`` instead.
         """
         return list(self._pages)
+
+    @property
+    def candidates(self) -> List[PageCandidate]:
+        """Every analyzed page transition, in commit order.
+
+        Includes both kept pages and duplicate candidates.  This is the record
+        of what extraction saw; it does not drive the PDF.
+        """
+        return list(self._candidates)
+
+    def _record_candidate(
+        self,
+        boundary_row: Optional[int],
+        attempt_number: int,
+        file: Optional[str],
+        status: PageStatus,
+    ) -> None:
+        self._candidates.append(PageCandidate(
+            attempt_number=attempt_number,
+            boundary_row=boundary_row,
+            file=file,
+            status=status,
+        ))
 
     def _ensure_original_dims(self):
         if self._original_dim_probed or not self._original_video_path:
@@ -605,17 +629,32 @@ class PageCommitter:
             frame = Frame(analysis.merged.copy(), frame_a.timestamp, frame_a.index)
             unique_pages.append(frame)
             saved_path = self.file_service.save_page_image(output_dir, page_num, analysis.merged)
-            self._pages.append(Page(
+            page = Page(
                 image=frame.image,
                 boundary_row=analysis.boundary_row,
                 attempt_number=page_num,
                 file=str(saved_path) if saved_path else None,
                 status=PageStatus.KEEP,
-            ))
+            )
+            self._pages.append(page)
+            self._record_candidate(
+                analysis.boundary_row, page_num, page.file, PageStatus.KEEP,
+            )
             log(f"  New page detected at {frame_a.timestamp:.2f}s (Index: {frame_a.index})")
             if on_page_detected:
                 on_page_detected(len(unique_pages) - 1, analysis.merged)
         else:
+            saved_path = None
+            try:
+                saved_path = self.file_service.save_candidate_image(
+                    output_dir, page_num, analysis.merged,
+                )
+            except Exception as exc:
+                log(f"  [WARN] Could not save duplicate candidate: {exc}")
+            self._record_candidate(
+                analysis.boundary_row, page_num,
+                str(saved_path) if saved_path else None, PageStatus.DUPLICATE,
+            )
             log(f"  Duplicate page skipped at {frame_a.timestamp:.2f}s")
 
         if plotter is not None and analysis.col_sums is not None:

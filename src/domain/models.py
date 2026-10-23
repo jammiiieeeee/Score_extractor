@@ -20,8 +20,8 @@ class PageStatus(str, Enum):
     EXCLUDED  - the page was taken out by hand (page selection).
     DUPLICATE - the page repeats an earlier page.
 
-    Only KEEP is produced by extraction today; the other two exist so page
-    selection can be added later without another migration.
+    Extraction produces KEEP pages and DUPLICATE candidates; EXCLUDED is
+    reserved for page selection.
     """
 
     KEEP = "keep"
@@ -84,6 +84,20 @@ class Page:
             file=file,
             status=status,
         )
+
+
+@dataclass(eq=False)
+class PageCandidate:
+    """One page transition seen by extraction.
+
+    Carries the facts needed to review a candidate without keeping its image
+    in memory.  The image, when written, is on disk at ``file``.
+    """
+
+    attempt_number: int
+    boundary_row: Optional[int] = None
+    file: Optional[str] = None
+    status: PageStatus = PageStatus.KEEP
 
 
 @dataclass(frozen=True)

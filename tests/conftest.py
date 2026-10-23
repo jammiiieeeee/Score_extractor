@@ -289,11 +289,21 @@ class StubFileService(IFileService):
         (score_dir / "debug").mkdir(parents=True, exist_ok=True)
         return score_dir
 
-    def save_page_image(self, score_dir: Path, page_num: int, image: np.ndarray) -> Path:
-        path = score_dir / "photos" / f"page_{page_num:03d}_merged.png"
+    @staticmethod
+    def _write_image(path: Path, image: np.ndarray) -> None:
         success, buf = cv2.imencode(".png", image)
         if success:
             buf.tofile(str(path))
+
+    def save_page_image(self, score_dir: Path, page_num: int, image: np.ndarray) -> Path:
+        path = score_dir / "photos" / f"page_{page_num:03d}_merged.png"
+        self._write_image(path, image)
+        return path
+
+    def save_candidate_image(self, score_dir: Path, page_num: int, image: np.ndarray) -> Path:
+        path = score_dir / "candidates" / f"page_{page_num:03d}_merged.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_image(path, image)
         return path
 
     def load_page_images(self, score_dir: Path) -> List[np.ndarray]:

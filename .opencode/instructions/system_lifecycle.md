@@ -9,6 +9,9 @@ output/<score_name>/
 │   ├── page_001_merged.png
 │   ├── page_002_merged.png
 │   └── ...
+├── candidates/               # duplicate candidates, when detected
+│   ├── page_001_merged.png
+│   └── ...
 ├── debug/                    # only when debug=True
 │   ├── extraction.log
 │   ├── page_001_A.png

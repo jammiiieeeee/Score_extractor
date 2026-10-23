@@ -25,7 +25,7 @@ Unlike generic video-to-frame extraction or manual screenshotting, this tool has
 - Windows desktop application (PyQt6 GUI + CLI fallback)
 - Video sources: local files (.mp4, .avi, .mkv, .mov) or YouTube downloads (via yt-dlp)
 - ffmpeg required for frame seeking (detected via WinGet fallback on Windows)
-- Output: `output/<score_name>/photos/` (page images), `output/<score_name>/<score_name>.pdf` (compiled PDF)
+- Output: `output/<score_name>/photos/` (kept page images), `output/<score_name>/candidates/` (duplicate candidates), `output/<score_name>/<score_name>.pdf` (compiled PDF)
 - Debug artifacts in `debug/` subdirectory when debug mode is enabled
 - OCR is optional (PaddleOCR) and disabled by default
 

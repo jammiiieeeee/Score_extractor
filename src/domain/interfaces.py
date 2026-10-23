@@ -75,6 +75,11 @@ class IFileService(ABC):
         pass
 
     @abstractmethod
+    def save_candidate_image(self, score_dir: Path, page_num: int, image: np.ndarray) -> Path:
+        """Saves page_NNN_merged.png to candidates/. Returns the file path."""
+        pass
+
+    @abstractmethod
     def load_page_images(self, score_dir: Path) -> List[np.ndarray]:
         """Loads all page_*_merged.png from photos/, ordered by page number."""
         pass

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field as dc_field
 from typing import Callable, List, Optional, TextIO
 
 from src.domain.value_objects.config import ScoreConfig
-from src.domain.models import Frame, Page, PageManifestEntry
+from src.domain.models import Frame, Page, PageCandidate, PageManifestEntry
 from src.domain.interfaces import IVideoService, IOcrService, IPdfService, IFileService
 from src.domain.deduplication import Deduplicator
 from src.domain.bar_profile_calibrator import BarProfileCalibrator
@@ -33,6 +33,7 @@ class ExtractResult:
     pages: List[Frame]
     manifest: List[PageManifestEntry]
     page_records: List[Page] = dc_field(default_factory=list)
+    candidates: List[PageCandidate] = dc_field(default_factory=list)
 
 
 class ExtractScoreUseCase:
@@ -167,6 +168,7 @@ class ExtractScoreUseCase:
             pages=unique_pages,
             manifest=manifest_entries,
             page_records=self._collect_page_records(committer, unique_pages),
+            candidates=committer.candidates,
         )
 
     @staticmethod

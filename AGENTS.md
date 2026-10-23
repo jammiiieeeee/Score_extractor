@@ -34,7 +34,7 @@
 - Services implement interfaces from `src/domain/interfaces.py`
 - Extraction logic lives in `src/application/use_cases.py` and `extraction_components.py`
 - GUI orchestrator: `src/api/gui_api.py` — thin layer delegating to sub-modules
-- Output structure: `output/<score_name>/photos/` for page images, `debug/` for artifacts
+- Output structure: `output/<score_name>/photos/` for kept page images, `candidates/` for duplicate candidates, `debug/` for artifacts
 - Windows-only: paths use backslashes, ffmpeg detected via WinGet fallback
 
 ## Commit Attribution

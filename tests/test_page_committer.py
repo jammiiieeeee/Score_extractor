@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.application.extraction_components import PageCommitter
 from src.domain.value_objects.config import ScoreConfig
-from src.domain.models import Frame, PageStatus
+from src.domain.models import Frame, PageCandidate, PageStatus
 from src.domain.boundary_detector import BoundaryDetector
 from src.domain.deduplication import Deduplicator
 from src.domain.bar_profile_calibrator import BarProfileCalibrator
@@ -274,6 +274,87 @@ class TestPageCommitterPageRecords:
 
         assert len(pages) == 1
         assert len(committer.pages) == 1
+
+    def test_candidate_records_every_attempt_including_duplicate(self, tmp_path):
+        cfg = ScoreConfig(bar_min_diff_threshold=100.0)
+        committer, _ = self._make_committer(config=cfg, work_dir=tmp_path)
+        out_dir = self._ensure_dirs(tmp_path)
+        identical = make_solid_image(800, 600, (128, 128, 128))
+        pages = []
+
+        committer.commit(
+            Frame(identical.copy(), 1.0, 30),
+            Frame(identical.copy(), 2.0, 60),
+            pages, out_dir, 1, False, lambda msg: None, None, is_first=True,
+        )
+        committer.commit(
+            Frame(identical.copy(), 4.0, 120),
+            Frame(identical.copy(), 5.0, 150),
+            pages, out_dir, 2, False, lambda msg: None, None, is_first=False,
+        )
+
+        assert len(pages) == 1
+        assert len(committer.pages) == 1
+        candidates = committer.candidates
+        assert all(isinstance(c, PageCandidate) for c in candidates)
+        assert [p.status for p in candidates] == [PageStatus.KEEP, PageStatus.DUPLICATE]
+        assert [p.attempt_number for p in candidates] == [1, 2]
+        assert all(p.file and Path(p.file).exists() for p in candidates)
+        assert "photos" in Path(candidates[0].file).parts
+        assert "candidates" in Path(candidates[1].file).parts
+        assert len(list((out_dir / "photos").glob("page_*_merged.png"))) == 1
+        assert len(list((out_dir / "candidates").glob("page_*_merged.png"))) == 1
+
+    def test_duplicate_candidate_save_failure_does_not_abort_extraction(self, tmp_path):
+        cfg = ScoreConfig(bar_min_diff_threshold=100.0)
+        committer, file_service = self._make_committer(config=cfg, work_dir=tmp_path)
+        out_dir = self._ensure_dirs(tmp_path)
+        identical = make_solid_image(800, 600, (128, 128, 128))
+        pages = []
+
+        committer.commit(
+            Frame(identical.copy(), 1.0, 30),
+            Frame(identical.copy(), 2.0, 60),
+            pages, out_dir, 1, False, lambda msg: None, None, is_first=True,
+        )
+        file_service.save_candidate_image = MagicMock(side_effect=OSError("disk full"))
+        committer.commit(
+            Frame(identical.copy(), 4.0, 120),
+            Frame(identical.copy(), 5.0, 150),
+            pages, out_dir, 2, False, lambda msg: None, None, is_first=False,
+        )
+
+        assert len(pages) == 1
+        assert [p.status for p in committer.candidates] == [PageStatus.KEEP, PageStatus.DUPLICATE]
+        assert committer.candidates[1].file is None
+
+    def test_duplicate_candidate_keeps_its_crop_row(self, tmp_path):
+        detector = BoundaryDetector(min_contrast=20.0)
+        committer, _ = self._make_committer(
+            config=ScoreConfig(bar_min_diff_threshold=100.0),
+            work_dir=tmp_path,
+            boundary_detector=detector,
+        )
+        out_dir = self._ensure_dirs(tmp_path)
+        frame = self._split_frame()
+        pages = []
+
+        committer.commit(
+            Frame(frame.copy(), 1.0, 30),
+            Frame(frame.copy(), 2.0, 60),
+            pages, out_dir, 1, False, lambda msg: None, None, is_first=True,
+        )
+        committer.commit(
+            Frame(frame.copy(), 4.0, 120),
+            Frame(frame.copy(), 5.0, 150),
+            pages, out_dir, 2, False, lambda msg: None, None, is_first=False,
+        )
+
+        assert len(pages) == 1
+        assert committer.candidates[0].status is PageStatus.KEEP
+        assert committer.candidates[1].status is PageStatus.DUPLICATE
+        assert committer.candidates[0].boundary_row is not None
+        assert committer.candidates[1].boundary_row == committer.candidates[0].boundary_row
 
     def test_page_without_detected_boundary_row_records_none(self, tmp_path):
         committer, _ = self._make_committer(work_dir=tmp_path)

@@ -178,6 +178,20 @@ class TestExtractScoreUseCasePageRecords:
         assert len(result.pages) >= 1
         assert len(result.page_records) == len(result.pages)
 
+    def test_candidates_are_available_without_changing_kept_pages(self, tmp_path):
+        result = self._run(tmp_path)
+        assert len(result.candidates) == len(result.manifest)
+        assert len(result.page_records) == len(result.pages)
+        keep_candidates = [c for c in result.candidates if c.status is PageStatus.KEEP]
+        assert len(result.page_records) <= len(keep_candidates)
+        keep_attempts = {c.attempt_number for c in keep_candidates}
+        assert all(r.attempt_number in keep_attempts for r in result.page_records)
+        assert all(c.file and Path(c.file).exists() for c in result.candidates)
+        assert all(c.status in (PageStatus.KEEP, PageStatus.DUPLICATE)
+                   for c in result.candidates)
+        photos = tmp_path / "output" / "photos"
+        assert len(list(photos.glob("page_*_merged.png"))) == len(result.page_records)
+
     def test_record_carries_the_page_image_without_copying_it(self, tmp_path):
         result = self._run(tmp_path)
         for record, frame in zip(result.page_records, result.pages):

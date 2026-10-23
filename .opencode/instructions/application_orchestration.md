@@ -37,6 +37,8 @@ Returns `ExtractResult`:
 - `manifest: List[PageManifestEntry]` — one entry per attempt
 - `page_records: List[Page]` — one page object per committed page, carrying
   its image, boundary row, attempt number, file and status
+- `candidates: List[PageCandidate]` — one record per analyzed page transition,
+  including duplicates, carrying attempt number, boundary row, file and status
 
 ### `FrameStepper` (`src/application/extraction_components.py`)
 
@@ -124,7 +126,7 @@ main.py / gui_api.py
        │    ├─ Deduplicator.is_duplicate(existing, merged)
        │    └─ file_service.save_page_image()
        ├─ FrameStepper.tail_scan()  →  trim end-credits
-       └─ return ExtractResult(pages, manifest, page_records)
+       └─ return ExtractResult(pages, manifest, page_records, candidates)
 ```
 
 ## Data Flow: Reading a Saved Score
