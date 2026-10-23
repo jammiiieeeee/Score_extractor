@@ -38,6 +38,7 @@
 - Receives **pages** (`Page` objects) — a page carries its own image and the
   boundary row measured for it, so an image and its crop cannot drift apart
 - Crops every page with the shared crop rule (`src/domain/page_crop.py`)
+- Prints only pages whose status is KEEP; DUPLICATE and EXCLUDED pages are skipped
 - Layout: one strip per page, scaled to the usable A4 width (595 − 2×36 = 523 pt)
 - A new PDF page starts when the next strip would not fit above the bottom margin
 - Title drawn at the top of the first page (CJK font, fallback to Helvetica)

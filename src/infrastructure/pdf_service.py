@@ -39,6 +39,8 @@ class PdfService(IPdfService):
         y_offset -= 40
 
         for page in pages:
+            if not page.is_printed():
+                continue
             # The page images are always full merged frames (single-crop
             # model): extraction never crops, it only records the boundary row
             # measured for the page.  The crop itself is decided by the shared

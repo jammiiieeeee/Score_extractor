@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from src.infrastructure.pdf_service import PdfService
-from src.domain.models import Page
+from src.domain.models import Page, PageStatus
 from src.domain.value_objects.config import ScoreConfig
 from tests.conftest import make_solid_image, make_image_with_text
 
@@ -26,9 +26,9 @@ def config():
     return ScoreConfig()
 
 
-def _page(img, boundary_row=None):
+def _page(img, boundary_row=None, status=PageStatus.KEEP):
     """A page holding the image, with the boundary row measured for it."""
-    return Page(image=img, boundary_row=boundary_row)
+    return Page(image=img, boundary_row=boundary_row, status=status)
 
 
 class TestCreatePdf:
@@ -93,6 +93,25 @@ def _capture_drawn_heights(pdf_svc, pages, out, config):
     with patch("reportlab.pdfgen.canvas.Canvas.drawImage", fake_draw_image):
         pdf_svc.create_pdf(pages, out, config, title_hint="T")
     return drawn
+
+
+class TestPdfPageStatus:
+    """Only KEEP pages are printed."""
+
+    def test_prints_only_keep_pages(self, pdf_svc, config, tmp_path):
+        pages = [
+            _page(make_solid_image(800, 600)),
+            _page(make_solid_image(800, 600), status=PageStatus.DUPLICATE),
+            _page(make_solid_image(800, 600), status=PageStatus.EXCLUDED),
+            _page(make_solid_image(800, 600)),
+        ]
+        heights = _capture_drawn_heights(pdf_svc, pages, tmp_path / "status.pdf", config)
+        assert len(heights) == 2
+
+    def test_default_status_is_treated_as_keep(self, pdf_svc, config, tmp_path):
+        pages = [Page(image=make_solid_image(800, 600))]
+        heights = _capture_drawn_heights(pdf_svc, pages, tmp_path / "no_status.pdf", config)
+        assert len(heights) == 1
 
 
 class TestPdfCropByMode:

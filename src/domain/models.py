@@ -60,6 +60,13 @@ class Page:
             "status": self.status.value,
         }
 
+    def is_printed(self) -> bool:
+        """Whether this page belongs in the generated PDF.
+
+        Only KEEP pages print.  A page with no explicit status defaults to KEEP.
+        """
+        return self.status is PageStatus.KEEP
+
     @classmethod
     def from_record(cls, record: dict, image: np.ndarray,
                     file: Optional[str] = None) -> "Page":

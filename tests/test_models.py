@@ -97,3 +97,9 @@ class TestPage:
         page.status = PageStatus.EXCLUDED
         assert page.status is PageStatus.EXCLUDED
 
+    def test_only_keep_pages_are_printed(self):
+        img = np.zeros((10, 10, 3), dtype=np.uint8)
+        assert Page(image=img).is_printed()
+        assert not Page(image=img, status=PageStatus.DUPLICATE).is_printed()
+        assert not Page(image=img, status=PageStatus.EXCLUDED).is_printed()
+
