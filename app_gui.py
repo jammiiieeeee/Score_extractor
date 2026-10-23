@@ -1143,6 +1143,7 @@ class PdfReviewView(QWidget):
     """Scrolling stack of A4 sheets, packed exactly like the final PDF."""
 
     page_clicked = pyqtSignal(int, bool)
+    page_right_clicked = pyqtSignal(int)
     GUTTER_PT = 30
     GAP_PT = 16
 
@@ -1157,14 +1158,14 @@ class PdfReviewView(QWidget):
         self.setMouseTracking(True)
 
     @staticmethod
-    def _layout_sheets(pages: list[tuple[QPixmap, int]], title: str):
+    def _layout_sheets(pages: list[tuple[int, QPixmap, int]], title: str):
         """Pack pages onto A4 sheets the way PdfService does."""
         usable_w = A4_WIDTH_PT - 2 * PDF_MARGIN_PT
         sheets: list[dict] = []
         current = {"title": title, "items": []}
         cursor = PDF_MARGIN_PT + (PDF_TITLE_GAP_PT if title else 0)
 
-        for index, (pixmap, attempt) in enumerate(pages):
+        for index, pixmap, attempt in pages:
             draw_w = usable_w
             draw_h = draw_w * pixmap.height() / pixmap.width()
             if cursor + draw_h > A4_HEIGHT_PT - PDF_MARGIN_PT:
@@ -1178,7 +1179,7 @@ class PdfReviewView(QWidget):
         sheets.append(current)
         return sheets
 
-    def set_content(self, pages: list[tuple[QPixmap, int]], title: str):
+    def set_content(self, pages: list[tuple[int, QPixmap, int]], title: str):
         for child in list(self.children()):
             if isinstance(child, QWidget):
                 child.setParent(None)
@@ -1186,6 +1187,7 @@ class PdfReviewView(QWidget):
         self._sheets = []
         self._labels = []
         self._label_items = []
+        self._hover_index = None
 
         for sheet_index, layout in enumerate(self._layout_sheets(pages, title)):
             sheet = ReviewSheet(layout["title"], self)
@@ -1230,12 +1232,14 @@ class PdfReviewView(QWidget):
         super().mouseMoveEvent(event)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            index = self.page_at(event.position().toPoint())
-            if index is not None:
-                shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
-                self.page_clicked.emit(index, shift)
-                return
+        index = self.page_at(event.position().toPoint())
+        if event.button() == Qt.MouseButton.LeftButton and index is not None:
+            shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            self.page_clicked.emit(index, shift)
+            return
+        if event.button() == Qt.MouseButton.RightButton and index is not None:
+            self.page_right_clicked.emit(index)
+            return
         super().mousePressEvent(event)
 
     def apply_scale(self, px_per_pt: float):
@@ -1286,6 +1290,68 @@ class ReviewScrollArea(QScrollArea):
         super().wheelEvent(event)
 
 
+class TrashDialog(QDialog):
+    """Excluded pages, shown as thumbnails in fixed capture order."""
+
+    def __init__(self, api: GuiApi, excluded: set[int], on_restore, parent=None):
+        super().__init__(parent)
+        self._api = api
+        self._excluded = excluded
+        self._on_restore = on_restore
+
+        self.setWindowTitle(f"Trash \u2014 {len(excluded)} excluded")
+        self.resize(720, 480)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+
+        self._list = QListWidget()
+        self._list.setViewMode(QListWidget.ViewMode.IconMode)
+        self._list.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self._list.setIconSize(QSize(150, 110))
+        self._list.setSpacing(SPACE_SM)
+        self._list.itemDoubleClicked.connect(lambda _item: self._restore())
+        root.addWidget(self._list, 1)
+
+        footer = QHBoxLayout()
+        footer.addStretch()
+        restore_btn = QPushButton("Restore")
+        restore_btn.clicked.connect(self._restore)
+        footer.addWidget(restore_btn)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        footer.addWidget(close_btn)
+        root.addLayout(footer)
+
+        self._fill()
+
+    def _fill(self):
+        self._list.clear()
+        for index in sorted(self._excluded):
+            png = self._api.get_page_thumbnail(index) or self._api.get_page_cropped(index)
+            pixmap = QPixmap()
+            if not png or not pixmap.loadFromData(png):
+                pixmap = QPixmap(150, 110)
+                pixmap.fill(Qt.GlobalColor.white)
+            attempt = index + 1
+            try:
+                attempt = self._api.get_page(index).attempt_number or attempt
+            except Exception:
+                pass
+            item = QListWidgetItem(QIcon(pixmap), str(attempt))
+            item.setData(Qt.ItemDataRole.UserRole, index)
+            self._list.addItem(item)
+
+    def _restore(self):
+        item = self._list.currentItem()
+        if item is None:
+            return
+        index = item.data(Qt.ItemDataRole.UserRole)
+        self._on_restore(index)
+        self._excluded.discard(index)
+        self.setWindowTitle(f"Trash \u2014 {len(self._excluded)} excluded")
+        self._fill()
+
+
 class ReviewPagesDialog(QDialog):
     """Review captured pages as they will print.
 
@@ -1302,6 +1368,8 @@ class ReviewPagesDialog(QDialog):
         self._fit_width = True
         self._px_per_pt = SCREEN_DPI / POINTS_PER_INCH
         self._duplicates = self._duplicate_pages()
+        self._excluded = self._excluded_pages()
+        self._pixmaps: dict[int, QPixmap] = {}
         self._anchor: Optional[int] = None
 
         self.setWindowTitle(f"Review Pages \u2014 {self._count} captured")
@@ -1328,6 +1396,13 @@ class ReviewPagesDialog(QDialog):
         self._dup_label = QLabel("")
         _set_widget_class(self._dup_label, "muted")
         header.addWidget(self._dup_label)
+        self._trash_label = QLabel("")
+        _set_widget_class(self._trash_label, "muted")
+        header.addWidget(self._trash_label)
+        self._trash_btn = QPushButton("Trash")
+        _set_widget_class(self._trash_btn, "secondary")
+        self._trash_btn.clicked.connect(self._on_trash)
+        header.addWidget(self._trash_btn)
         self._zoom_label = QLabel("")
         _set_widget_class(self._zoom_label, "muted")
         header.addWidget(self._zoom_label)
@@ -1339,13 +1414,15 @@ class ReviewPagesDialog(QDialog):
 
         hint = QLabel(
             "These pages print as shown. Click a page or press D to mark it "
-            "as a duplicate; shift+click marks a range. "
-            "Ctrl + wheel to zoom, or 100% for actual size.")
+            "as a duplicate; shift+click marks a range. Right-click a page or "
+            "press E to move it to the Trash. Ctrl + wheel to zoom, or 100% "
+            "for actual size.")
         _set_widget_class(hint, "muted")
         root.addWidget(hint)
 
         self._view = PdfReviewView()
         self._view.page_clicked.connect(self._on_page_clicked)
+        self._view.page_right_clicked.connect(self._on_exclude)
         self._scroll = ReviewScrollArea()
         self._scroll.setWidget(self._view)
         self._scroll.setWidgetResizable(False)
@@ -1364,7 +1441,7 @@ class ReviewPagesDialog(QDialog):
 
         self._build_pages()
         self._update_zoom_label()
-        self._update_duplicate_count()
+        self._update_counts()
         self._scroll.setFocus()
 
     def _duplicate_pages(self) -> set[int]:
@@ -1376,6 +1453,16 @@ class ReviewPagesDialog(QDialog):
             except Exception:
                 pass
         return duplicates
+
+    def _excluded_pages(self) -> set[int]:
+        excluded = set()
+        for index in range(self._count):
+            try:
+                if self._api.get_page(index).status is PageStatus.EXCLUDED:
+                    excluded.add(index)
+            except Exception:
+                pass
+        return excluded
 
     def _on_page_clicked(self, index: int, shift: bool):
         if shift and self._anchor is not None:
@@ -1395,33 +1482,60 @@ class ReviewPagesDialog(QDialog):
 
     def _mark_range(self, start: int, end: int):
         for index in range(min(start, end), max(start, end) + 1):
+            if index in self._excluded:
+                continue
             self._api.set_page_status(index, PageStatus.DUPLICATE)
             self._duplicates.add(index)
         self._refresh_duplicates()
 
+    def _on_exclude(self, index: int):
+        self._api.set_page_status(index, PageStatus.EXCLUDED)
+        self._duplicates.discard(index)
+        self._excluded.add(index)
+        self._anchor = None
+        self._build_pages()
+        self._refresh_duplicates()
+
+    def _restore_page(self, index: int):
+        self._api.set_page_status(index, PageStatus.KEEP)
+        self._excluded.discard(index)
+        self._build_pages()
+        self._refresh_duplicates()
+
+    def _on_trash(self):
+        TrashDialog(self._api, self._excluded, self._restore_page, self).exec()
+        self._build_pages()
+        self._refresh_duplicates()
+
     def _refresh_duplicates(self):
         self._view.set_duplicates(self._duplicates)
-        self._update_duplicate_count()
+        self._update_counts()
 
-    def _update_duplicate_count(self):
+    def _update_counts(self):
         count = len(self._duplicates)
         self._dup_label.setText(
             f"{count} duplicate" if count == 1 else f"{count} duplicates")
+        self._trash_label.setText(f"{len(self._excluded)} in trash")
 
     def _build_pages(self):
-        pages: list[tuple[QPixmap, int]] = []
+        pages: list[tuple[int, QPixmap, int]] = []
         for index in range(self._count):
-            png = self._api.get_page_cropped(index)
-            pixmap = QPixmap()
-            if not png or not pixmap.loadFromData(png):
-                pixmap = QPixmap(800, 500)
-                pixmap.fill(Qt.GlobalColor.white)
+            if index in self._excluded:
+                continue
+            pixmap = self._pixmaps.get(index)
+            if pixmap is None:
+                png = self._api.get_page_cropped(index)
+                pixmap = QPixmap()
+                if not png or not pixmap.loadFromData(png):
+                    pixmap = QPixmap(800, 500)
+                    pixmap.fill(Qt.GlobalColor.white)
+                self._pixmaps[index] = pixmap
             attempt = index + 1
             try:
                 attempt = self._api.get_page(index).attempt_number or attempt
             except Exception:
                 pass
-            pages.append((pixmap, attempt))
+            pages.append((index, pixmap, attempt))
         self._view.set_content(pages, self._title)
 
     def _available_width(self) -> int:
@@ -1483,6 +1597,13 @@ class ReviewPagesDialog(QDialog):
             if index is not None:
                 self._toggle_duplicate(index)
                 self._anchor = index
+                event.accept()
+                return
+            super().keyPressEvent(event)
+        elif event.key() == Qt.Key.Key_E:
+            index = self._view.hovered_page()
+            if index is not None:
+                self._on_exclude(index)
                 event.accept()
                 return
             super().keyPressEvent(event)

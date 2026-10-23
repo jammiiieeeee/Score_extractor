@@ -20,8 +20,8 @@ from PyQt6.QtWidgets import QApplication
 pytestmark = pytest.mark.unit
 
 from src.api.gui_api import GuiApi
-from src.domain.models import PageStatus
-from app_gui import MainWindow, ReviewPagesDialog
+from src.domain.models import Page, PageStatus
+from app_gui import MainWindow, ReviewPagesDialog, TrashDialog
 
 
 @pytest.fixture(scope="module")
@@ -275,6 +275,140 @@ class TestDuplicateMarking:
         assert reloaded.get_page(1).status is PageStatus.DUPLICATE
         assert reloaded.get_page(0).status is PageStatus.KEEP
         reloaded.cleanup()
+
+
+class TestExclusion:
+    """Excluding a page hides it, trashes it, and can be undone."""
+
+    @staticmethod
+    def _api(count: int) -> GuiApi:
+        api = GuiApi()
+        api.set_pages([
+            Page(image=np.full((60, 160, 3), 200, dtype=np.uint8),
+                 attempt_number=i + 1)
+            for i in range(count)
+        ])
+        return api
+
+    @staticmethod
+    def _visible(dlg) -> set[int]:
+        return {index for sheet in dlg._view._sheets for index, *_ in sheet._items}
+
+    def test_exclude_replaces_the_duplicate_flag_and_leaves_the_scroll(self, qapp):
+        api = self._api(4)
+        dlg = ReviewPagesDialog(api, "Sonata")
+        dlg._on_page_clicked(1, False)
+
+        dlg._on_exclude(1)
+
+        assert api.get_page(1).status is PageStatus.EXCLUDED
+        assert dlg._dup_label.text() == "0 duplicates"
+        assert dlg._trash_label.text() == "1 in trash"
+        assert self._visible(dlg) == {0, 2, 3}
+        dlg.close()
+        api.cleanup()
+
+    def test_e_excludes_the_page_under_the_mouse(self, qapp):
+        api = self._api(3)
+        dlg = ReviewPagesDialog(api, "Sonata")
+        dlg._view._hover_index = 2
+
+        QTest.keyClick(dlg, Qt.Key.Key_E)
+
+        assert api.get_page(2).status is PageStatus.EXCLUDED
+        assert self._visible(dlg) == {0, 1}
+        dlg.close()
+        api.cleanup()
+
+    def test_right_click_excludes_the_page(self, qapp):
+        api = self._api(3)
+        dlg = ReviewPagesDialog(api, "Sonata")
+        dlg.show()
+        qapp.processEvents()
+        sheet = dlg._view._sheets[0]
+        index, _pixmap, x, y, _w, _h = sheet._items[0]
+        point = sheet.pos() + QPoint(
+            round((x + 1) * sheet._scale), round((y + 1) * sheet._scale))
+
+        QTest.mouseClick(dlg._view, Qt.MouseButton.RightButton, pos=point)
+
+        assert api.get_page(index).status is PageStatus.EXCLUDED
+        dlg.close()
+        api.cleanup()
+
+    def test_trash_lists_excluded_pages_and_restores_them(self, qapp):
+        api = self._api(4)
+        dlg = ReviewPagesDialog(api, "Sonata")
+        dlg._on_exclude(1)
+        dlg._on_exclude(3)
+        trash = TrashDialog(api, dlg._excluded, dlg._restore_page)
+
+        assert trash._list.count() == 2
+        assert [trash._list.item(i).text() for i in range(2)] == [
+            str(api.get_page(1).attempt_number),
+            str(api.get_page(3).attempt_number),
+        ]
+
+        trash._list.setCurrentRow(0)
+        trash._restore()
+
+        assert api.get_page(1).status is PageStatus.KEEP
+        assert self._visible(dlg) == {0, 1, 2}
+        assert trash._list.count() == 1
+        assert dlg._trash_label.text() == "1 in trash"
+        trash.close()
+        dlg.close()
+        api.cleanup()
+
+    def test_exclusion_persists_and_keeps_the_page_file(self, qapp, tmp_path):
+        photos = tmp_path / "photos"
+        photos.mkdir(parents=True)
+        paths = []
+        for name in ["page_001_merged.png", "page_002_merged.png"]:
+            path = photos / name
+            cv2.imwrite(str(path), np.full((40, 40, 3), 90, dtype=np.uint8))
+            paths.append(path)
+        api = GuiApi()
+        api.load_saved_score(str(tmp_path))
+        dlg = ReviewPagesDialog(api, "Sonata")
+
+        dlg._on_exclude(1)
+        dlg.close()
+        api.cleanup()
+
+        assert paths[1].exists()
+        reloaded = GuiApi()
+        reloaded.load_saved_score(str(tmp_path))
+        assert reloaded.get_page(1).status is PageStatus.EXCLUDED
+        assert reloaded.get_page(0).status is PageStatus.KEEP
+        reloaded.cleanup()
+
+    def test_d_after_exclude_does_not_revive_the_hidden_page(self, qapp):
+        api = self._api(3)
+        dlg = ReviewPagesDialog(api, "Sonata")
+        dlg._view._hover_index = 1
+
+        dlg._on_exclude(1)
+        QTest.keyClick(dlg, Qt.Key.Key_D)
+
+        assert api.get_page(1).status is PageStatus.EXCLUDED
+        assert dlg._trash_label.text() == "1 in trash"
+        dlg.close()
+        api.cleanup()
+
+    def test_a_duplicate_range_skips_excluded_pages(self, qapp):
+        api = self._api(4)
+        dlg = ReviewPagesDialog(api, "Sonata")
+        dlg._on_exclude(2)
+
+        dlg._on_page_clicked(1, False)
+        dlg._on_page_clicked(3, True)
+
+        assert {i for i in range(4) if api.get_page(i).status is PageStatus.DUPLICATE} == {
+            1, 3}
+        assert api.get_page(2).status is PageStatus.EXCLUDED
+        dlg.close()
+        api.cleanup()
 
 
 class TestPageRemovals:

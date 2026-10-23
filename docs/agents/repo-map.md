@@ -122,6 +122,7 @@ run_pipeline.py ──────► GuiApi (scripted)
 
 Max 10 lines, newest first. Older lines get dropped (git has the history).
 
+- 2026-10-23 — Review Pages can exclude pages by right-click/E into a Trash dialog with restore; excluded pages hide, persist and stay off the PDF — `app_gui.py`, `tests/test_review_pages.py`
 - 2026-10-23 — Review Pages can mark duplicates by click/D/shift+click, dims them and shows the count; PDF skips them — `app_gui.py`, `tests/test_review_pages.py`
 - 2026-10-23 — Review Pages is a PDF-like A4 viewer: title, capture labels, fit-width/Ctrl+wheel/100% zoom — `app_gui.py`, `src/api/gui_api.py`, `src/domain/models.py`, tests
 - 2026-10-23 — removed the unused page-reorder API left from the deleted Gallery tab — `src/api/gui_api.py`, `src/domain/page_store.py`, tests
