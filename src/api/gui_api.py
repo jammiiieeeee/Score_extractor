@@ -21,7 +21,9 @@ from src.infrastructure.file_service import FileService
 from src.infrastructure.download_service import DownloadService
 from src.infrastructure.diagnostics_service import generate_html_report
 from src.application.use_cases import ExtractScoreUseCase, ExtractRequest
-from src.application.saved_score import read_metadata, read_saved_score
+from src.application.saved_score import (
+    read_metadata, read_saved_score, save_page_status, write_metadata,
+)
 
 
 @dataclass
@@ -369,7 +371,7 @@ class GuiApi:
             raise RuntimeError("output_folder and score_name are required")
 
         self._cancel_flag = False
-        self._pages.clear()
+        self.clear_pages()
         self._state = ExtractionState("extracting", 0, 0.0, 0.0)
         self._extraction_start_time = time.time()
 
@@ -586,9 +588,12 @@ class GuiApi:
         )
 
     def set_page_status(self, index: int, status: PageStatus) -> None:
-        """Change one page's status.  The change survives until read back."""
+        """Change one page's status and save it in the score's metadata."""
         page = self._pages.get(index)
         page.status = PageStatus(status) if not isinstance(status, PageStatus) else status
+        if self._loaded_score_path:
+            self._loaded_score_metadata = save_page_status(
+                self._loaded_score_path, self._pages.all_pages(), index)
 
     def set_pages(self, pages: list) -> None:
         """Replace every page at once.
@@ -618,10 +623,6 @@ class GuiApi:
         self._pages.remove(index)
         if page.file:
             self._file_service.delete_page_image(page.file)
-
-    def reorder_pages(self, new_order: list[int]) -> None:
-        """Move the pages around.  Each page keeps its own crop and file."""
-        self._pages.reorder(new_order)
 
     def clear_pages(self) -> None:
         self._pages.clear()
@@ -696,6 +697,8 @@ class GuiApi:
             meta["boundary_offset_px"] = self._config.boundary_offset_px
             meta["pages"] = [p.to_record() for p in self._pages.all_pages()]
             self.save_metadata(str(score_dir), meta)
+            self._loaded_score_path = str(score_dir)
+            self._loaded_score_metadata = meta
 
             diag_dir = score_dir / "diagnostics"
             if diag_dir.exists():
@@ -787,12 +790,7 @@ class GuiApi:
 
     @staticmethod
     def save_metadata(score_dir: str, data: dict) -> None:
-        meta_path = Path(score_dir) / "metadata.json"
-        try:
-            with open(str(meta_path), 'w') as f:
-                json.dump(data, f, indent=2)
-        except Exception:
-            pass
+        write_metadata(score_dir, data)
 
     def has_video(self) -> bool:
         return self._video_service is not None and self._video_info is not None

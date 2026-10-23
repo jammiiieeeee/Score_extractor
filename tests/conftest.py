@@ -309,9 +309,13 @@ class StubFileService(IFileService):
     def load_page_images(self, score_dir: Path) -> List[np.ndarray]:
         return [image for _, image in self.load_page_images_with_paths(score_dir)]
 
-    def load_page_images_with_paths(self, score_dir: Path) -> List[Tuple[Path, np.ndarray]]:
+    def load_page_images_with_paths(self, score_dir: Path,
+                                    include_candidates: bool = False) -> List[Tuple[Path, np.ndarray]]:
+        folders = [score_dir / "photos"]
+        if include_candidates:
+            folders.append(score_dir / "candidates")
         files = sorted(
-            (score_dir / "photos").glob("page_*_merged.png"),
+            (f for folder in folders for f in folder.glob("page_*_merged.png")),
             key=lambda f: int(f.stem.split("_")[1]),
         )
         pages = []

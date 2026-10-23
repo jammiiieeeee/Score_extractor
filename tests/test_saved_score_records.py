@@ -206,3 +206,102 @@ class TestTheSamePdfAfterReopening:
         assert config.default_crop_ratio == 0.4
         assert config.boundary_mode == "manual"
         assert config.boundary_offset_px == 7
+
+
+class TestStatusChangesAreSaved:
+    """Changing a page's status writes it into the saved score at once."""
+
+    def _load(self, api, tmp_path):
+        paths = _write_pages(tmp_path)
+        api.save_metadata(str(tmp_path), {"pages": [
+            {"attempt": 1, "boundary_row": 11, "status": "keep"},
+            {"attempt": 2, "boundary_row": 22, "status": "keep"},
+            {"attempt": 3, "boundary_row": 33, "status": "keep"},
+        ]})
+        api.load_saved_score(str(tmp_path))
+        return paths
+
+    def test_the_duplicate_flag_is_written_immediately(self, api, tmp_path):
+        self._load(api, tmp_path)
+
+        api.set_page_status(1, PageStatus.DUPLICATE)
+
+        assert _read_metadata(tmp_path)["pages"][1]["status"] == "duplicate"
+
+    def test_the_excluded_flag_is_written_immediately(self, api, tmp_path):
+        self._load(api, tmp_path)
+
+        api.set_page_status(1, PageStatus.EXCLUDED)
+
+        assert _read_metadata(tmp_path)["pages"][1]["status"] == "excluded"
+
+    def test_both_flags_survive_reopening(self, api, tmp_path):
+        self._load(api, tmp_path)
+        api.set_page_status(0, PageStatus.DUPLICATE)
+        api.set_page_status(1, PageStatus.EXCLUDED)
+
+        api.clear_pages()
+        api.load_saved_score(str(tmp_path))
+
+        assert [api.get_page(i).status for i in range(3)] == [
+            PageStatus.DUPLICATE, PageStatus.EXCLUDED, PageStatus.KEEP,
+        ]
+
+    def test_a_status_change_keeps_every_file(self, api, tmp_path):
+        paths = self._load(api, tmp_path)
+
+        api.set_page_status(0, PageStatus.DUPLICATE)
+        api.set_page_status(1, PageStatus.EXCLUDED)
+
+        assert all(path.exists() for path in paths)
+
+    def test_an_old_score_loads_as_keep(self, api, tmp_path):
+        _write_pages(tmp_path)
+        api.save_metadata(str(tmp_path), {"page_boundary_rows": [11, 22, 33]})
+
+        api.load_saved_score(str(tmp_path))
+
+        assert all(api.get_page(i).status is PageStatus.KEEP for i in range(3))
+
+    def test_an_old_score_can_save_a_status(self, api, tmp_path):
+        _write_pages(tmp_path)
+        api.save_metadata(str(tmp_path), {"page_boundary_rows": [11, 22, 33]})
+        api.load_saved_score(str(tmp_path))
+
+        api.set_page_status(1, PageStatus.DUPLICATE)
+
+        api.clear_pages()
+        api.load_saved_score(str(tmp_path))
+        assert api.get_page(1).status is PageStatus.DUPLICATE
+
+    def test_a_status_change_after_generating_is_written(self, api, tmp_path):
+        api.set_pages([
+            Page(_image(10), attempt_number=1),
+            Page(_image(20), attempt_number=2),
+        ])
+        api.generate_pdf(str(tmp_path / "score.pdf"))
+        _wait_for_pdf(api)
+
+        api.set_page_status(1, PageStatus.EXCLUDED)
+
+        assert _read_metadata(tmp_path)["pages"][1]["status"] == "excluded"
+
+    def test_a_candidate_reopens_with_its_status_and_file(self, api, tmp_path):
+        (tmp_path / "photos").mkdir(parents=True)
+        (tmp_path / "candidates").mkdir(parents=True)
+        for number, shade in ((1, 10), (3, 30)):
+            cv2.imwrite(str(tmp_path / "photos" / f"page_{number:03d}_merged.png"),
+                        _image(shade))
+        candidate = tmp_path / "candidates" / "page_002_merged.png"
+        cv2.imwrite(str(candidate), _image(20))
+        api.save_metadata(str(tmp_path), {"pages": [
+            {"attempt": 1, "boundary_row": 11, "status": "keep"},
+            {"attempt": 2, "boundary_row": 22, "status": "duplicate"},
+            {"attempt": 3, "boundary_row": 33, "status": "keep"},
+        ]})
+
+        api.load_saved_score(str(tmp_path))
+
+        assert api.get_page_count() == 3
+        assert api.get_page(1).status is PageStatus.DUPLICATE
+        assert api.get_page(1).file == str(candidate)

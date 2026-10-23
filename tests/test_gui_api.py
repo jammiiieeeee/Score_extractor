@@ -401,28 +401,6 @@ class TestRemovePage:
             api.remove_page(-1)
 
 
-class TestReorderPages:
-    def test_reorders_correctly(self, api, synthetic_images):
-        for img in synthetic_images:
-            api.add_page(img)
-
-        api.reorder_pages([4, 3, 2, 1, 0])
-        assert api.get_page_count() == 5
-        assert api.get_page(0).image is synthetic_images[4]
-
-    def test_rejects_wrong_length(self, api, synthetic_images):
-        for img in synthetic_images:
-            api.add_page(img)
-        with pytest.raises(ValueError, match="must match"):
-            api.reorder_pages([0, 1])
-
-    def test_rejects_invalid_permutation(self, api, synthetic_images):
-        for img in synthetic_images:
-            api.add_page(img)
-        with pytest.raises(ValueError, match="permutation"):
-            api.reorder_pages([0, 0, 0, 0, 0])
-
-
 class TestClearPages:
     def test_clears_all(self, api, synthetic_images):
         for img in synthetic_images:
@@ -504,8 +482,6 @@ class TestAddPage:
         api.add_page(synthetic_images[0], boundary_row=10)
         api.add_page(synthetic_images[1], boundary_row=20)
         assert [api.get_page(i).boundary_row for i in range(2)] == [10, 20]
-        api.reorder_pages([1, 0])
-        assert [api.get_page(i).boundary_row for i in range(2)] == [20, 10]
 
 
 class TestSetPages:

@@ -1,13 +1,11 @@
-"""Removing, reordering and reloading a page keeps it whole.
+"""Removing and reloading a page keeps it whole.
 
-A page carries its own image, crop and file.  These tests pin the three ways
-that used to fall apart: removing a page deleted the wrong file, reordering
-left a page's crop behind, and reopening a score forgot the per-page crop and
-fell back to a flat ratio.
+A page carries its own image, crop and file.  These tests pin the two ways
+that used to fall apart: removing a page deleted the wrong file, and
+reopening a score forgot the per-page crop and fell back to a flat ratio.
 """
 
 import time
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -63,17 +61,6 @@ class TestRemovingAPage:
         assert paths[0].exists()
         assert paths[2].exists()
 
-    def test_the_right_file_goes_after_a_reorder(self, api, tmp_path):
-        paths = _write_pages(tmp_path)
-        api.load_saved_score(str(tmp_path))
-        api.reorder_pages([2, 0, 1])
-
-        api.remove_page(0)
-
-        assert not paths[2].exists()
-        assert paths[0].exists()
-        assert paths[1].exists()
-
     def test_the_other_pages_keep_their_crop(self, api, tmp_path):
         _write_pages(tmp_path)
         api.save_metadata(str(tmp_path), {"page_boundary_rows": [11, 22, 33]})
@@ -90,29 +77,6 @@ class TestRemovingAPage:
         api.remove_page(0)
 
         assert api.get_page_count() == 2
-
-
-class TestReordering:
-    """Reordering keeps each page's crop with its page."""
-
-    def test_the_crop_travels_with_the_page(self, api, synthetic_images):
-        api.add_page(synthetic_images[0], boundary_row=10)
-        api.add_page(synthetic_images[1], boundary_row=20)
-        api.add_page(synthetic_images[2], boundary_row=30)
-
-        api.reorder_pages([2, 0, 1])
-
-        assert [api.get_page(i).boundary_row for i in range(3)] == [30, 10, 20]
-
-    def test_the_file_travels_with_the_page(self, api, tmp_path):
-        paths = _write_pages(tmp_path)
-        api.load_saved_score(str(tmp_path))
-
-        api.reorder_pages([1, 2, 0])
-
-        assert [Path(api.get_page(i).file).name for i in range(3)] == [
-            paths[1].name, paths[2].name, paths[0].name,
-        ]
 
 
 class TestReopeningAScore:
@@ -168,21 +132,6 @@ class TestNoParallelLists:
         store.get_full_png(0)
 
         assert list(store._png_cache) == [page]
-
-    def test_the_png_cache_follows_a_reorder(self):
-        store = PageStore()
-        first = Page(np.full((40, 40, 3), 10, dtype=np.uint8))
-        second = Page(np.full((40, 40, 3), 20, dtype=np.uint8))
-        store.add(first)
-        store.add(second)
-        store.get_full_png(0)
-        store.get_full_png(1)
-
-        store.reorder([1, 0])
-
-        assert store.get_full_png(0) is store._png_cache[second]
-        assert store.get_full_png(1) is store._png_cache[first]
-
 
 class TestPageAccess:
     """The public page interface refuses an index that is not there."""

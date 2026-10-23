@@ -42,9 +42,10 @@ output/<score_name>/
 
 `pages` holds one record per page - the attempt that produced it, the
 boundary row measured on it, and its status - and is always written, even
-when no page had a row.  A score saved before this format carries
-`page_boundary_rows` (a bare list of rows) instead; it is still read, as a
-fallback.
+when no page had a row.  Changing a page's status rewrites this file
+straight away; no photo or candidate file is removed by a status change.  A
+score saved before this format carries `page_boundary_rows` (a bare list of
+rows) instead; it is still read, as a fallback, with every page kept.
 
 ## Temporary Files
 

@@ -88,10 +88,14 @@ Optional matplotlib diagnostic plots. Lazy-imports matplotlib. Only instantiated
 The one place that reads a score directory. It returns the pages of a saved
 score and puts the config on the crop the score was saved with:
 - `read_saved_score(score_dir, file_service, config)` → `SavedScore(pages, metadata)`
-- `read_metadata(score_dir)` → the metadata of a score (empty when there is none)
+- `read_metadata(score_dir)` / `write_metadata(score_dir, data)` → read or
+  write `metadata.json`
+- `save_page_status(score_dir, pages, index)` → write one page's status into
+  its record straight away, so a reload gives the same flags back
 - `pages_from_records(saved, metadata)` → the pages, from the page records.
-  Photos are matched to records by the page number in the file name, because
-  the records include duplicate candidates that have no photo.
+  Files are matched to records by the page number in the file name, because
+  the records include duplicate candidates whose files sit in `candidates/`.
+  When the records exist, `candidates/` is read alongside `photos/`.
 - `apply_saved_crop(config, metadata)` → the crop the score was saved with
 
 Both the GUI (`GuiApi.load_saved_score`, `GuiApi.regenerate_from_dir`) and the

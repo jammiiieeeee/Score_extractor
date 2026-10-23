@@ -85,7 +85,8 @@ class IFileService(ABC):
         pass
 
     @abstractmethod
-    def load_page_images_with_paths(self, score_dir: Path) -> List[Tuple[Path, np.ndarray]]:
+    def load_page_images_with_paths(self, score_dir: Path,
+                                    include_candidates: bool = False) -> List[Tuple[Path, np.ndarray]]:
         """Loads the saved pages, each with the file it came from."""
         pass
 

@@ -286,7 +286,7 @@ class TestExtractionWorkflow:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestPageManagementWorkflow:
-    """User story: reviewing, reordering, and removing pages before PDF export."""
+    """User story: reviewing and removing pages before PDF export."""
 
     @pytest.fixture(autouse=True)
     def setup_pages(self, api, synthetic_images):
@@ -314,20 +314,6 @@ class TestPageManagementWorkflow:
     def test_remove_page_raises_on_invalid(self, api):
         with pytest.raises(IndexError):
             api.remove_page(999)
-
-    def test_reorder_pages(self, api, synthetic_images):
-        api.reorder_pages([4, 3, 2, 1, 0])
-        assert api.get_page_count() == 5
-        # Verify the first page is now the one that was last
-        assert api.get_page(0).image is synthetic_images[4]
-
-    def test_reorder_pages_invalid_length(self, api):
-        with pytest.raises(ValueError, match="must match"):
-            api.reorder_pages([0, 1])
-
-    def test_reorder_pages_invalid_permutation(self, api):
-        with pytest.raises(ValueError, match="permutation"):
-            api.reorder_pages([0, 0, 0, 0, 0])
 
     def test_clear_pages(self, api):
         api.clear_pages()
@@ -691,12 +677,7 @@ class TestEndToEndWorkflow:
             api.remove_page(page_count_before - 1)
             assert api.get_page_count() == page_count_before - 1
 
-        # 6. Reorder pages
-        n = api.get_page_count()
-        if n >= 3:
-            api.reorder_pages(list(range(n - 1, -1, -1)))  # reverse
-
-        # 7. Generate PDF
+        # 6. Generate PDF
         output_path = str(work_dir / "final_score.pdf")
         api.generate_pdf(output_path)
 
@@ -704,7 +685,7 @@ class TestEndToEndWorkflow:
         assert os.path.exists(output_path)
         assert os.path.getsize(output_path) > 1000
 
-        # 8. Metadata should have been saved to the output's parent directory
+        # 7. Metadata should have been saved to the output's parent directory
         meta_path = work_dir / "metadata.json"
         assert meta_path.exists(), f"metadata.json should exist at {meta_path}"
 

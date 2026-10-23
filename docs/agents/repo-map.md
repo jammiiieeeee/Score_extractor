@@ -46,12 +46,12 @@ interfaces (OpenCV, PaddleOCR, ReportLab, yt-dlp). Nothing points inward.
 | `src/api/gui_api.py` | `GuiApi` public surface + `VideoInfo` / `ExtractionState` / `ScoreInfo`; thin, delegates to application layer | `gui_api.md` |
 | `src/application/use_cases.py` | `ExtractScoreUseCase`, `GeneratePdfUseCase`, `ExtractRequest`, `ExtractResult` — the pipeline | `application_orchestration.md` |
 | `src/application/extraction_components.py` | `FrameStepper`, `PageCommitter`, `BarProfilePlotter`, `_PendingCommit`, `_Analysis` | `application_orchestration.md` |
-| `src/application/saved_score.py` | `SavedScore`, `read_metadata`, `apply_saved_crop`, `pages_from_records`, `read_saved_score` — reopening a past run | `application_orchestration.md` |
+| `src/application/saved_score.py` | `SavedScore`, `read_metadata`, `write_metadata`, `save_page_status`, `apply_saved_crop`, `pages_from_records`, `read_saved_score` — reopening a past run | `application_orchestration.md` |
 | `src/domain/models.py` | `Page`, `PageCandidate`, `PageState`, `PageStatus`, `Frame`, `MergeResult`, `PageManifestEntry` | `domain_logic.md` |
 | `src/domain/interfaces.py` | `IVideoService`, `IFileService`, `IOcrService`, `IPdfService`, `_NoopOcrService` | `domain_logic.md` |
 | `src/domain/value_objects/config.py` | `ScoreConfig` — every tunable | `domain_logic.md` |
 | `src/domain/deduplication.py` | `Deduplicator` — OCR-first duplicate-page rejection | `domain_logic.md` |
-| `src/domain/page_store.py` | `PageStore` — in-memory page collection + PNG/thumbnail cache (add, remove, reorder) | `domain_logic.md` |
+| `src/domain/page_store.py` | `PageStore` — in-memory page collection + PNG/thumbnail cache (add, remove) | `domain_logic.md` |
 | `src/domain/page_crop.py` | `crop_end_row`, `crop_page` — the one crop rule | `domain_logic.md` |
 | `src/domain/boundary_detector.py` | `BoundaryDetector` — score/visualizer boundary | `infrastructure_video.md` |
 | `src/domain/bar_profile_calibrator.py` | `BarProfileCalibrator` — adaptive min-diff threshold | `infrastructure_video.md` |
@@ -122,6 +122,8 @@ run_pipeline.py ──────► GuiApi (scripted)
 
 Max 10 lines, newest first. Older lines get dropped (git has the history).
 
+- 2026-10-23 — removed the unused page-reorder API left from the deleted Gallery tab — `src/api/gui_api.py`, `src/domain/page_store.py`, tests
+- 2026-10-23 — page status changes persist to metadata; reload restores photos and duplicate candidates — `src/api/gui_api.py`, `src/application/saved_score.py`, `src/infrastructure/file_service.py`, `tests/test_saved_score_records.py`
 - 2026-10-23 — single map: retired the old module map, merged the commit rule into `AGENTS.md` — `AGENTS.md`, `opencode.json`, `.opencode/instructions/`
 - 2026-10-23 — extraction keeps every candidate as a page (duplicates/blank/guard-rail/end-credit flagged); saved-score reload matches photos by attempt — `src/application/extraction_components.py`, `src/application/use_cases.py`, `src/application/saved_score.py`, `src/domain/models.py`
 - 2026-10-23 — page candidates recorded separately, PDF prints KEEP pages only — `src/domain/models.py`, `src/application/extraction_components.py`, `src/infrastructure/pdf_service.py`

@@ -110,13 +110,6 @@ class PageStore:
         self._pages.pop(index)
         self._png_cache.pop(page, None)
 
-    def reorder(self, new_order: List[int]) -> None:
-        if len(new_order) != len(self._pages):
-            raise ValueError(f"New order length {len(new_order)} must match page count {len(self._pages)}")
-        if set(new_order) != set(range(len(self._pages))):
-            raise ValueError("New order must be a permutation of 0..N-1")
-        self._pages = [self._pages[i] for i in new_order]
-
     def clear(self) -> None:
         """Clear all pages (full reset)."""
         self._pages.clear()

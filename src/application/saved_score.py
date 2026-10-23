@@ -82,6 +82,23 @@ def _record_for_file(records: list, path, index: int) -> dict:
     return records[index] if index < len(records) else {}
 
 
+def _record_for_page(records: list, page: Page, index: int) -> dict:
+    """The record that belongs to a page, or a new record for it."""
+    attempt = page.attempt_number or _attempt_from_path(page.file)
+    if attempt is not None:
+        for record in records:
+            try:
+                if int(record.get("attempt")) == attempt:
+                    return record
+            except (AttributeError, TypeError, ValueError):
+                continue
+    if index < len(records):
+        return records[index]
+    record = page.to_record()
+    records.append(record)
+    return record
+
+
 def pages_from_records(saved: list, metadata: dict) -> List[Page]:
     """The pages of a saved score, with the crop they were saved with.
 
@@ -98,9 +115,37 @@ def pages_from_records(saved: list, metadata: dict) -> List[Page]:
     rows = metadata.get("page_boundary_rows") or []
     return [
         Page(image=img, boundary_row=rows[i] if i < len(rows) else None,
+             attempt_number=_attempt_from_path(file_path) or 0,
              file=str(file_path))
         for i, (file_path, img) in enumerate(saved)
     ]
+
+
+def write_metadata(score_dir, data: dict) -> None:
+    """Write a score's metadata, ignoring a directory that cannot be written."""
+    try:
+        with open(str(Path(score_dir) / "metadata.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
+def save_page_status(score_dir, pages: List[Page], index: int) -> dict:
+    """Write one page's status into the score's metadata.
+
+    Returns the metadata that was written.  A score saved before records
+    existed gets one record per current page.
+    """
+    metadata = read_metadata(score_dir)
+    records = metadata.get("pages")
+    if records is None:
+        metadata["pages"] = [p.to_record() for p in pages]
+    else:
+        page = pages[index]
+        _record_for_page(records, page, index)["status"] = page.status.value
+    write_metadata(score_dir, metadata)
+    return metadata
 
 
 def read_saved_score(score_dir, file_service: IFileService,
@@ -112,6 +157,7 @@ def read_saved_score(score_dir, file_service: IFileService,
     """
     score_dir = Path(score_dir)
     metadata = read_metadata(score_dir)
-    saved = file_service.load_page_images_with_paths(score_dir)
+    saved = file_service.load_page_images_with_paths(
+        score_dir, include_candidates=metadata.get("pages") is not None)
     apply_saved_crop(config, metadata)
     return SavedScore(pages=pages_from_records(saved, metadata), metadata=metadata)

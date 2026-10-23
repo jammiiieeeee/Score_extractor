@@ -9,7 +9,7 @@ The piano score video-to-PDF extractor is currently accessible only through a CL
 A PyQt6 desktop GUI that exposes all CLI capabilities through an intuitive four-tab window:
 
 1. **Extract tab** — paste a YouTube URL or browse for a local video file; preview the video with a draggable crop line and a dual-handle seek bar for start/end time; one-click "Extract & Generate PDF"
-2. **Gallery tab** — review extracted pages as thumbnails, reorder, delete unwanted pages, double-click for full preview
+2. **Gallery tab** — review extracted pages as thumbnails, delete unwanted pages, double-click for full preview
 3. **Export tab** — browse sandboxes from previous extractions, regenerate PDFs with different settings, or rename sandboxes to the original video title
 4. **Config tab** — full settings panel (basic + advanced) in a scrollable layout, debug mode checkbox
 
@@ -43,25 +43,23 @@ The GUI runs as a single-file Windows executable (~150 MB) built with PyInstalle
 
 13. As a user, I want to see extracted pages as thumbnails in a gallery, so that I can review and select which pages to include in the PDF.
 
-14. As a user, I want to reorder gallery pages by moving them up or down, so that the final PDF page order matches my preference.
+14. As a user, I want to delete unwanted pages from the gallery, so that low-quality or duplicate pages are excluded from the PDF.
 
-15. As a user, I want to delete unwanted pages from the gallery, so that low-quality or duplicate pages are excluded from the PDF.
+15. As a user, I want to double-click a thumbnail to see a full-resolution preview in a dialog, so that I can inspect page quality closely.
 
-16. As a user, I want to double-click a thumbnail to see a full-resolution preview in a dialog, so that I can inspect page quality closely.
+16. As a user, I want extraction to automatically generate the PDF when complete, so that I get a finished PDF with one click.
 
-17. As a user, I want extraction to automatically generate the PDF when complete, so that I get a finished PDF with one click.
+17. As a user, I want the output PDF path to default to the same name/location as the video, so that I don't have to type a filename.
 
-18. As a user, I want the output PDF path to default to the same name/location as the video, so that I don't have to type a filename.
+18. As a user, I want to customise the PDF title separately from the filename, auto-populated from the video title, so that the PDF metadata is meaningful.
 
-19. As a user, I want to customise the PDF title separately from the filename, auto-populated from the video title, so that the PDF metadata is meaningful.
+19. As a user, I want to regenerate a PDF from a sandbox with different settings, so that I can tweak output without re-extracting.
 
-20. As a user, I want to regenerate a PDF from a sandbox with different settings, so that I can tweak output without re-extracting.
+20. As a user, I want to manage sandboxes (list, load, delete) from the Export tab, so that I can revisit past extractions.
 
-21. As a user, I want to manage sandboxes (list, load, delete) from the Export tab, so that I can revisit past extractions.
+21. As a user, I want to configure all 20 extraction parameters in one place, so that I can fine-tune SSIM thresholds, OCR confidence, and other settings.
 
-22. As a user, I want to configure all 20 extraction parameters in one place, so that I can fine-tune SSIM thresholds, OCR confidence, and other settings.
-
-23. As a user, I want the config tab wrapped in a scroll area so that all fields are accessible on any screen size.
+22. As a user, I want the config tab wrapped in a scroll area so that all fields are accessible on any screen size.
 
 24. As a user, I want a debug mode that opens the temp sandbox folder on completion, so that I can inspect intermediate files when troubleshooting.
 

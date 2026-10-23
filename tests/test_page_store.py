@@ -152,20 +152,6 @@ class TestPageStoreIndex:
 class TestPageStorePngCache:
     """The PNG cache belongs to the page, so it cannot fall out of step."""
 
-    def test_the_cache_travels_with_a_reorder(self):
-        store = PageStore()
-        first = _page(10)
-        second = _page(20)
-        store.add(first)
-        store.add(second)
-        first_png = store.get_full_png(0)
-        second_png = store.get_full_png(1)
-
-        store.reorder([1, 0])
-
-        assert store.get_full_png(0) == second_png
-        assert store.get_full_png(1) == first_png
-
     def test_a_removed_page_takes_its_cache_with_it(self):
         store = PageStore()
         page = _page(10)
@@ -175,36 +161,6 @@ class TestPageStorePngCache:
         store.remove(0)
 
         assert page not in store._png_cache
-
-
-@pytest.mark.unit
-class TestPageStoreReorder:
-    def test_valid_permutation(self):
-        store = PageStore()
-        a = _page(10, boundary_row=0)
-        b = _page(20, boundary_row=1)
-        c = _page(30, boundary_row=2)
-        store.add(a)
-        store.add(b)
-        store.add(c)
-        store.reorder([2, 0, 1])
-        assert store[0] is c
-        assert store[1] is a
-        assert store[2] is b
-
-    def test_wrong_length_raises(self):
-        store = PageStore()
-        store.add(_page(10))
-        store.add(_page(20))
-        with pytest.raises(ValueError):
-            store.reorder([0])
-
-    def test_non_permutation_raises(self):
-        store = PageStore()
-        store.add(_page(10))
-        store.add(_page(20))
-        with pytest.raises(ValueError):
-            store.reorder([0, 0])
 
 
 @pytest.mark.unit

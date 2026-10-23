@@ -331,12 +331,7 @@ class TestGuiApiFullWorkflow:
             api.remove_page(page_count_before - 1)
             assert api.get_page_count() == page_count_before - 1
 
-        # 7. Reorder pages
-        n = api.get_page_count()
-        if n >= 2:
-            api.reorder_pages(list(range(n - 1, -1, -1)))
-
-        # 8. Generate PDF
+        # 7. Generate PDF
         pdf_path = str(tmp_path / "full_workflow.pdf")
         api.generate_pdf(pdf_path)
         assert wait_for(lambda: not api.is_busy(), timeout=30.0)
