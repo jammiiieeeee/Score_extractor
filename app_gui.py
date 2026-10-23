@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
 
 from gui_bridge import ExtractionSignals
 from src.api.gui_api import GuiApi, ScoreInfo
+from src.domain.models import PageStatus
 from src.infrastructure.file_service import FileService
 
 
@@ -1075,16 +1076,29 @@ class ReviewSheet(QWidget):
     def __init__(self, title: str = "", parent=None):
         super().__init__(parent)
         self._title = title
-        self._items: list[tuple[QPixmap, float, float, float, float]] = []
+        self._items: list[tuple[int, QPixmap, float, float, float, float]] = []
+        self._duplicates: set[int] = set()
         self._scale = 1.0
 
-    def set_items(self, items: list[tuple[QPixmap, float, float, float, float]]):
+    def set_items(self, items: list[tuple[int, QPixmap, float, float, float, float]]):
         self._items = items
+        self.update()
+
+    def set_duplicates(self, duplicates: set[int]):
+        self._duplicates = duplicates
         self.update()
 
     def set_scale(self, px_per_pt: float):
         self._scale = px_per_pt
         self.update()
+
+    def page_at(self, point) -> Optional[int]:
+        """The page under a point in this sheet, or None."""
+        for index, _pixmap, x, y, width, height in self._items:
+            if (x * self._scale <= point.x() <= (x + width) * self._scale and
+                    y * self._scale <= point.y() <= (y + height) * self._scale):
+                return index
+        return None
 
     def paintEvent(self, _event):
         from PyQt6.QtCore import QRectF
@@ -1113,18 +1127,22 @@ class ReviewSheet(QWidget):
                 self._title,
             )
 
-        for pixmap, x, y, width, height in self._items:
+        for index, pixmap, x, y, width, height in self._items:
+            if index in self._duplicates:
+                painter.setOpacity(0.3)
             painter.drawPixmap(
                 QRectF(x * scale, y * scale, width * scale, height * scale),
                 pixmap,
                 QRectF(pixmap.rect()),
             )
+            painter.setOpacity(1.0)
         painter.end()
 
 
 class PdfReviewView(QWidget):
     """Scrolling stack of A4 sheets, packed exactly like the final PDF."""
 
+    page_clicked = pyqtSignal(int, bool)
     GUTTER_PT = 30
     GAP_PT = 16
 
@@ -1134,6 +1152,9 @@ class PdfReviewView(QWidget):
         self._labels: list[QLabel] = []
         self._label_items: list[tuple[int, float, QLabel]] = []
         self._px_per_pt = SCREEN_DPI / POINTS_PER_INCH
+        self._duplicates: set[int] = set()
+        self._hover_index: Optional[int] = None
+        self.setMouseTracking(True)
 
     @staticmethod
     def _layout_sheets(pages: list[tuple[QPixmap, int]], title: str):
@@ -1169,10 +1190,12 @@ class PdfReviewView(QWidget):
         for sheet_index, layout in enumerate(self._layout_sheets(pages, title)):
             sheet = ReviewSheet(layout["title"], self)
             sheet.setObjectName("reviewSheet")
+            sheet.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
             sheet.set_items([
-                (pixmap, x, y, width, height)
-                for _index, _attempt, pixmap, x, y, width, height in layout["items"]
+                (index, pixmap, x, y, width, height)
+                for index, _attempt, pixmap, x, y, width, height in layout["items"]
             ])
+            sheet.set_duplicates(self._duplicates)
             self._sheets.append(sheet)
 
             for _index, attempt, _pixmap, _x, y, _w, _h in layout["items"]:
@@ -1184,6 +1207,36 @@ class PdfReviewView(QWidget):
                 self._label_items.append((sheet_index, y, label))
 
         self.apply_scale(self._px_per_pt)
+
+    def set_duplicates(self, duplicates: set[int]):
+        self._duplicates = set(duplicates)
+        for sheet in self._sheets:
+            sheet.set_duplicates(self._duplicates)
+
+    def page_at(self, point) -> Optional[int]:
+        """The page under a point in the view, or None."""
+        for sheet in self._sheets:
+            if sheet.geometry().contains(point):
+                index = sheet.page_at(point - sheet.pos())
+                if index is not None:
+                    return index
+        return None
+
+    def hovered_page(self) -> Optional[int]:
+        return self._hover_index
+
+    def mouseMoveEvent(self, event):
+        self._hover_index = self.page_at(event.position().toPoint())
+        super().mouseMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            index = self.page_at(event.position().toPoint())
+            if index is not None:
+                shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                self.page_clicked.emit(index, shift)
+                return
+        super().mousePressEvent(event)
 
     def apply_scale(self, px_per_pt: float):
         self._px_per_pt = px_per_pt
@@ -1248,6 +1301,8 @@ class ReviewPagesDialog(QDialog):
         self._title = title or ""
         self._fit_width = True
         self._px_per_pt = SCREEN_DPI / POINTS_PER_INCH
+        self._duplicates = self._duplicate_pages()
+        self._anchor: Optional[int] = None
 
         self.setWindowTitle(f"Review Pages \u2014 {self._count} captured")
         self.resize(1100, 800)
@@ -1270,6 +1325,9 @@ class ReviewPagesDialog(QDialog):
         count_label = QLabel(f"{self._count} pages")
         _set_widget_class(count_label, "muted")
         header.addWidget(count_label)
+        self._dup_label = QLabel("")
+        _set_widget_class(self._dup_label, "muted")
+        header.addWidget(self._dup_label)
         self._zoom_label = QLabel("")
         _set_widget_class(self._zoom_label, "muted")
         header.addWidget(self._zoom_label)
@@ -1280,12 +1338,14 @@ class ReviewPagesDialog(QDialog):
         root.addLayout(header)
 
         hint = QLabel(
-            "These pages print as shown. Ctrl + wheel to zoom, "
-            "or 100% for actual size.")
+            "These pages print as shown. Click a page or press D to mark it "
+            "as a duplicate; shift+click marks a range. "
+            "Ctrl + wheel to zoom, or 100% for actual size.")
         _set_widget_class(hint, "muted")
         root.addWidget(hint)
 
         self._view = PdfReviewView()
+        self._view.page_clicked.connect(self._on_page_clicked)
         self._scroll = ReviewScrollArea()
         self._scroll.setWidget(self._view)
         self._scroll.setWidgetResizable(False)
@@ -1304,7 +1364,49 @@ class ReviewPagesDialog(QDialog):
 
         self._build_pages()
         self._update_zoom_label()
+        self._update_duplicate_count()
         self._scroll.setFocus()
+
+    def _duplicate_pages(self) -> set[int]:
+        duplicates = set()
+        for index in range(self._count):
+            try:
+                if self._api.get_page(index).status is PageStatus.DUPLICATE:
+                    duplicates.add(index)
+            except Exception:
+                pass
+        return duplicates
+
+    def _on_page_clicked(self, index: int, shift: bool):
+        if shift and self._anchor is not None:
+            self._mark_range(self._anchor, index)
+        else:
+            self._toggle_duplicate(index)
+        self._anchor = index
+
+    def _toggle_duplicate(self, index: int):
+        if index in self._duplicates:
+            self._api.set_page_status(index, PageStatus.KEEP)
+            self._duplicates.discard(index)
+        else:
+            self._api.set_page_status(index, PageStatus.DUPLICATE)
+            self._duplicates.add(index)
+        self._refresh_duplicates()
+
+    def _mark_range(self, start: int, end: int):
+        for index in range(min(start, end), max(start, end) + 1):
+            self._api.set_page_status(index, PageStatus.DUPLICATE)
+            self._duplicates.add(index)
+        self._refresh_duplicates()
+
+    def _refresh_duplicates(self):
+        self._view.set_duplicates(self._duplicates)
+        self._update_duplicate_count()
+
+    def _update_duplicate_count(self):
+        count = len(self._duplicates)
+        self._dup_label.setText(
+            f"{count} duplicate" if count == 1 else f"{count} duplicates")
 
     def _build_pages(self):
         pages: list[tuple[QPixmap, int]] = []
@@ -1376,6 +1478,14 @@ class ReviewPagesDialog(QDialog):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
             self.reject()
+        elif event.key() == Qt.Key.Key_D:
+            index = self._view.hovered_page()
+            if index is not None:
+                self._toggle_duplicate(index)
+                self._anchor = index
+                event.accept()
+                return
+            super().keyPressEvent(event)
         elif event.key() == Qt.Key.Key_0 and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             self.set_zoom_percent(100)
         else:

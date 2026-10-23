@@ -13,11 +13,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import cv2
 import numpy as np
 import pytest
+from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
 pytestmark = pytest.mark.unit
 
 from src.api.gui_api import GuiApi
+from src.domain.models import PageStatus
 from app_gui import MainWindow, ReviewPagesDialog
 
 
@@ -191,6 +194,87 @@ class TestGeneratingPdfFlag:
         mw.extract_tab.on_completed = lambda _page_count: True
         mw._on_completed(5)
         assert mw._generating_pdf is True
+
+
+class TestDuplicateMarking:
+    """Clicking pages marks duplicates without deleting them."""
+
+    @staticmethod
+    def _api(count: int) -> GuiApi:
+        api = GuiApi()
+        for _ in range(count):
+            api.add_page(np.full((60, 160, 3), 200, dtype=np.uint8))
+        return api
+
+    def test_click_toggles_duplicate_and_updates_the_count(self, qapp):
+        api = self._api(4)
+        dlg = ReviewPagesDialog(api, "Sonata")
+
+        dlg._on_page_clicked(1, False)
+        assert api.get_page(1).status is PageStatus.DUPLICATE
+        assert dlg._dup_label.text() == "1 duplicate"
+
+        dlg._on_page_clicked(1, False)
+        assert api.get_page(1).status is PageStatus.KEEP
+        assert dlg._dup_label.text() == "0 duplicates"
+        assert api.get_page_count() == 4
+        dlg.close()
+        api.cleanup()
+
+    def test_shift_click_marks_the_range(self, qapp):
+        api = self._api(5)
+        dlg = ReviewPagesDialog(api, "Sonata")
+
+        dlg._on_page_clicked(1, False)
+        dlg._on_page_clicked(3, True)
+
+        assert {i for i in range(5) if api.get_page(i).status is PageStatus.DUPLICATE} == {
+            1, 2, 3}
+        assert dlg._dup_label.text() == "3 duplicates"
+        dlg.close()
+        api.cleanup()
+
+    def test_d_toggles_the_page_under_the_mouse(self, qapp):
+        api = self._api(3)
+        dlg = ReviewPagesDialog(api, "Sonata")
+        dlg._view._hover_index = 2
+
+        QTest.keyClick(dlg, Qt.Key.Key_D)
+
+        assert api.get_page(2).status is PageStatus.DUPLICATE
+        dlg.close()
+        api.cleanup()
+
+    def test_page_at_maps_a_point_to_its_page(self, qapp):
+        api = self._api(3)
+        dlg = ReviewPagesDialog(api, "Sonata")
+        sheet = dlg._view._sheets[0]
+        _index, _pixmap, x, y, _w, _h = sheet._items[0]
+        point = sheet.pos() + QPoint(
+            round((x + 1) * sheet._scale), round((y + 1) * sheet._scale))
+
+        assert dlg._view.page_at(point) == 0
+        dlg.close()
+        api.cleanup()
+
+    def test_the_flag_persists_in_the_saved_score(self, qapp, tmp_path):
+        photos = tmp_path / "photos"
+        photos.mkdir(parents=True)
+        for name in ["page_001_merged.png", "page_002_merged.png"]:
+            cv2.imwrite(str(photos / name), np.full((40, 40, 3), 90, dtype=np.uint8))
+        api = GuiApi()
+        api.load_saved_score(str(tmp_path))
+        dlg = ReviewPagesDialog(api, "Sonata")
+
+        dlg._on_page_clicked(1, False)
+        dlg.close()
+        api.cleanup()
+
+        reloaded = GuiApi()
+        reloaded.load_saved_score(str(tmp_path))
+        assert reloaded.get_page(1).status is PageStatus.DUPLICATE
+        assert reloaded.get_page(0).status is PageStatus.KEEP
+        reloaded.cleanup()
 
 
 class TestPageRemovals:
