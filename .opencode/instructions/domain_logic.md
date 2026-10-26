@@ -74,6 +74,20 @@ Guard rails applied to each A/B capture pair before deduplication:
 |-------|------|---------|-------------|
 | `default_crop_ratio` | float | 0.32 | Manual-mode PDF strip height (auto boundary rows override per page) |
 
+### Boundary Detection
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `boundary_mode` | str | auto | `auto` = per-page detection, `manual` = fixed crop, `off` = no crop |
+| `boundary_offset_px` | int | 0 | Extra lift above the detected boundary, in pixels |
+| `boundary_offset_ratio` | float | 0.02 | Extra lift as a fraction of frame height (visualizer safety margin) |
+| `boundary_band_ratio` | float | 0.05 | Comparison band height |
+| `boundary_min_contrast` | float | 12.0 | Min above/below brightness drop to accept a row |
+| `boundary_search_margin` | float | 0.05 | Frame fraction excluded at the very top/bottom of redetect |
+| `boundary_track_window` | float | 0.03 | ± frame fraction searched while tracking |
+| `boundary_hysteresis_px` | int | 6 | Median must move more than this before the row moves |
+| `boundary_median_window` | int | 5 | Recent candidates used for the tracking median |
+| `boundary_min_dark_mean` | float | 120.0 | Bottom region must be darker than this to trust the split |
+
 ### Bar Detection
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -170,7 +184,8 @@ kept. It reads the page itself, so an image and its crop cannot drift apart.
 - `crop_page(page, config)` → the cropped image (a view of the page image)
 - `off` → whole frame; `manual` → `default_crop_ratio`;
   `auto` → the page's measured `boundary_row` (lifted by
-  `boundary_offset_px`), falling back to `default_crop_ratio` without a row
+  `boundary_offset_px` plus `boundary_offset_ratio` × frame height),
+  falling back to `default_crop_ratio` without a row
 - The PDF uses this rule; any other consumer (a page preview) can call it
   directly
 

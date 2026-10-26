@@ -40,9 +40,21 @@ class TestCropEndRow:
         assert crop_end_row(page, cfg) == 500
 
     def test_auto_mode_uses_the_boundary_row_of_the_page(self):
-        cfg = ScoreConfig(boundary_mode="auto", default_crop_ratio=0.5)
+        cfg = ScoreConfig(boundary_mode="auto", default_crop_ratio=0.5,
+                          boundary_offset_ratio=0.0)
         page = Page(image=_img(1000), boundary_row=400)
         assert crop_end_row(page, cfg) == 400
+
+    def test_auto_mode_lifts_the_row_by_the_default_margin(self):
+        cfg = ScoreConfig(boundary_mode="auto", boundary_offset_ratio=0.02)
+        page = Page(image=_img(1000), boundary_row=400)
+        assert crop_end_row(page, cfg) == 380
+
+    def test_auto_mode_adds_the_offset_to_the_margin(self):
+        cfg = ScoreConfig(boundary_mode="auto", boundary_offset_ratio=0.02,
+                          boundary_offset_px=10)
+        page = Page(image=_img(1000), boundary_row=400)
+        assert crop_end_row(page, cfg) == 370
 
     def test_auto_mode_falls_back_to_the_ratio_without_a_row(self):
         cfg = ScoreConfig(boundary_mode="auto", default_crop_ratio=0.5)
@@ -50,7 +62,8 @@ class TestCropEndRow:
         assert crop_end_row(page, cfg) == 500
 
     def test_auto_mode_lifts_the_row_by_the_offset(self):
-        cfg = ScoreConfig(boundary_mode="auto", boundary_offset_px=50)
+        cfg = ScoreConfig(boundary_mode="auto", boundary_offset_px=50,
+                          boundary_offset_ratio=0.0)
         page = Page(image=_img(1000), boundary_row=400)
         assert crop_end_row(page, cfg) == 350
 
@@ -75,7 +88,7 @@ class TestCropPage:
         assert np.array_equal(cropped, img[0:500, :])
 
     def test_crops_each_page_at_its_own_row(self):
-        cfg = ScoreConfig(boundary_mode="auto")
+        cfg = ScoreConfig(boundary_mode="auto", boundary_offset_ratio=0.0)
         img_a, img_b = _img(1000), _img(1000)
         cropped_a = crop_page(Page(image=img_a, boundary_row=300), cfg)
         cropped_b = crop_page(Page(image=img_b, boundary_row=700), cfg)

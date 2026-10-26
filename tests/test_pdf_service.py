@@ -136,7 +136,8 @@ class TestPdfCropByMode:
         assert abs(h_pt - expected_h) < 1.0
 
     def test_auto_mode_uses_boundary_row(self, pdf_svc, tmp_path):
-        cfg = ScoreConfig(default_crop_ratio=0.5, boundary_mode="auto")
+        cfg = ScoreConfig(default_crop_ratio=0.5, boundary_mode="auto",
+                          boundary_offset_ratio=0.0)
         pages = [_page(make_solid_image(800, 1000), boundary_row=400)]
         heights = _capture_drawn_heights(pdf_svc, pages, tmp_path / "a.pdf", cfg)
         w_pt, h_pt = heights[0]
@@ -145,7 +146,7 @@ class TestPdfCropByMode:
 
     def test_auto_mode_applies_offset(self, pdf_svc, tmp_path):
         cfg = ScoreConfig(default_crop_ratio=0.5, boundary_mode="auto",
-                          boundary_offset_px=50)
+                          boundary_offset_px=50, boundary_offset_ratio=0.0)
         pages = [_page(make_solid_image(800, 1000), boundary_row=400)]
         heights = _capture_drawn_heights(pdf_svc, pages, tmp_path / "ao.pdf", cfg)
         w_pt, h_pt = heights[0]
@@ -162,7 +163,8 @@ class TestPdfCropByMode:
 
     def test_auto_offset_scales_across_pages(self, pdf_svc, tmp_path):
         """Each page is cropped at its own row, offset applied per page."""
-        cfg = ScoreConfig(boundary_mode="auto", boundary_offset_px=0)
+        cfg = ScoreConfig(boundary_mode="auto", boundary_offset_px=0,
+                          boundary_offset_ratio=0.0)
         pages = [
             _page(make_solid_image(800, 1000), boundary_row=300),
             _page(make_solid_image(800, 1000), boundary_row=600),

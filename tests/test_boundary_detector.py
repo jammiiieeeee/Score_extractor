@@ -134,6 +134,7 @@ class TestConfigIntegration:
         c = ScoreConfig()
         assert c.boundary_mode == "auto"
         assert c.boundary_offset_px == 0
+        assert 0.0 <= c.boundary_offset_ratio < 0.1
         assert 0.0 < c.boundary_band_ratio < 1.0
         assert c.boundary_track_window > 0
         assert c.boundary_hysteresis_px >= 0

@@ -202,7 +202,7 @@ class GuiApi:
             "b_overlay_width_ratio", "duplicate_top_ratio",
             "pixel_similarity_threshold", "row_similarity_threshold",
             "row_coverage_threshold", "ocr_horizontal_ratio",
-            "default_crop_ratio",
+            "default_crop_ratio", "boundary_offset_ratio",
             "bar_analysis_ratio",
             "bar_left_margin",
         }
@@ -724,6 +724,7 @@ class GuiApi:
                 meta["video_path"] = self._video_path
             meta["boundary_mode"] = self._config.boundary_mode
             meta["boundary_offset_px"] = self._config.boundary_offset_px
+            meta["boundary_offset_ratio"] = self._config.boundary_offset_ratio
             meta["pages"] = [p.to_record() for p in self._pages.all_pages()]
             self.save_metadata(str(score_dir), meta)
             self._loaded_score_path = str(score_dir)

@@ -40,6 +40,7 @@ class ScoreConfig:
     # Boundary Detection (score sheet vs MIDI visualizer)
     boundary_mode: str = "auto"                  # "auto" = per-page detection, "manual" = fixed crop, "off" = no crop
     boundary_offset_px: int = 0                  # Lift the crop line this many px above the detected boundary
+    boundary_offset_ratio: float = 0.02          # Extra lift as a fraction of frame height (safety margin over the visualizer)
     boundary_band_ratio: float = 0.05            # Height of comparison band (fraction of frame)
     boundary_min_contrast: float = 12.0          # Min brightness drop (above-below) to accept a boundary row
     boundary_search_margin: float = 0.05         # Fraction of frame excluded at very top/bottom of redetect search

@@ -158,7 +158,9 @@ def main():
     report.add("the saved score holds one record per page",
                len(rows) == count, f"{len(rows)} records for {count} pages")
     offset = int(meta.get("boundary_offset_px", 0))
-    expected = [int(r) - offset for r in rows if r is not None]
+    offset_ratio = float(meta.get("boundary_offset_ratio", 0.0))
+    lift = offset + int(round(height * offset_ratio))
+    expected = [int(r) - lift for r in rows if r is not None]
     measured = [h for _, h, _ in images]
     report.add("every strip is cut at its measured row",
                measured == expected, f"strips {measured[:3]} rows {expected[:3]}")

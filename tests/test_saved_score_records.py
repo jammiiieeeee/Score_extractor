@@ -180,7 +180,8 @@ class TestTheSamePdfAfterReopening:
             Page(image=images[0], boundary_row=150),
             Page(image=images[1], boundary_row=250),
         ])
-        api.update_config({"boundary_mode": "auto", "boundary_offset_px": 5})
+        api.update_config({"boundary_mode": "auto", "boundary_offset_px": 5,
+                           "boundary_offset_ratio": 0.03})
         api.generate_pdf(str(tmp_path / "score.pdf"))
         _wait_for_pdf(api)
         saved = _drawn_strips(api._pages.all_pages(), _config(api))
@@ -199,6 +200,7 @@ class TestTheSamePdfAfterReopening:
             "crop_ratio": 0.4,
             "boundary_mode": "manual",
             "boundary_offset_px": 7,
+            "boundary_offset_ratio": 0.05,
         })
 
         api.load_saved_score(str(tmp_path))
@@ -207,6 +209,7 @@ class TestTheSamePdfAfterReopening:
         assert config.default_crop_ratio == 0.4
         assert config.boundary_mode == "manual"
         assert config.boundary_offset_px == 7
+        assert config.boundary_offset_ratio == 0.05
 
 
 class TestStatusChangesAreSaved:
