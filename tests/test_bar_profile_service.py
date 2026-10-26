@@ -88,6 +88,45 @@ class TestDetectSpikes:
         assert len(spikes) == 1
         assert spikes[0][0] == 200
 
+    def test_close_peaks_keep_taller_peak_on_the_right(self):
+        col_sums = np.zeros(640, dtype=float)
+        col_sums[200] = 4500.0  # shorter left shoulder
+        col_sums[205] = 5000.0  # taller peak within min_dist
+        spikes = BarProfileService.detect_spikes(col_sums)
+        assert spikes == [(205, 5000.0)]
+
+    def test_close_peaks_keep_taller_peak_on_the_left(self):
+        col_sums = np.zeros(640, dtype=float)
+        col_sums[200] = 5000.0  # taller peak
+        col_sums[205] = 4500.0  # shorter right shoulder
+        spikes = BarProfileService.detect_spikes(col_sums)
+        assert spikes == [(200, 5000.0)]
+
+    def test_two_groups_each_keep_their_tallest_peak(self):
+        col_sums = np.zeros(640, dtype=float)
+        col_sums[129] = 907.0  # first group, tallest
+        col_sums[131] = 740.0  # first group, right shoulder
+        col_sums[268] = 451.0  # second group, shorter left shoulder
+        col_sums[274] = 599.0  # second group, tallest
+        spikes = BarProfileService.detect_spikes(col_sums, min_diff_threshold=500.0)
+        assert spikes == [(129, 907.0), (274, 599.0)]
+
+    def test_tall_middle_peak_does_not_swallow_its_neighbours(self):
+        col_sums = np.zeros(640, dtype=float)
+        col_sums[100] = 500.0  # shorter, 30 cols from the middle
+        col_sums[130] = 1000.0  # tallest, but the neighbours are 60 cols apart
+        col_sums[160] = 500.0
+        spikes = BarProfileService.detect_spikes(col_sums)
+        assert [col for col, _ in sorted(spikes)] == [100, 160]
+
+    def test_weak_shoulder_does_not_merge_distant_peaks(self):
+        col_sums = np.zeros(640, dtype=float)
+        col_sums[100] = 5000.0
+        col_sums[137] = 3000.0
+        col_sums[174] = 4500.0
+        spikes = BarProfileService.detect_spikes(col_sums)
+        assert spikes == [(100, 5000.0), (174, 4500.0)]
+
     def test_sorted_by_height_descending(self):
         col_sums = np.zeros(640, dtype=float)
         col_sums[100] = 3000.0
