@@ -122,6 +122,7 @@ run_pipeline.py ──────► GuiApi (scripted)
 
 Max 10 lines, newest first. Older lines get dropped (git has the history).
 
+- 2026-10-26 — auto crop lifts 2% of frame height by default so the visualizer stays out; the ratio is saved with the score — `src/domain/page_crop.py`, `config.py`, `gui_api.py`, `saved_score.py`, `tools/verify_1080p.py`, tests
 - 2026-10-23 — Extract tab scrolls its content with a pinned action bar; visual suite refreshed and adopted — `app_gui.py`, `tests/`, `.gitignore`
 - 2026-10-23 — extraction/cancel end in Review Pages, PDF now waits for the user and is gated on included pages — `app_gui.py`, `src/api/gui_api.py`, tests
 - 2026-10-23 — automatic/manual dedup mode: GUI defaults to manual, CLI and API default to automatic — `app_gui.py`, `src/api/gui_api.py`, `src/application/`, tests

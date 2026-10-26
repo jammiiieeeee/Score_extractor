@@ -54,6 +54,9 @@ def apply_saved_crop(config: ScoreConfig, metadata: dict) -> None:
     offset = metadata.get("boundary_offset_px")
     if offset is not None:
         config.boundary_offset_px = int(offset)
+    offset_ratio = metadata.get("boundary_offset_ratio")
+    if offset_ratio is not None:
+        config.boundary_offset_ratio = float(offset_ratio)
 
 
 def _attempt_from_path(path) -> Optional[int]:

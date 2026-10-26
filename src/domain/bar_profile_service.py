@@ -26,15 +26,33 @@ class BarProfileService:
             return []
         threshold = max_val * 0.3
         min_dist = max(3, int(640 * 0.06))
-        peaks = []
+        candidates = []
         for i in range(2, len(col_sums) - 2):
             if col_sums[i] > col_sums[i-1] and col_sums[i] >= col_sums[i+1] and col_sums[i] > threshold:
-                is_clean = True
-                for prev_col, _ in peaks:
-                    if abs(i - prev_col) < min_dist:
-                        is_clean = False
-                        break
-                if is_clean:
-                    peaks.append((i, float(col_sums[i])))
+                candidates.append((i, float(col_sums[i])))
+        if not candidates:
+            return []
+
+        # Keep the widest set of peaks first and the tallest set second, so a
+        # tall peak cannot swallow two neighbours that are far enough apart.
+        best = [None] * len(candidates)
+        best_end = 0
+        best_score = (0, 0.0)
+        for i, (col, value) in enumerate(candidates):
+            count, height, prev = 1, value, None
+            for j in range(i - 1, -1, -1):
+                if candidates[j][0] > col - min_dist:
+                    continue
+                prev_count, prev_height, _ = best[j]
+                if (prev_count + 1, prev_height + value) > (count, height):
+                    count, height, prev = prev_count + 1, prev_height + value, j
+            best[i] = (count, height, prev)
+            if (count, height) > best_score:
+                best_score, best_end = (count, height), i
+
+        peaks = []
+        while best_end is not None:
+            peaks.append(candidates[best_end])
+            best_end = best[best_end][2]
         peaks.sort(key=lambda p: p[1], reverse=True)
         return peaks

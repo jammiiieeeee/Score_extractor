@@ -45,6 +45,7 @@ def _write_score(score_dir: Path, rows, records: bool = True):
         "crop_ratio": 0.32,
         "boundary_mode": "auto",
         "boundary_offset_px": 0,
+        "boundary_offset_ratio": 0.0,
     }
     if records:
         metadata["pages"] = [

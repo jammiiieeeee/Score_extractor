@@ -2499,7 +2499,8 @@ class ExtractTab(QWidget):
         self.crop_offset_spin.setFixedWidth(90)
         self.crop_offset_spin.setToolTip(
             "Shift the auto-detected crop line up/down (pixels).\n"
-            "Positive keeps more of the top; negative trims lower."
+            "Positive moves the line up (trims more visualizer);\n"
+            "negative keeps more below it. A 2% safety margin is always applied."
         )
 
         crop_row.addWidget(crop_label)
