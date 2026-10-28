@@ -382,6 +382,7 @@ class TestExtractLayout:
         assert tab.project_edit.geometry().y() < tab.pdf_name_edit.geometry().y()
         assert tab.pdf_name_edit.geometry().y() < tab.crop_widget.geometry().y()
         assert not hasattr(tab, "config_btn")
+        assert not hasattr(tab, "crop_offset_spin")
 
     def test_status_sits_below_seek_bar_and_above_progress(self, window):
         tab = window.extract_tab
