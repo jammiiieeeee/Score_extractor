@@ -143,3 +143,18 @@ class TestDetectSpikes:
         spikes = BarProfileService.detect_spikes(col_sums)
         assert len(spikes) == 1
         assert spikes[0][0] == 100
+
+    def test_real_page_36_picks_tallest_pair_and_merge_cutoff(self):
+        """The real page 36 profile has tall bars at 130 and 329 with a
+        shorter left shoulder at 312. The detector must keep the tall pair,
+        and the 1920-wide merge cutoff follows from their midpoint."""
+        col_sums = np.loadtxt(
+            Path(__file__).parent / "fixtures" / "bar_profile_page_036.txt"
+        )
+        spikes = BarProfileService.detect_spikes(col_sums, min_diff_threshold=500.0)
+        assert spikes[:3] == [(130, 3709.0), (329, 3693.0), (89, 1462.0)]
+
+        top_two = sorted(spikes[:2], key=lambda p: p[0])
+        midpoint_640 = (top_two[0][0] + top_two[1][0]) // 2
+        assert midpoint_640 == 229
+        assert int(midpoint_640 * (1920 / 640)) == 687
