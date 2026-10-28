@@ -15,7 +15,7 @@ from pathlib import Path
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 import pytest
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtWidgets import QApplication, QComboBox, QLabel, QWidget
 from PyQt6.QtCore import Qt
 import numpy as np
 
@@ -325,6 +325,23 @@ class TestConfigTabLayout:
 
         assert not tab.basic_widget.isVisible(), "Basic widget should be hidden"
         assert tab.advanced_widget.isVisible(), "Advanced widget should be visible"
+
+    def test_basic_mode_has_only_common_settings(self, window):
+        """Basic holds sensitivity, blank threshold and OCR; no format profiles."""
+        tab = window.config_tab
+        tab._set_mode("basic")
+        process_events()
+
+        assert tab.basic_widget.isAncestorOf(tab.sensitivity)
+        assert tab.basic_widget.isAncestorOf(tab.blank_std)
+        assert tab.basic_widget.isAncestorOf(tab.ocr_enabled)
+
+        labels = {label.text() for label in tab.basic_widget.findChildren(QLabel)}
+        assert "Page change sensitivity:" in labels
+        assert "Blank page threshold:" in labels
+
+        assert tab.basic_widget.findChildren(QComboBox) == []
+        assert tab.advanced_widget.findChildren(QComboBox) == []
 
 
 class TestFullWorkflow:

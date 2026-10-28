@@ -1683,20 +1683,30 @@ class ConfigTab(QWidget):
         basic_form = QFormLayout(basic_group)
         basic_form.setSpacing(SPACE_MD)
 
-        self.basic_sensitivity = self._spin_float(0.0, 1.0, 0.01, 0.96)
-        self.basic_sensitivity.setToolTip("Higher values detect only clearer page turns.\nLower to 0.90 if pages are missed.")
-        basic_form.addRow(self._form_label("Detection sensitivity:"), self.basic_sensitivity)
+        self.sensitivity = self._spin_float(0.0, 1.0, 0.01, 0.96)
+        self.sensitivity.setToolTip(
+            "How similar two consecutive frames must be to count as 'unchanged'.\n"
+            "Higher values = fewer false triggers but may miss subtle page turns.\n"
+            "Safe range: 0.90–0.99. Raise toward 0.99 if the tool triggers on lighting flickers."
+        )
+        basic_form.addRow(self._form_label("Page change sensitivity:"), self.sensitivity)
 
-        self.basic_speed = QComboBox()
-        self.basic_speed.addItem("Slow turner (~5 s pause)", 5.0)
-        self.basic_speed.addItem("Medium (~3 s pause)", 3.0)
-        self.basic_speed.addItem("Fast turner (~1 s pause)", 1.0)
-        self.basic_speed.setToolTip("How quickly pages are turned in your video.\nChoose Slow for deliberate page-turns; Fast for quick flips.")
-        basic_form.addRow(self._form_label("Page-turn speed:"), self.basic_speed)
+        self.blank_std = self._spin_float(0.0, 50.0, 0.5, 3.0)
+        self.blank_std.setToolTip(
+            "Pixel variation below which a frame is considered blank\n"
+            "(white/black screen, no sheet music visible). Blank pages are skipped.\n"
+            "Safe range: 1.0–8.0. Raise above 10 if real pages are being rejected."
+        )
+        basic_form.addRow(self._form_label("Blank page threshold:"), self.blank_std)
 
-        self.basic_ocr = QCheckBox("Enable text recognition for better dedup")
-        self.basic_ocr.setToolTip("Compares the text on each page to catch duplicates.\nRequires PaddleOCR (slightly longer startup).")
-        basic_form.addRow("", self.basic_ocr)
+        self.ocr_enabled = QCheckBox("Enable text recognition for better dedup")
+        self.ocr_enabled.setChecked(False)
+        self.ocr_enabled.setToolTip(
+            "Compare page text to help catch duplicate pages that\n"
+            "look visually similar but have different content.\n"
+            "Requires PaddleOCR (slightly slower startup)."
+        )
+        basic_form.addRow("", self.ocr_enabled)
 
         basic_layout.addWidget(basic_group)
 
@@ -1710,39 +1720,12 @@ class ConfigTab(QWidget):
         adv_outer.setSpacing(SPACE_MD)
         adv_outer.setContentsMargins(0, SPACE_SM, 0, 0)
 
-        # Presets row
-        preset_row = QHBoxLayout()
-        preset_label = QLabel("Preset:")
-        _set_widget_class(preset_label, "param")
-        self._preset_combo = QComboBox()
-        self._preset_combo.addItem("Custom", None)
-        self._preset_combo.addItem("Standard", "standard")
-        self._preset_combo.addItem("Concert recording", "concert")
-        self._preset_combo.addItem("Phone video", "phone")
-        self._preset_combo.setToolTip(
-            "Standard: balanced defaults for well-lit tripod recordings.\n"
-            "Concert recording: higher sensitivity for dim lighting and slower turns.\n"
-            "Phone video: faster detection for hand-held phone footage."
-        )
-        self._preset_combo.currentIndexChanged.connect(self._on_preset_changed)
-        preset_row.addWidget(preset_label)
-        preset_row.addWidget(self._preset_combo, 1)
-        adv_outer.addLayout(preset_row)
-
-        adv_outer.addSpacing(SPACE_SM)
-
         # ── Detection group ──
         det_group = QGroupBox("Detection")
         det_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         det_form = QFormLayout(det_group)
         det_form.setSpacing(SPACE_MD)
 
-        self.sensitivity = self._spin_float(0.0, 1.0, 0.01, 0.96)
-        self.sensitivity.setToolTip(
-            "How similar two consecutive frames must be to count as 'unchanged'.\n"
-            "Higher values = fewer false triggers but may miss subtle page turns.\n"
-            "Safe range: 0.90–0.99. Raise toward 0.99 if the tool triggers on lighting flickers."
-        )
         self.min_interval = self._spin_float(0.0, 60.0, 0.5, 3.0)
         self.min_interval.setToolTip(
             "Minimum seconds between page captures, even if changes are detected.\n"
@@ -1762,18 +1745,9 @@ class ConfigTab(QWidget):
             "(typically the piano keyboard or a player UI).\n"
             "Safe range: 0.20\u20130.50."
         )
-        self.blank_std = self._spin_float(0.0, 50.0, 0.5, 3.0)
-        self.blank_std.setToolTip(
-            "Pixel variation below which a frame is considered blank\n"
-            "(white/black screen, no sheet music visible). Blank pages are skipped.\n"
-            "Safe range: 1.0\u20138.0. Raise above 10 if real pages are being rejected."
-        )
-
-        det_form.addRow(self._form_label("Page change sensitivity:"), self.sensitivity)
         det_form.addRow(self._form_label("Pause after page turn (s):"), self.min_interval)
         det_form.addRow(self._form_label("Frame check interval (s):"), self.frame_check)
         det_form.addRow(self._form_label("Content detection region:"), self.top_ratio)
-        det_form.addRow(self._form_label("Blank page threshold:"), self.blank_std)
         layout.addWidget(det_group)
 
         # ── Capture group ──
@@ -1853,14 +1827,6 @@ class ConfigTab(QWidget):
         ocr_form = QFormLayout(ocr_group)
         ocr_form.setSpacing(SPACE_MD)
 
-        self.ocr_enabled = QCheckBox("Enable OCR")
-        self.ocr_enabled.setChecked(False)
-        self.ocr_enabled.setToolTip(
-            "Compare page text to help catch duplicate pages that\n"
-            "look visually similar but have different content.\n"
-            "Requires PaddleOCR (slightly slower startup).\n"
-            "Recommended when visual-only matching misses duplicates."
-        )
         self.ocr_conf = self._spin_int(0, 100, 40)
         self.ocr_conf.setToolTip(
             "Minimum confidence (0\u2013100) a recognized word must have\n"
@@ -1874,7 +1840,6 @@ class ConfigTab(QWidget):
             "Safe range: 0.20\u20130.50. Set to 1.0 for full-width."
         )
 
-        ocr_form.addRow("", self.ocr_enabled)
         ocr_form.addRow(self._form_label("OCR confidence:"), self.ocr_conf)
         ocr_form.addRow(self._form_label("OCR scan width:"), self.ocr_horiz)
         layout.addWidget(ocr_group)
@@ -1936,9 +1901,6 @@ class ConfigTab(QWidget):
                 widget.valueChanged.connect(self._on_change)
         self.ocr_enabled.toggled.connect(self._on_change)
         self.debug_cb.toggled.connect(self._on_debug_toggled)
-        self.basic_sensitivity.valueChanged.connect(self._on_basic_sensitivity_changed)
-        self.basic_speed.currentIndexChanged.connect(self._on_basic_speed_changed)
-        self.basic_ocr.toggled.connect(self._on_basic_ocr_toggled)
 
         scroll.setWidget(inner)
         outer = QVBoxLayout(self)
@@ -1971,96 +1933,6 @@ class ConfigTab(QWidget):
         self._advanced_toggle.setStyleSheet(self._toggle_style(False, mode == "advanced"))
         self.basic_widget.setVisible(mode == "basic")
         self.advanced_widget.setVisible(mode == "advanced")
-        if mode == "basic":
-            self._sync_basic_from_advanced()
-
-    def _sync_basic_from_advanced(self):
-        self._updating = True
-        try:
-            self.basic_sensitivity.setValue(self.sensitivity.value())
-            v = self.min_interval.value()
-            idx = 0
-            if v <= 2.0:
-                idx = 2
-            elif v <= 4.0:
-                idx = 1
-            self.basic_speed.setCurrentIndex(idx)
-            self.basic_ocr.setChecked(self.ocr_enabled.isChecked())
-        finally:
-            self._updating = False
-
-    def _on_basic_sensitivity_changed(self, val: float):
-        if not self._updating:
-            self.sensitivity.setValue(val)
-            self.apply_to_api()
-
-    def _on_basic_speed_changed(self, _idx: int):
-        if not self._updating:
-            self.min_interval.setValue(self.basic_speed.currentData())
-            self.apply_to_api()
-
-    def _on_basic_ocr_toggled(self, checked: bool):
-        if not self._updating:
-            self.ocr_enabled.setChecked(checked)
-            self.apply_to_api()
-
-    def _on_preset_changed(self, idx: int):
-        data = self._preset_combo.itemData(idx)
-        if data is None:
-            return
-        self._updating = True
-        try:
-            if data == "standard":
-                self.sensitivity.setValue(0.96)
-                self.min_interval.setValue(3.0)
-                self.frame_check.setValue(0.8)
-                self.top_ratio.setValue(0.34)
-                self.blank_std.setValue(3.0)
-                self.a_delay.setValue(0.3)
-                self.b_delay.setValue(3.0)
-                self.overlay_width.setValue(0.5)
-                self.dup_top.setValue(0.27)
-                self.pixel_sim.setValue(0.95)
-                self.row_sim.setValue(0.98)
-                self.row_cov.setValue(0.94)
-                self.bar_diff.setValue(500.0)
-                self.bar_pad.setValue(-15)
-            elif data == "concert":
-                self.sensitivity.setValue(0.94)
-                self.min_interval.setValue(5.0)
-                self.frame_check.setValue(1.0)
-                self.top_ratio.setValue(0.40)
-                self.blank_std.setValue(5.0)
-                self.a_delay.setValue(0.5)
-                self.b_delay.setValue(4.0)
-                self.overlay_width.setValue(0.55)
-                self.dup_top.setValue(0.30)
-                self.pixel_sim.setValue(0.93)
-                self.row_sim.setValue(0.97)
-                self.row_cov.setValue(0.92)
-                self.bar_diff.setValue(800.0)
-                self.bar_pad.setValue(-10)
-            elif data == "phone":
-                self.sensitivity.setValue(0.90)
-                self.min_interval.setValue(2.0)
-                self.frame_check.setValue(0.5)
-                self.top_ratio.setValue(0.30)
-                self.blank_std.setValue(2.0)
-                self.a_delay.setValue(0.2)
-                self.b_delay.setValue(2.5)
-                self.overlay_width.setValue(0.45)
-                self.dup_top.setValue(0.25)
-                self.pixel_sim.setValue(0.92)
-                self.row_sim.setValue(0.96)
-                self.row_cov.setValue(0.90)
-                self.bar_diff.setValue(400.0)
-                self.bar_pad.setValue(-20)
-            self.apply_to_api()
-            self._preset_combo.blockSignals(True)
-            self._preset_combo.setCurrentIndex(0)
-            self._preset_combo.blockSignals(False)
-        finally:
-            self._updating = False
 
     def _spin_float(self, min_v: float, max_v: float, step: float, default: float) -> QDoubleSpinBox:
         s = QDoubleSpinBox()
