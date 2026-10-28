@@ -1776,38 +1776,8 @@ class ConfigTab(QWidget):
         adv_outer.setSpacing(SPACE_MD)
         adv_outer.setContentsMargins(0, SPACE_SM, 0, 0)
 
-        # ── Detection group ──
-        det_group = QGroupBox("Detection")
-        det_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        det_form = QFormLayout(det_group)
-        det_form.setSpacing(SPACE_MD)
-
-        self.min_interval = self._spin_float(0.0, 60.0, 0.5, 3.0)
-        self.min_interval.setToolTip(
-            "Minimum seconds between page captures, even if changes are detected.\n"
-            "Prevents duplicate captures during slow page turns or hand movements.\n"
-            "Safe range: 1.0–10.0. Raise to 5+ for slow page-turners."
-        )
-        self.frame_check = self._spin_float(0.05, 5.0, 0.05, 0.8)
-        self.frame_check.setToolTip(
-            "How often (in seconds) the video is sampled for page changes.\n"
-            "Lower = faster detection but higher CPU usage.\n"
-            "Safe range: 0.05–1.0. Use 0.1 for quick extraction, 0.5 to save CPU."
-        )
-        self.top_ratio = self._spin_float(0.05, 1.0, 0.01, 0.34)
-        self.top_ratio.setToolTip(
-            "How much of the frame's top portion is compared between frames.\n"
-            "Only this region is checked for page changes, ignoring the bottom\n"
-            "(typically the piano keyboard or a player UI).\n"
-            "Safe range: 0.20\u20130.50."
-        )
-        det_form.addRow(self._form_label("Pause after page turn (s):"), self.min_interval)
-        det_form.addRow(self._form_label("Frame check interval (s):"), self.frame_check)
-        det_form.addRow(self._form_label("Content detection region:"), self.top_ratio)
-        layout.addWidget(det_group)
-
-        # ── Capture group ──
-        cap_group = QGroupBox("Capture Timing")
+        # ── Capture timing ──
+        cap_group = QGroupBox("Capture timing")
         cap_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         cap_form = QFormLayout(cap_group)
         cap_form.setSpacing(SPACE_MD)
@@ -1836,10 +1806,10 @@ class ConfigTab(QWidget):
         cap_form.addRow(self._form_label("Page settle time (s):"), self.a_delay)
         cap_form.addRow(self._form_label("New page reveal (s):"), self.b_delay)
         cap_form.addRow(self._form_label("Turn-line width:"), self.overlay_width)
-        layout.addWidget(cap_group)
+        adv_outer.addWidget(cap_group)
 
-        # ── Deduplication group ──
-        dedup_group = QGroupBox("Deduplication")
+        # ── Duplicate matching ──
+        dedup_group = QGroupBox("Duplicate matching")
         dedup_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         dedup_form = QFormLayout(dedup_group)
         dedup_form.setSpacing(SPACE_MD)
@@ -1870,19 +1840,6 @@ class ConfigTab(QWidget):
             "page numbers while catching identical content.\n"
             "Safe range: 0.85\u20130.98."
         )
-
-        dedup_form.addRow(self._form_label("Similarity check region:"), self.dup_top)
-        dedup_form.addRow(self._form_label("Visual match threshold:"), self.pixel_sim)
-        dedup_form.addRow(self._form_label("Row match threshold:"), self.row_sim)
-        dedup_form.addRow(self._form_label("Row coverage required:"), self.row_cov)
-        layout.addWidget(dedup_group)
-
-        # ── OCR group ──
-        ocr_group = QGroupBox("OCR")
-        ocr_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        ocr_form = QFormLayout(ocr_group)
-        ocr_form.setSpacing(SPACE_MD)
-
         self.ocr_conf = self._spin_int(0, 100, 40)
         self.ocr_conf.setToolTip(
             "Minimum confidence (0\u2013100) a recognized word must have\n"
@@ -1896,15 +1853,67 @@ class ConfigTab(QWidget):
             "Safe range: 0.20\u20130.50. Set to 1.0 for full-width."
         )
 
-        ocr_form.addRow(self._form_label("OCR confidence:"), self.ocr_conf)
-        ocr_form.addRow(self._form_label("OCR scan width:"), self.ocr_horiz)
-        layout.addWidget(ocr_group)
+        dedup_form.addRow(self._form_label("Similarity check region:"), self.dup_top)
+        dedup_form.addRow(self._form_label("Visual match threshold:"), self.pixel_sim)
+        dedup_form.addRow(self._form_label("Row match threshold:"), self.row_sim)
+        dedup_form.addRow(self._form_label("Row coverage required:"), self.row_cov)
+        dedup_form.addRow(self._form_label("OCR confidence:"), self.ocr_conf)
+        dedup_form.addRow(self._form_label("OCR scan width:"), self.ocr_horiz)
+        adv_outer.addWidget(dedup_group)
 
-        # ── Advanced group ──
-        self.advanced = QGroupBox("Advanced")
-        self.advanced.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        adv_form = QFormLayout(self.advanced)
-        adv_form.setSpacing(SPACE_MD)
+        # ── Auto-crop ──
+        crop_group = QGroupBox("Auto-crop")
+        crop_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        crop_form = QFormLayout(crop_group)
+        crop_form.setSpacing(SPACE_MD)
+
+        self.crop_offset = self._spin_int(-200, 200, 0)
+        self.crop_offset.setSingleStep(2)
+        self.crop_offset.setSuffix(" px")
+        self.crop_offset.setToolTip(
+            "Shift the auto-detected crop line up/down (pixels).\n"
+            "Positive moves the line up (trims more visualizer);\n"
+            "negative keeps more below it. A 2% safety margin is always applied."
+        )
+        crop_form.addRow(self._form_label("Crop line offset (px):"), self.crop_offset)
+        adv_outer.addWidget(crop_group)
+
+        # ── Detection fine tuning ──
+        det_group = QGroupBox("Detection fine tuning")
+        det_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        det_form = QFormLayout(det_group)
+        det_form.setSpacing(SPACE_MD)
+
+        self.min_interval = self._spin_float(0.0, 60.0, 0.5, 3.0)
+        self.min_interval.setToolTip(
+            "Minimum seconds between page captures, even if changes are detected.\n"
+            "Prevents duplicate captures during slow page turns or hand movements.\n"
+            "Safe range: 1.0\u201310.0."
+        )
+        self.frame_check = self._spin_float(0.05, 5.0, 0.05, 0.8)
+        self.frame_check.setToolTip(
+            "How often (in seconds) the video is sampled for page changes.\n"
+            "Lower = faster detection but higher CPU usage.\n"
+            "Safe range: 0.05\u20131.0. Use 0.1 for quick extraction, 0.5 to save CPU."
+        )
+        self.top_ratio = self._spin_float(0.05, 1.0, 0.01, 0.34)
+        self.top_ratio.setToolTip(
+            "How much of the frame's top portion is compared between frames.\n"
+            "Only this region is checked for page changes, ignoring the bottom\n"
+            "(typically the piano keyboard or a player UI).\n"
+            "Safe range: 0.20\u20130.50."
+        )
+
+        det_form.addRow(self._form_label("Minimum pause between pages (s):"), self.min_interval)
+        det_form.addRow(self._form_label("Frame check interval (s):"), self.frame_check)
+        det_form.addRow(self._form_label("Content detection region:"), self.top_ratio)
+        adv_outer.addWidget(det_group)
+
+        # ── Diagnostics ──
+        diag_group = QGroupBox("Diagnostics")
+        diag_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        diag_form = QFormLayout(diag_group)
+        diag_form.setSpacing(SPACE_MD)
 
         self.bar_diff = self._spin_float(0.0, 50000.0, 100.0, 500.0)
         self.bar_diff.setToolTip(
@@ -1920,8 +1929,8 @@ class ConfigTab(QWidget):
             "appears slightly off from the actual page boundary."
         )
 
-        adv_form.addRow(self._form_label("Turn-line sensitivity:"), self.bar_diff)
-        adv_form.addRow(self._form_label("Turn-line position (px):"), self.bar_pad)
+        diag_form.addRow(self._form_label("Turn-line sensitivity:"), self.bar_diff)
+        diag_form.addRow(self._form_label("Turn-line position (px):"), self.bar_pad)
 
         self.debug_cb = QCheckBox("Debug mode (open temp folder on completion)")
         self.debug_cb.setToolTip(
@@ -1929,9 +1938,8 @@ class ConfigTab(QWidget):
             "so you can inspect intermediate files (cropped frames, debug images).\n"
             "Enable this when diagnosing extraction issues."
         )
-        adv_form.addRow(self.debug_cb)
-
-        adv_outer.addWidget(self.advanced)
+        diag_form.addRow(self.debug_cb)
+        adv_outer.addWidget(diag_group)
 
         if self._param_labels:
             label_w = max(lbl.sizeHint().width() for lbl in self._param_labels) + 12
@@ -2012,7 +2020,7 @@ class ConfigTab(QWidget):
             self.top_ratio, self.blank_std, self.a_delay, self.b_delay,
             self.overlay_width, self.dup_top, self.pixel_sim,
             self.row_sim, self.row_cov, self.ocr_conf, self.ocr_horiz,
-            self.bar_diff, self.bar_pad,
+            self.crop_offset, self.bar_diff, self.bar_pad,
         ]
 
     def apply_to_api(self):
@@ -2033,6 +2041,7 @@ class ConfigTab(QWidget):
                 "row_coverage_threshold": self.row_cov.value(),
                 "ocr_confidence_threshold": self.ocr_conf.value() if self.ocr_enabled.isChecked() else 0,
                 "ocr_horizontal_ratio": self.ocr_horiz.value(),
+                "boundary_offset_px": self.crop_offset.value(),
                 "bar_min_diff_threshold": self.bar_diff.value(),
                 "bar_padding_px": self.bar_pad.value(),
             }
@@ -2062,6 +2071,7 @@ class ConfigTab(QWidget):
             ocr_conf = cfg.get("ocr_confidence_threshold", 40)
             self.ocr_conf.setValue(ocr_conf if ocr_conf > 0 else 40)
             self.ocr_horiz.setValue(cfg.get("ocr_horizontal_ratio", 0.30))
+            self.crop_offset.setValue(int(cfg.get("boundary_offset_px", 0)))
             self.bar_diff.setValue(cfg.get("bar_min_diff_threshold", 500.0))
             self.bar_pad.setValue(cfg.get("bar_padding_px", -15))
             self.debug_cb.setChecked(self._api.is_debug_mode())
@@ -2096,6 +2106,7 @@ class ConfigTab(QWidget):
             self.ocr_enabled.setChecked(False)
             self.ocr_conf.setValue(40)
             self.ocr_horiz.setValue(0.30)
+            self.crop_offset.setValue(0)
             self.bar_diff.setValue(500.0)
             self.bar_pad.setValue(-15)
             self.debug_cb.setChecked(False)

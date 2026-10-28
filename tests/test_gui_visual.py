@@ -15,7 +15,7 @@ from pathlib import Path
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 import pytest
-from PyQt6.QtWidgets import QApplication, QComboBox, QLabel, QWidget
+from PyQt6.QtWidgets import QApplication, QComboBox, QGroupBox, QLabel, QWidget
 from PyQt6.QtCore import Qt
 import numpy as np
 
@@ -325,6 +325,33 @@ class TestConfigTabLayout:
 
         assert not tab.basic_widget.isVisible(), "Basic widget should be hidden"
         assert tab.advanced_widget.isVisible(), "Advanced widget should be visible"
+
+    def test_advanced_groups_follow_frequency_order(self, window):
+        tab = window.config_tab
+        tab._set_mode("advanced")
+        process_events()
+
+        titles = [group.title() for group in tab.advanced_widget.findChildren(QGroupBox)]
+        assert titles == [
+            "Capture timing",
+            "Duplicate matching",
+            "Auto-crop",
+            "Detection fine tuning",
+            "Diagnostics",
+        ]
+
+    def test_crop_offset_lives_in_advanced_and_persists(self, window):
+        tab = window.config_tab
+        tab._set_mode("advanced")
+
+        assert tab.advanced_widget.isAncestorOf(tab.crop_offset)
+
+        tab.crop_offset.setValue(12)
+        assert window.api.get_config()["boundary_offset_px"] == 12
+
+        window.api.update_config({"boundary_offset_px": -8})
+        tab.refresh_from_api()
+        assert tab.crop_offset.value() == -8
 
     def test_basic_mode_has_only_common_settings(self, window):
         """Basic holds sensitivity, blank threshold and OCR; no format profiles."""
