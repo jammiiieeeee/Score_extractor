@@ -99,7 +99,7 @@ run_pipeline.py ──────► GuiApi (scripted)
 
 | Area | Files |
 | :--- | :--- |
-| Fixtures | `tests/conftest.py` |
+| Fixtures | `tests/conftest.py`, `tests/fixtures/` (sample video, real page-36 bar profile) |
 | Domain | `test_bar_profile_*`, `test_boundary_detector`, `test_deduplication`, `test_models`, `test_page_crop`, `test_page_store`, `test_page_lifecycle`, `test_config`, `test_double_crop_bug` |
 | Application | `test_use_cases`, `test_saved_score_records`, `test_cli*`, `test_integration_e2e`, `test_page_committer`, `test_frame_stepper`, `test_bar_profile_plotter` |
 | Infrastructure | `test_video_service`, `test_ocr_service`, `test_pdf_service`, `test_file_service`, `test_download_service`, `test_diagnostics_service` |
@@ -122,6 +122,7 @@ run_pipeline.py ──────► GuiApi (scripted)
 
 Max 10 lines, newest first. Older lines get dropped (git has the history).
 
+- 2026-10-28 — added the real page-36 bar-profile fixture and its merge-cutoff regression test; verified the end-to-end merge and PDF — `tests/fixtures/bar_profile_page_036.txt`, `tests/test_bar_profile_service.py`
 - 2026-10-26 — auto crop lifts 2% of frame height by default so the visualizer stays out; the ratio is saved with the score — `src/domain/page_crop.py`, `config.py`, `gui_api.py`, `saved_score.py`, `tools/verify_1080p.py`, tests
 - 2026-10-23 — Extract tab scrolls its content with a pinned action bar; visual suite refreshed and adopted — `app_gui.py`, `tests/`, `.gitignore`
 - 2026-10-23 — extraction/cancel end in Review Pages, PDF now waits for the user and is gated on included pages — `app_gui.py`, `src/api/gui_api.py`, tests
