@@ -2179,7 +2179,6 @@ class PreviewSeeker(QObject):
 
 class ExtractTab(QWidget):
     extraction_completed = pyqtSignal(int)
-    config_requested = pyqtSignal()
 
     def __init__(self, api: GuiApi, parent=None):
         super().__init__(parent)
@@ -2194,6 +2193,8 @@ class ExtractTab(QWidget):
         self._reextract_mode = False
         self._yt_video_paths: list[str] = []
         self._peak_style = False
+        self._pdf_name_edited = False
+        self._mirroring_pdf_name = False
 
         # Background preview seeker thread
         self._preview_thread = QThread(self)
@@ -2324,12 +2325,17 @@ class ExtractTab(QWidget):
         project_row.addWidget(self.project_browse_btn)
         layout.addLayout(project_row)
 
-        # ── Status line ──
-        self.status_label = QLabel("Choose a video to extract your score")
-        _set_widget_class(self.status_label, "muted")
-        self.status_label.setWordWrap(True)
-        self.status_label.setAccessibleName("Status")
-        layout.addWidget(self.status_label)
+        # ── Output PDF name ──
+        pdf_row = QHBoxLayout()
+        pdf_label = QLabel("PDF file:")
+        pdf_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        pdf_label.setFixedWidth(115)
+        self.pdf_name_edit = QLineEdit()
+        self.pdf_name_edit.setPlaceholderText("Auto-filled from project name")
+        self.pdf_name_edit.setMaxLength(100)
+        pdf_row.addWidget(pdf_label)
+        pdf_row.addWidget(self.pdf_name_edit, 1)
+        layout.addLayout(pdf_row)
 
         # ── Crop preview ──
         self.crop_widget = CropPreviewWidget()
@@ -2338,11 +2344,12 @@ class ExtractTab(QWidget):
         self.crop_widget.setAccessibleName("Crop preview")
         layout.addWidget(self.crop_widget)
 
-        # ── Crop ratio row ──
+        # ── Crop row ──
         crop_row = QHBoxLayout()
-        crop_label = QLabel("Crop ratio:")
+        crop_label = QLabel("Crop:")
         crop_label.setFixedWidth(115)
         crop_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.crop_ratio_label = QLabel("Ratio:")
         self.crop_spin = QDoubleSpinBox()
         self.crop_spin.setRange(0.0, 1.0)
         self.crop_spin.setSingleStep(0.01)
@@ -2376,18 +2383,12 @@ class ExtractTab(QWidget):
         )
 
         crop_row.addWidget(crop_label)
-        crop_row.addWidget(self.crop_spin)
         crop_row.addWidget(self.crop_mode_combo)
+        crop_row.addWidget(self.crop_ratio_label)
+        crop_row.addWidget(self.crop_spin)
         crop_row.addWidget(self.crop_offset_spin)
         crop_row.addWidget(self.crop_original_label)
         crop_row.addStretch()
-        self.config_btn = QPushButton("Settings")
-        _set_widget_class(self.config_btn, "secondary")
-        self.config_btn.setMinimumWidth(100)
-        self.config_btn.setToolTip("Open extraction settings")
-        self.config_btn.clicked.connect(self.config_requested.emit)
-
-        crop_row.addWidget(self.config_btn)
         layout.addLayout(crop_row)
 
         # ── Duplicate detection ──
@@ -2414,19 +2415,13 @@ class ExtractTab(QWidget):
         self.seek_bar.setAccessibleName("Video seek bar with start and end handles")
         layout.addWidget(self.seek_bar)
 
-        # ── Output PDF name ──
-        pdf_row = QHBoxLayout()
-        pdf_label = QLabel("Output PDF:")
-        pdf_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        pdf_label.setFixedWidth(115)
-        self.pdf_name_edit = QLineEdit()
-        self.pdf_name_edit.setPlaceholderText("Auto-filled from project name")
-        self.pdf_name_edit.setMaxLength(100)
-        pdf_row.addWidget(pdf_label)
-        pdf_row.addWidget(self.pdf_name_edit, 1)
-        layout.addLayout(pdf_row)
+        # ── Status, progress & log ──
+        self.status_label = QLabel("Choose a video to extract your score")
+        _set_widget_class(self.status_label, "muted")
+        self.status_label.setWordWrap(True)
+        self.status_label.setAccessibleName("Status")
+        layout.addWidget(self.status_label)
 
-        # ── Progress & Log ──
         progress_row = QHBoxLayout()
         progress_row.setSpacing(SPACE_SM)
         self.progress_bar = QProgressBar()
@@ -2508,6 +2503,8 @@ class ExtractTab(QWidget):
         outer.addLayout(action_row)
 
         # ── Connections ──
+        self.project_edit.textChanged.connect(self._on_project_name_changed)
+        self.pdf_name_edit.textChanged.connect(self._on_pdf_name_changed)
         self.project_edit.returnPressed.connect(self._on_project_entered)
         self._completer.activated.connect(self._on_project_selected)
         self.project_browse_btn.clicked.connect(self._browse_project)
@@ -2580,6 +2577,28 @@ class ExtractTab(QWidget):
         return self.project_edit.text().strip()
 
     # ── Project field ──
+
+    def _set_pdf_name(self, text: str):
+        self._mirroring_pdf_name = True
+        try:
+            self.pdf_name_edit.setText(text)
+        finally:
+            self._mirroring_pdf_name = False
+
+    def _on_project_name_changed(self, text: str):
+        if self._mirroring_pdf_name:
+            return
+        if not self._pdf_name_edited:
+            self._set_pdf_name(text.strip())
+
+    def _on_pdf_name_changed(self, text: str):
+        if self._mirroring_pdf_name:
+            return
+        if not text.strip():
+            self._pdf_name_edited = False
+            self._set_pdf_name(self.project_edit.text().strip())
+        else:
+            self._pdf_name_edited = True
 
     def _refresh_completer(self):
         try:
@@ -2655,7 +2674,8 @@ class ExtractTab(QWidget):
             self._project_dir = score_path
             p = Path(score_path)
             self.project_edit.setText(p.name)
-            self.pdf_name_edit.setText(p.name)
+            self._set_pdf_name(p.name)
+            self._pdf_name_edited = False
             # Show the score with the crop it was saved with.
             self._load_crop_controls()
             if self._loaded_original_ratio is not None:
@@ -2691,8 +2711,8 @@ class ExtractTab(QWidget):
         self._project_dir = ""
         self.crop_original_label.setText("")
         self._load_crop_controls()
-        if not self.pdf_name_edit.text():
-            self.pdf_name_edit.setText(self.project_edit.text())
+        self._pdf_name_edited = False
+        self._set_pdf_name(self.project_edit.text().strip())
         self._set_video_controls_enabled(True)
         self.status_label.setText("Choose a video to extract your score")
         self._update_state()
@@ -2905,7 +2925,10 @@ class ExtractTab(QWidget):
 
     def _sync_crop_controls(self):
         mode = self.crop_mode_combo.currentData()
-        self.crop_spin.setEnabled(mode == "manual")
+        manual = mode == "manual"
+        self.crop_ratio_label.setVisible(manual)
+        self.crop_spin.setVisible(manual)
+        self.crop_spin.setEnabled(manual)
         self.crop_offset_spin.setEnabled(mode == "auto")
 
     def _load_crop_controls(self):
@@ -3503,7 +3526,6 @@ class MainWindow(QMainWindow):
         self.signals.cancelled_with_pages.connect(self._on_cancelled_with_pages)
         self.signals.download_done.connect(self._on_yt_downloaded)
 
-        self.extract_tab.config_requested.connect(lambda: self.tabs.setCurrentIndex(1))
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
     def _on_progress(self, phase: str, percent: float, detail: str):

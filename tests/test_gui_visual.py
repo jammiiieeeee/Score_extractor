@@ -344,6 +344,39 @@ class TestConfigTabLayout:
         assert tab.advanced_widget.findChildren(QComboBox) == []
 
 
+class TestExtractLayout:
+    """Validate the refined Extract tab order and PDF mirror rules."""
+
+    def test_pdf_name_sits_between_project_and_preview(self, window):
+        tab = window.extract_tab
+        window.show()
+        process_events()
+
+        assert tab.project_edit.geometry().y() < tab.pdf_name_edit.geometry().y()
+        assert tab.pdf_name_edit.geometry().y() < tab.crop_widget.geometry().y()
+        assert not hasattr(tab, "config_btn")
+
+    def test_status_sits_below_seek_bar_and_above_progress(self, window):
+        tab = window.extract_tab
+        window.show()
+        process_events()
+
+        assert tab.seek_bar.geometry().y() < tab.status_label.geometry().y()
+        assert tab.status_label.geometry().y() < tab.progress_bar.geometry().y()
+
+    def test_pdf_name_follows_project_until_edited(self, window):
+        tab = window.extract_tab
+        tab.project_edit.setText("Sonata")
+        assert tab.pdf_name_edit.text() == "Sonata"
+
+        tab.pdf_name_edit.setText("Printed")
+        tab.project_edit.setText("Etude")
+        assert tab.pdf_name_edit.text() == "Printed"
+
+        tab.pdf_name_edit.setText("")
+        assert tab.pdf_name_edit.text() == "Etude"
+
+
 class TestFullWorkflow:
     """Drive through complete extraction workflow and capture each state."""
 
@@ -441,7 +474,7 @@ class TestMinimumWindowSize:
 
         assert tab._scroll.verticalScrollBar().maximum() > 0, (
             "Content should scroll at the minimum window height")
-        assert tab.crop_widget.geometry().bottom() < tab.crop_spin.geometry().top(), (
+        assert tab.crop_widget.geometry().bottom() < tab.crop_mode_combo.geometry().top(), (
             "Crop preview must not overlap the crop controls")
         assert tab.generate_btn.isVisible(), "Action bar should stay visible"
         assert tab.generate_btn.isEnabled(), "Generate PDF should be enabled"
