@@ -404,6 +404,26 @@ class TestExtractLayout:
             assert combo.minimumWidth() >= widest + 40, (
                 f"Combo {combo.currentText()!r} is too narrow for its options")
 
+    def test_log_starts_hidden_and_toggles(self, window):
+        tab = window.extract_tab
+        assert not tab.log_edit.isVisible()
+        assert tab.log_toggle_btn.text() == "Show log"
+
+        tab.log_toggle_btn.click()
+        assert tab.log_edit.isVisible()
+        assert tab.log_toggle_btn.text() == "Hide log"
+
+        tab.log_toggle_btn.click()
+        assert not tab.log_edit.isVisible()
+
+    def test_error_opens_the_log(self, window):
+        tab = window.extract_tab
+        tab._busy = True
+        tab.on_error("boom")
+
+        assert tab.log_edit.isVisible()
+        assert "[Error] boom" in tab.log_edit.toPlainText()
+
     def test_pdf_name_follows_project_until_edited(self, window):
         tab = window.extract_tab
         tab.project_edit.setText("Sonata")

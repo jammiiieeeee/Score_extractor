@@ -2506,24 +2506,21 @@ class ExtractTab(QWidget):
         progress_row.addWidget(self._elapsed_label)
         layout.addLayout(progress_row)
 
-        log_header = QHBoxLayout()
-        log_header.setSpacing(SPACE_SM)
-        log_header.setContentsMargins(0, 0, 0, 0)
-        log_label = QLabel("Log")
-        _set_widget_class(log_label, "muted")
-        log_label.setMinimumWidth(40)
-        log_header.addWidget(log_label)
-        log_header.addStretch()
-        clear_log_btn = QPushButton("Clear")
-        _set_widget_class(clear_log_btn, "secondary")
-        clear_log_btn.setMinimumWidth(60)
-        log_header.addWidget(clear_log_btn)
-        layout.addLayout(log_header)
+        log_row = QHBoxLayout()
+        log_row.setContentsMargins(0, 0, 0, 0)
+        self.log_toggle_btn = QPushButton("Show log")
+        _set_widget_class(self.log_toggle_btn, "secondary")
+        self.log_toggle_btn.setCheckable(True)
+        self.log_toggle_btn.setToolTip("Show or hide extraction details")
+        _fit_button_width(self.log_toggle_btn)
+        log_row.addWidget(self.log_toggle_btn)
+        log_row.addStretch()
+        layout.addLayout(log_row)
 
         self.log_edit = QTextEdit()
-        clear_log_btn.clicked.connect(self.log_edit.clear)
         self.log_edit.setReadOnly(True)
         self.log_edit.setMaximumHeight(140)
+        self.log_edit.setVisible(False)
         self.log_edit.document().setMaximumBlockCount(2000)
         layout.addWidget(self.log_edit)
 
@@ -2572,6 +2569,7 @@ class ExtractTab(QWidget):
         # ── Connections ──
         self.project_edit.textChanged.connect(self._on_project_name_changed)
         self.pdf_name_edit.textChanged.connect(self._on_pdf_name_changed)
+        self.log_toggle_btn.toggled.connect(self._on_log_toggled)
         self.project_edit.returnPressed.connect(self._on_project_entered)
         self._completer.activated.connect(self._on_project_selected)
         self.project_browse_btn.clicked.connect(self._browse_project)
@@ -3040,6 +3038,14 @@ class ExtractTab(QWidget):
             _set_widget_class(self.status_label, "count" if peak else "muted")
             self._peak_style = peak
 
+    def _on_log_toggled(self, checked: bool):
+        self.log_edit.setVisible(checked)
+        self.log_toggle_btn.setText("Hide log" if checked else "Show log")
+        _fit_button_width(self.log_toggle_btn)
+
+    def _show_log(self, show: bool = True):
+        self.log_toggle_btn.setChecked(show)
+
     def _update_state(self):
         has_project = bool(self.project_edit.text().strip())
         has_video = bool(self._video_path and os.path.exists(self._video_path))
@@ -3397,6 +3403,7 @@ class ExtractTab(QWidget):
     def on_error(self, message: str):
         dbg(f"on_error: {message}")
         self._log(f"[Error] {message}")
+        self._show_log(True)
         if not self._busy:
             QMessageBox.critical(self, "Error", message)
         self._reset_ui()
