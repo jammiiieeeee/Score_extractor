@@ -12,7 +12,7 @@ from urllib.parse import urlparse, parse_qs
 import cv2
 import numpy as np
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, pyqtSignal, QStringListModel, QObject, QThread
-from PyQt6.QtGui import QAction, QFont, QIcon, QImage, QPixmap
+from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import QCompleter
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QListWidget, QListWidgetItem, QDialog, QComboBox,
     QRadioButton, QButtonGroup,
     QFrame, QSizePolicy, QSplitter, QGridLayout, QMenu,
+    QGraphicsDropShadowEffect,
 )
 
 from gui_bridge import ExtractionSignals
@@ -352,15 +353,16 @@ QComboBox::down-arrow {{
 QComboBox QAbstractItemView {{
     background: {SURFACE};
     border: 1px solid {BORDER2};
-    border-radius: 4px;
+    border-radius: 8px;
     outline: none;
-    padding: 4px 0px;
+    padding: 6px 0px;
 }}
 QComboBox QAbstractItemView::item {{
-    padding: 6px 12px;
+    padding: 4px 12px;
     min-height: 24px;
     color: {INK};
     border: none;
+    border-radius: 4px;
 }}
 QComboBox QAbstractItemView::item:selected {{
     background: {SURFACE2};
@@ -500,6 +502,60 @@ def _fit_button_width(button, padding: int = 40):
     metrics = button.fontMetrics()
     text_width = metrics.horizontalAdvance(button.text())
     button.setMinimumWidth(text_width + padding)
+
+
+def _fit_combo_width(combo, padding: int = 56):
+    combo.ensurePolished()
+    metrics = combo.fontMetrics()
+    widest = max(
+        (metrics.horizontalAdvance(combo.itemText(i)) for i in range(combo.count())),
+        default=0,
+    )
+    combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+    combo.setMinimumWidth(widest + padding)
+
+
+class StyledComboBox(QComboBox):
+    """Combo box whose flyout matches the elevated surfaces in DESIGN.md."""
+
+    POPUP_MARGIN = 8
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        _fit_combo_width(self)
+
+    def showPopup(self):
+        super().showPopup()
+        view = self.view()
+        container = view.parentWidget()
+        if container is not None and not container.property("popup_padded"):
+            container.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            container.setObjectName("comboPopupContainer")
+            container.setStyleSheet(
+                "QFrame#comboPopupContainer { background: transparent; border: none; }"
+            )
+            layout = container.layout()
+            if layout is not None:
+                layout.setContentsMargins(
+                    self.POPUP_MARGIN, self.POPUP_MARGIN,
+                    self.POPUP_MARGIN, self.POPUP_MARGIN,
+                )
+            container.resize(
+                container.width() + self.POPUP_MARGIN * 2,
+                container.height() + self.POPUP_MARGIN * 2,
+            )
+            container.move(
+                container.x() - self.POPUP_MARGIN,
+                container.y() - self.POPUP_MARGIN,
+            )
+            container.setProperty("popup_padded", True)
+
+        if view.graphicsEffect() is None:
+            shadow = QGraphicsDropShadowEffect(view)
+            shadow.setBlurRadius(16)
+            shadow.setOffset(0, 4)
+            shadow.setColor(QColor(0, 0, 0, 90))
+            view.setGraphicsEffect(shadow)
 
 
 # ── Crop Preview Widget ──────────────────────────────────────────────
@@ -2272,7 +2328,7 @@ class ExtractTab(QWidget):
         self.yt_url_edit = QLineEdit()
         self.yt_url_edit.setPlaceholderText("Paste YouTube or Bilibili video URL")
 
-        self.quality_combo = QComboBox()
+        self.quality_combo = StyledComboBox()
         self.quality_combo.addItem("Best (≤1080p)", "bestvideo[height<=1080]")
         self.quality_combo.addItem("720p", "bestvideo[height<=720]")
         self.quality_combo.addItem("480p", "bestvideo[height<=480]")
@@ -2280,7 +2336,7 @@ class ExtractTab(QWidget):
         self.quality_combo.addItem("Best available", "bestvideo")
         saved_qi = self._api.get_config().get("yt_quality_index", 0)
         self.quality_combo.setCurrentIndex(min(saved_qi, self.quality_combo.count() - 1))
-        self.quality_combo.setFixedWidth(130)
+        _fit_combo_width(self.quality_combo)
         self.quality_combo.setMinimumHeight(32)
 
         self.download_btn = QPushButton("Download")
@@ -2359,7 +2415,7 @@ class ExtractTab(QWidget):
         self.crop_original_label = QLabel("")
         _set_widget_class(self.crop_original_label, "muted")
 
-        self.crop_mode_combo = QComboBox()
+        self.crop_mode_combo = StyledComboBox()
         self.crop_mode_combo.addItem("Auto (detect pages)", "auto")
         self.crop_mode_combo.addItem("Fixed ratio", "manual")
         self.crop_mode_combo.addItem("Full frame", "off")
@@ -2369,7 +2425,7 @@ class ExtractTab(QWidget):
             "Fixed ratio — crop every page to the ratio below.\n"
             "Full frame — keep the whole frame, no crop."
         )
-        self.crop_mode_combo.setMinimumWidth(150)
+        _fit_combo_width(self.crop_mode_combo)
 
         self.crop_offset_spin = QSpinBox()
         self.crop_offset_spin.setRange(-200, 200)
@@ -2396,14 +2452,14 @@ class ExtractTab(QWidget):
         dedup_label = QLabel("Duplicates:")
         dedup_label.setFixedWidth(115)
         dedup_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.dedup_combo = QComboBox()
+        self.dedup_combo = StyledComboBox()
         self.dedup_combo.addItem("Manual (flag them yourself)", "manual")
         self.dedup_combo.addItem("Automatic (mark detected)", "auto")
         self.dedup_combo.setToolTip(
             "Manual — every captured page stays unflagged; use Review Pages to mark duplicates.\n"
             "Automatic — system-detected duplicates are flagged and skipped in the PDF."
         )
-        self.dedup_combo.setMinimumWidth(150)
+        _fit_combo_width(self.dedup_combo)
         dedup_row.addWidget(dedup_label)
         dedup_row.addWidget(self.dedup_combo)
         dedup_row.addStretch()

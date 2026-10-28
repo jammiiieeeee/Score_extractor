@@ -364,6 +364,19 @@ class TestExtractLayout:
         assert tab.seek_bar.geometry().y() < tab.status_label.geometry().y()
         assert tab.status_label.geometry().y() < tab.progress_bar.geometry().y()
 
+    def test_every_combo_fits_its_longest_item(self, window):
+        combos = window.findChildren(QComboBox)
+        assert combos
+
+        for combo in combos:
+            metrics = combo.fontMetrics()
+            widest = max(
+                metrics.horizontalAdvance(combo.itemText(i))
+                for i in range(combo.count())
+            )
+            assert combo.minimumWidth() >= widest + 40, (
+                f"Combo {combo.currentText()!r} is too narrow for its options")
+
     def test_pdf_name_follows_project_until_edited(self, window):
         tab = window.extract_tab
         tab.project_edit.setText("Sonata")
