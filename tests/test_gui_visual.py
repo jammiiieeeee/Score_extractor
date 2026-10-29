@@ -8,6 +8,7 @@ Run with: python -m pytest tests/test_gui_visual.py -v
 Screenshots are saved to tests/visual_output/ for AI analysis.
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 import pytest
 from PyQt6.QtWidgets import QApplication, QComboBox, QGroupBox, QLabel, QWidget
 from PyQt6.QtCore import Qt
+import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -404,6 +406,29 @@ class TestExtractLayout:
             )
             assert combo.minimumWidth() >= widest + 40, (
                 f"Combo {combo.currentText()!r} is too narrow for its options")
+
+    def test_loading_saved_score_keeps_the_settings_offset(self, window, tmp_path):
+        score_dir = tmp_path / "OffsetScore"
+        photos = score_dir / "photos"
+        photos.mkdir(parents=True)
+        cv2.imwrite(
+            str(photos / "page_001_merged.png"),
+            np.full((100, 100, 3), 200, dtype=np.uint8),
+        )
+        (score_dir / "metadata.json").write_text(json.dumps({
+            "score_name": "OffsetScore",
+            "crop_ratio": 0.4,
+            "boundary_mode": "auto",
+            "boundary_offset_px": 37,
+        }), encoding="utf-8")
+
+        window.api.update_config({"boundary_offset_px": 0})
+        window.config_tab.refresh_from_api()
+        window.extract_tab._load_existing_score(str(score_dir))
+
+        assert window.config_tab.crop_offset.value() == 37
+        window.config_tab.apply_to_api()
+        assert window.api.get_config()["boundary_offset_px"] == 37
 
     def test_log_starts_hidden_and_toggles(self, window):
         tab = window.extract_tab

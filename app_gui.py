@@ -2730,6 +2730,9 @@ class ExtractTab(QWidget):
             self._pdf_name_edited = False
             # Show the score with the crop it was saved with.
             self._load_crop_controls()
+            main_win = self.window()
+            if hasattr(main_win, "config_tab"):
+                main_win.config_tab.refresh_from_api()
             if self._loaded_original_ratio is not None:
                 self.crop_original_label.setText(f"(was {int(self._loaded_original_ratio * 100)}%)")
 
