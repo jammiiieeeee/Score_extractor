@@ -1767,20 +1767,22 @@ class ConfigTab(QWidget):
         self._basic_toggle = QPushButton("Basic")
         self._basic_toggle.setCheckable(True)
         self._basic_toggle.setFlat(True)
-        self._basic_toggle.setStyleSheet(self._toggle_style(True, True))
         self._advanced_toggle = QPushButton("Advanced")
         self._advanced_toggle.setCheckable(True)
         self._advanced_toggle.setFlat(True)
-        self._advanced_toggle.setStyleSheet(self._toggle_style(False, True))
         self._basic_toggle.clicked.connect(lambda: self._set_mode("basic"))
         self._advanced_toggle.clicked.connect(lambda: self._set_mode("advanced"))
         mode_row.addWidget(self._basic_toggle)
         mode_row.addWidget(self._advanced_toggle)
         mode_row.addStretch()
-        if self._config_mode == "advanced":
-            self._advanced_toggle.setChecked(True)
-            self._advanced_toggle.setStyleSheet(self._toggle_style(False, True))
-            self._basic_toggle.setStyleSheet(self._toggle_style(True, False))
+        self._basic_toggle.setChecked(self._config_mode == "basic")
+        self._advanced_toggle.setChecked(self._config_mode == "advanced")
+        self._basic_toggle.setStyleSheet(
+            self._toggle_style(True, self._config_mode == "basic")
+        )
+        self._advanced_toggle.setStyleSheet(
+            self._toggle_style(False, self._config_mode == "advanced")
+        )
         layout.addLayout(mode_row)
 
         # ── Basic settings widget ──
