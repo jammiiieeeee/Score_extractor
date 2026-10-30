@@ -12,17 +12,19 @@ from urllib.parse import urlparse, parse_qs
 import cv2
 import numpy as np
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, pyqtSignal, QStringListModel, QObject, QThread
-from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QImage, QPixmap
+from PyQt6.QtGui import (
+    QAction, QColor, QFont, QIcon, QImage, QPixmap, QPainterPath, QPalette,
+    QRegion,
+)
 from PyQt6.QtWidgets import QCompleter
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QFileDialog,
     QMessageBox, QProgressBar, QTextEdit, QGroupBox, QFormLayout,
     QDoubleSpinBox, QSpinBox, QCheckBox, QSlider, QScrollArea,
-    QListWidget, QListWidgetItem, QDialog, QComboBox,
+    QListWidget, QListWidgetItem, QDialog, QComboBox, QStyledItemDelegate,
     QRadioButton, QButtonGroup,
     QFrame, QSizePolicy, QSplitter, QGridLayout, QMenu,
-    QGraphicsDropShadowEffect,
 )
 
 from gui_bridge import ExtractionSignals
@@ -351,26 +353,19 @@ QComboBox::down-arrow {{
     height: 12px;
 }}
 QComboBox QAbstractItemView {{
-    background: {SURFACE};
-    border: 1px solid {BORDER2};
-    border-radius: 8px;
+    background: transparent;
+    border: none;
     outline: none;
-    padding: 6px 0px;
+    padding: 4px;
+    selection-background-color: transparent;
+    selection-color: {INK};
 }}
 QComboBox QAbstractItemView::item {{
-    padding: 4px 12px;
-    min-height: 24px;
+    padding: 4px 10px;
+    min-height: 22px;
     color: {INK};
     border: none;
-    border-radius: 4px;
-}}
-QComboBox QAbstractItemView::item:selected {{
-    background: {SURFACE2};
-    color: {BRASS};
-}}
-QComboBox QAbstractItemView::item:hover {{
-    background: {SURFACE2};
-    color: {INK};
+    border-radius: 6px;
 }}
 QSplitter::handle {{
     background: {BORDER};
@@ -515,10 +510,34 @@ def _fit_combo_width(combo, padding: int = 56):
     combo.setMinimumWidth(widest + padding)
 
 
+class _ComboItemDelegate(QStyledItemDelegate):
+    """Menu row painter: no persistent selection fill, rounded accent hover."""
+
+    def paint(self, painter, option, index):
+        from PyQt6.QtGui import QPainter
+        from PyQt6.QtWidgets import QStyle, QStyleOptionViewItem
+
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.state &= ~QStyle.StateFlag.State_Selected
+        opt.state &= ~QStyle.StateFlag.State_HasFocus
+
+        if option.state & QStyle.StateFlag.State_MouseOver:
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(BRASS))
+            painter.drawRoundedRect(opt.rect.adjusted(2, 1, -2, -1), 6, 6)
+            opt.palette.setColor(QPalette.ColorRole.Text, QColor(BG))
+            painter.restore()
+
+        super().paint(painter, opt, index)
+
+
 class StyledComboBox(QComboBox):
     """Combo box whose flyout matches the elevated surfaces in DESIGN.md."""
 
-    POPUP_MARGIN = 8
+    POPUP_RADIUS = 10
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -526,36 +545,72 @@ class StyledComboBox(QComboBox):
 
     def showPopup(self):
         super().showPopup()
+        container = self.view().parentWidget()
+        if container is None:
+            return
         view = self.view()
-        container = view.parentWidget()
-        if container is not None and not container.property("popup_padded"):
-            container.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        if not isinstance(view.itemDelegate(), _ComboItemDelegate):
+            view.setItemDelegate(_ComboItemDelegate(view))
+            view.setMouseTracking(True)
+        if not container.property("popup_styled"):
             container.setObjectName("comboPopupContainer")
             container.setStyleSheet(
-                "QFrame#comboPopupContainer { background: transparent; border: none; }"
-            )
-            layout = container.layout()
-            if layout is not None:
-                layout.setContentsMargins(
-                    self.POPUP_MARGIN, self.POPUP_MARGIN,
-                    self.POPUP_MARGIN, self.POPUP_MARGIN,
+                "QFrame#comboPopupContainer {{"
+                " background: #242424;"
+                " border: 1px solid #2f2f2f;"
+                " border-radius: {radius}px;"
+                "}}"
+                "QFrame#comboPopupContainer QAbstractItemView {{"
+                " background: transparent;"
+                " border: none;"
+                " border-radius: 0;"
+                " outline: none;"
+                "}}"
+                "QFrame#comboPopupContainer QAbstractItemView::item {{"
+                " border: none;"
+                " border-radius: 6px;"
+                "}}"
+                "QFrame#comboPopupContainer QAbstractItemView::item:selected {{"
+                " background: transparent;"
+                " color: {ink};"
+                "}}"
+                "QFrame#comboPopupContainer QAbstractItemView::item:hover {{"
+                " background: {brass};"
+                " color: {bg};"
+                "}}".format(
+                    radius=self.POPUP_RADIUS, ink=INK, brass=BRASS, bg=BG
                 )
-            container.resize(
-                container.width() + self.POPUP_MARGIN * 2,
-                container.height() + self.POPUP_MARGIN * 2,
             )
-            container.move(
-                container.x() - self.POPUP_MARGIN,
-                container.y() - self.POPUP_MARGIN,
-            )
-            container.setProperty("popup_padded", True)
+            palette = view.palette()
+            palette.setColor(QPalette.ColorRole.Base, QColor("#242424"))
+            palette.setColor(QPalette.ColorRole.Highlight, QColor("#242424"))
+            palette.setColor(QPalette.ColorRole.HighlightedText, QColor(INK))
+            view.setPalette(palette)
+            view.viewport().setPalette(palette)
+            view.viewport().setAutoFillBackground(False)
+            container.setProperty("popup_styled", True)
 
-        if view.graphicsEffect() is None:
-            shadow = QGraphicsDropShadowEffect(view)
-            shadow.setBlurRadius(16)
-            shadow.setOffset(0, 4)
-            shadow.setColor(QColor(0, 0, 0, 90))
-            view.setGraphicsEffect(shadow)
+        row_h = view.sizeHintForRow(0)
+        if row_h > 0 and self.count():
+            chrome = container.height() - view.viewport().height()
+            container.resize(
+                container.width(), row_h * self.count() + chrome
+            )
+
+        container.raise_()
+        pos = self.mapToGlobal(self.rect().bottomLeft())
+        screen = self.screen().availableGeometry()
+        x = min(max(pos.x(), screen.left()), screen.right() - container.width())
+        y = min(pos.y(), screen.bottom() - container.height())
+        container.move(max(screen.left(), x), max(screen.top(), y))
+
+        from PyQt6.QtCore import QRectF
+
+        path = QPainterPath()
+        path.addRoundedRect(
+            QRectF(container.rect()), self.POPUP_RADIUS, self.POPUP_RADIUS
+        )
+        container.setMask(QRegion(path.toFillPolygon().toPolygon()))
 
 
 # ── Crop Preview Widget ──────────────────────────────────────────────
