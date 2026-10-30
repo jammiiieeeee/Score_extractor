@@ -267,7 +267,9 @@ Borders are 1px solid, using `border` (#333333) at rest and `border-emphasized` 
 - **Hover:** Border shifts to Warm Brass.
 
 ### Combo Boxes
-- **Style:** Dark background (#0d0d0d), 6px radius, 6px vertical / 12px horizontal padding. 24px min height. Drop-down icon (Warm Brass chevron) in a 28px-wide button area. Dropdown list uses surface background with elevated hover states and Warm Brass selected text.
+- **Field:** Dark background (#0d0d0d), 6px radius, 6px vertical / 12px horizontal padding. 24px min height. Drop-down icon (Warm Brass chevron) in a 28px-wide button area.
+- **Flyout:** Apple-style menu. Elevated surface (#242424) with a 10px radius and a 1px #2f2f2f hairline, clipped to the rounded shape so no square backdrop appears. 4px inner padding; 22px minimum row height.
+- **Row states:** No persistent selection fill — the current value is not highlighted. Hover is a 6px-radius Warm Brass pill inset by 2px, with dark (#161616) text. Text is Ink at rest.
 
 ### Labels
 - **Muted:** 12px, #888888 — secondary/descriptive text, status messages.

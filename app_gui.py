@@ -12,14 +12,17 @@ from urllib.parse import urlparse, parse_qs
 import cv2
 import numpy as np
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, pyqtSignal, QStringListModel, QObject, QThread
-from PyQt6.QtGui import QAction, QFont, QIcon, QImage, QPixmap
+from PyQt6.QtGui import (
+    QAction, QColor, QFont, QIcon, QImage, QPixmap, QPainterPath, QPalette,
+    QRegion,
+)
 from PyQt6.QtWidgets import QCompleter
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QFileDialog,
     QMessageBox, QProgressBar, QTextEdit, QGroupBox, QFormLayout,
     QDoubleSpinBox, QSpinBox, QCheckBox, QSlider, QScrollArea,
-    QListWidget, QListWidgetItem, QDialog, QComboBox,
+    QListWidget, QListWidgetItem, QDialog, QComboBox, QStyledItemDelegate,
     QRadioButton, QButtonGroup,
     QFrame, QSizePolicy, QSplitter, QGridLayout, QMenu,
 )
@@ -350,25 +353,19 @@ QComboBox::down-arrow {{
     height: 12px;
 }}
 QComboBox QAbstractItemView {{
-    background: {SURFACE};
-    border: 1px solid {BORDER2};
-    border-radius: 4px;
+    background: transparent;
+    border: none;
     outline: none;
-    padding: 4px 0px;
+    padding: 4px;
+    selection-background-color: transparent;
+    selection-color: {INK};
 }}
 QComboBox QAbstractItemView::item {{
-    padding: 6px 12px;
-    min-height: 24px;
+    padding: 4px 10px;
+    min-height: 22px;
     color: {INK};
     border: none;
-}}
-QComboBox QAbstractItemView::item:selected {{
-    background: {SURFACE2};
-    color: {BRASS};
-}}
-QComboBox QAbstractItemView::item:hover {{
-    background: {SURFACE2};
-    color: {INK};
+    border-radius: 6px;
 }}
 QSplitter::handle {{
     background: {BORDER};
@@ -500,6 +497,120 @@ def _fit_button_width(button, padding: int = 40):
     metrics = button.fontMetrics()
     text_width = metrics.horizontalAdvance(button.text())
     button.setMinimumWidth(text_width + padding)
+
+
+def _fit_combo_width(combo, padding: int = 56):
+    combo.ensurePolished()
+    metrics = combo.fontMetrics()
+    widest = max(
+        (metrics.horizontalAdvance(combo.itemText(i)) for i in range(combo.count())),
+        default=0,
+    )
+    combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+    combo.setMinimumWidth(widest + padding)
+
+
+class _ComboItemDelegate(QStyledItemDelegate):
+    """Menu row painter: no persistent selection fill, rounded accent hover."""
+
+    def paint(self, painter, option, index):
+        from PyQt6.QtGui import QPainter
+        from PyQt6.QtWidgets import QStyle, QStyleOptionViewItem
+
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.state &= ~QStyle.StateFlag.State_Selected
+        opt.state &= ~QStyle.StateFlag.State_HasFocus
+
+        if option.state & QStyle.StateFlag.State_MouseOver:
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(BRASS))
+            painter.drawRoundedRect(opt.rect.adjusted(2, 1, -2, -1), 6, 6)
+            opt.palette.setColor(QPalette.ColorRole.Text, QColor(BG))
+            painter.restore()
+
+        super().paint(painter, opt, index)
+
+
+class StyledComboBox(QComboBox):
+    """Combo box whose flyout matches the elevated surfaces in DESIGN.md."""
+
+    POPUP_RADIUS = 10
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        _fit_combo_width(self)
+
+    def showPopup(self):
+        super().showPopup()
+        container = self.view().parentWidget()
+        if container is None:
+            return
+        view = self.view()
+        if not isinstance(view.itemDelegate(), _ComboItemDelegate):
+            view.setItemDelegate(_ComboItemDelegate(view))
+            view.setMouseTracking(True)
+        if not container.property("popup_styled"):
+            container.setObjectName("comboPopupContainer")
+            container.setStyleSheet(
+                "QFrame#comboPopupContainer {{"
+                " background: #242424;"
+                " border: 1px solid #2f2f2f;"
+                " border-radius: {radius}px;"
+                "}}"
+                "QFrame#comboPopupContainer QAbstractItemView {{"
+                " background: transparent;"
+                " border: none;"
+                " border-radius: 0;"
+                " outline: none;"
+                "}}"
+                "QFrame#comboPopupContainer QAbstractItemView::item {{"
+                " border: none;"
+                " border-radius: 6px;"
+                "}}"
+                "QFrame#comboPopupContainer QAbstractItemView::item:selected {{"
+                " background: transparent;"
+                " color: {ink};"
+                "}}"
+                "QFrame#comboPopupContainer QAbstractItemView::item:hover {{"
+                " background: {brass};"
+                " color: {bg};"
+                "}}".format(
+                    radius=self.POPUP_RADIUS, ink=INK, brass=BRASS, bg=BG
+                )
+            )
+            palette = view.palette()
+            palette.setColor(QPalette.ColorRole.Base, QColor("#242424"))
+            palette.setColor(QPalette.ColorRole.Highlight, QColor("#242424"))
+            palette.setColor(QPalette.ColorRole.HighlightedText, QColor(INK))
+            view.setPalette(palette)
+            view.viewport().setPalette(palette)
+            view.viewport().setAutoFillBackground(False)
+            container.setProperty("popup_styled", True)
+
+        row_h = view.sizeHintForRow(0)
+        if row_h > 0 and self.count():
+            chrome = container.height() - view.viewport().height()
+            container.resize(
+                container.width(), row_h * self.count() + chrome
+            )
+
+        container.raise_()
+        pos = self.mapToGlobal(self.rect().bottomLeft())
+        screen = self.screen().availableGeometry()
+        x = min(max(pos.x(), screen.left()), screen.right() - container.width())
+        y = min(pos.y(), screen.bottom() - container.height())
+        container.move(max(screen.left(), x), max(screen.top(), y))
+
+        from PyQt6.QtCore import QRectF
+
+        path = QPainterPath()
+        path.addRoundedRect(
+            QRectF(container.rect()), self.POPUP_RADIUS, self.POPUP_RADIUS
+        )
+        container.setMask(QRegion(path.toFillPolygon().toPolygon()))
 
 
 # ── Crop Preview Widget ──────────────────────────────────────────────
@@ -1656,20 +1767,22 @@ class ConfigTab(QWidget):
         self._basic_toggle = QPushButton("Basic")
         self._basic_toggle.setCheckable(True)
         self._basic_toggle.setFlat(True)
-        self._basic_toggle.setStyleSheet(self._toggle_style(True, True))
         self._advanced_toggle = QPushButton("Advanced")
         self._advanced_toggle.setCheckable(True)
         self._advanced_toggle.setFlat(True)
-        self._advanced_toggle.setStyleSheet(self._toggle_style(False, True))
         self._basic_toggle.clicked.connect(lambda: self._set_mode("basic"))
         self._advanced_toggle.clicked.connect(lambda: self._set_mode("advanced"))
         mode_row.addWidget(self._basic_toggle)
         mode_row.addWidget(self._advanced_toggle)
         mode_row.addStretch()
-        if self._config_mode == "advanced":
-            self._advanced_toggle.setChecked(True)
-            self._advanced_toggle.setStyleSheet(self._toggle_style(False, True))
-            self._basic_toggle.setStyleSheet(self._toggle_style(True, False))
+        self._basic_toggle.setChecked(self._config_mode == "basic")
+        self._advanced_toggle.setChecked(self._config_mode == "advanced")
+        self._basic_toggle.setStyleSheet(
+            self._toggle_style(True, self._config_mode == "basic")
+        )
+        self._advanced_toggle.setStyleSheet(
+            self._toggle_style(False, self._config_mode == "advanced")
+        )
         layout.addLayout(mode_row)
 
         # ── Basic settings widget ──
@@ -1683,20 +1796,30 @@ class ConfigTab(QWidget):
         basic_form = QFormLayout(basic_group)
         basic_form.setSpacing(SPACE_MD)
 
-        self.basic_sensitivity = self._spin_float(0.0, 1.0, 0.01, 0.96)
-        self.basic_sensitivity.setToolTip("Higher values detect only clearer page turns.\nLower to 0.90 if pages are missed.")
-        basic_form.addRow(self._form_label("Detection sensitivity:"), self.basic_sensitivity)
+        self.sensitivity = self._spin_float(0.0, 1.0, 0.01, 0.96)
+        self.sensitivity.setToolTip(
+            "How similar two consecutive frames must be to count as 'unchanged'.\n"
+            "Higher values = fewer false triggers but may miss subtle page turns.\n"
+            "Safe range: 0.90–0.99. Raise toward 0.99 if the tool triggers on lighting flickers."
+        )
+        basic_form.addRow(self._form_label("Page change sensitivity:"), self.sensitivity)
 
-        self.basic_speed = QComboBox()
-        self.basic_speed.addItem("Slow turner (~5 s pause)", 5.0)
-        self.basic_speed.addItem("Medium (~3 s pause)", 3.0)
-        self.basic_speed.addItem("Fast turner (~1 s pause)", 1.0)
-        self.basic_speed.setToolTip("How quickly pages are turned in your video.\nChoose Slow for deliberate page-turns; Fast for quick flips.")
-        basic_form.addRow(self._form_label("Page-turn speed:"), self.basic_speed)
+        self.blank_std = self._spin_float(0.0, 50.0, 0.5, 3.0)
+        self.blank_std.setToolTip(
+            "Pixel variation below which a frame is considered blank\n"
+            "(white/black screen, no sheet music visible). Blank pages are skipped.\n"
+            "Safe range: 1.0–8.0. Raise above 10 if real pages are being rejected."
+        )
+        basic_form.addRow(self._form_label("Blank page threshold:"), self.blank_std)
 
-        self.basic_ocr = QCheckBox("Enable text recognition for better dedup")
-        self.basic_ocr.setToolTip("Compares the text on each page to catch duplicates.\nRequires PaddleOCR (slightly longer startup).")
-        basic_form.addRow("", self.basic_ocr)
+        self.ocr_enabled = QCheckBox("Enable text recognition for better dedup")
+        self.ocr_enabled.setChecked(False)
+        self.ocr_enabled.setToolTip(
+            "Compare page text to help catch duplicate pages that\n"
+            "look visually similar but have different content.\n"
+            "Requires PaddleOCR (slightly slower startup)."
+        )
+        basic_form.addRow("", self.ocr_enabled)
 
         basic_layout.addWidget(basic_group)
 
@@ -1710,74 +1833,8 @@ class ConfigTab(QWidget):
         adv_outer.setSpacing(SPACE_MD)
         adv_outer.setContentsMargins(0, SPACE_SM, 0, 0)
 
-        # Presets row
-        preset_row = QHBoxLayout()
-        preset_label = QLabel("Preset:")
-        _set_widget_class(preset_label, "param")
-        self._preset_combo = QComboBox()
-        self._preset_combo.addItem("Custom", None)
-        self._preset_combo.addItem("Standard", "standard")
-        self._preset_combo.addItem("Concert recording", "concert")
-        self._preset_combo.addItem("Phone video", "phone")
-        self._preset_combo.setToolTip(
-            "Standard: balanced defaults for well-lit tripod recordings.\n"
-            "Concert recording: higher sensitivity for dim lighting and slower turns.\n"
-            "Phone video: faster detection for hand-held phone footage."
-        )
-        self._preset_combo.currentIndexChanged.connect(self._on_preset_changed)
-        preset_row.addWidget(preset_label)
-        preset_row.addWidget(self._preset_combo, 1)
-        adv_outer.addLayout(preset_row)
-
-        adv_outer.addSpacing(SPACE_SM)
-
-        # ── Detection group ──
-        det_group = QGroupBox("Detection")
-        det_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        det_form = QFormLayout(det_group)
-        det_form.setSpacing(SPACE_MD)
-
-        self.sensitivity = self._spin_float(0.0, 1.0, 0.01, 0.96)
-        self.sensitivity.setToolTip(
-            "How similar two consecutive frames must be to count as 'unchanged'.\n"
-            "Higher values = fewer false triggers but may miss subtle page turns.\n"
-            "Safe range: 0.90–0.99. Raise toward 0.99 if the tool triggers on lighting flickers."
-        )
-        self.min_interval = self._spin_float(0.0, 60.0, 0.5, 3.0)
-        self.min_interval.setToolTip(
-            "Minimum seconds between page captures, even if changes are detected.\n"
-            "Prevents duplicate captures during slow page turns or hand movements.\n"
-            "Safe range: 1.0–10.0. Raise to 5+ for slow page-turners."
-        )
-        self.frame_check = self._spin_float(0.05, 5.0, 0.05, 0.8)
-        self.frame_check.setToolTip(
-            "How often (in seconds) the video is sampled for page changes.\n"
-            "Lower = faster detection but higher CPU usage.\n"
-            "Safe range: 0.05–1.0. Use 0.1 for quick extraction, 0.5 to save CPU."
-        )
-        self.top_ratio = self._spin_float(0.05, 1.0, 0.01, 0.34)
-        self.top_ratio.setToolTip(
-            "How much of the frame's top portion is compared between frames.\n"
-            "Only this region is checked for page changes, ignoring the bottom\n"
-            "(typically the piano keyboard or a player UI).\n"
-            "Safe range: 0.20\u20130.50."
-        )
-        self.blank_std = self._spin_float(0.0, 50.0, 0.5, 3.0)
-        self.blank_std.setToolTip(
-            "Pixel variation below which a frame is considered blank\n"
-            "(white/black screen, no sheet music visible). Blank pages are skipped.\n"
-            "Safe range: 1.0\u20138.0. Raise above 10 if real pages are being rejected."
-        )
-
-        det_form.addRow(self._form_label("Page change sensitivity:"), self.sensitivity)
-        det_form.addRow(self._form_label("Pause after page turn (s):"), self.min_interval)
-        det_form.addRow(self._form_label("Frame check interval (s):"), self.frame_check)
-        det_form.addRow(self._form_label("Content detection region:"), self.top_ratio)
-        det_form.addRow(self._form_label("Blank page threshold:"), self.blank_std)
-        layout.addWidget(det_group)
-
-        # ── Capture group ──
-        cap_group = QGroupBox("Capture Timing")
+        # ── Capture timing ──
+        cap_group = QGroupBox("Capture timing")
         cap_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         cap_form = QFormLayout(cap_group)
         cap_form.setSpacing(SPACE_MD)
@@ -1806,10 +1863,10 @@ class ConfigTab(QWidget):
         cap_form.addRow(self._form_label("Page settle time (s):"), self.a_delay)
         cap_form.addRow(self._form_label("New page reveal (s):"), self.b_delay)
         cap_form.addRow(self._form_label("Turn-line width:"), self.overlay_width)
-        layout.addWidget(cap_group)
+        adv_outer.addWidget(cap_group)
 
-        # ── Deduplication group ──
-        dedup_group = QGroupBox("Deduplication")
+        # ── Duplicate matching ──
+        dedup_group = QGroupBox("Duplicate matching")
         dedup_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         dedup_form = QFormLayout(dedup_group)
         dedup_form.setSpacing(SPACE_MD)
@@ -1840,27 +1897,6 @@ class ConfigTab(QWidget):
             "page numbers while catching identical content.\n"
             "Safe range: 0.85\u20130.98."
         )
-
-        dedup_form.addRow(self._form_label("Similarity check region:"), self.dup_top)
-        dedup_form.addRow(self._form_label("Visual match threshold:"), self.pixel_sim)
-        dedup_form.addRow(self._form_label("Row match threshold:"), self.row_sim)
-        dedup_form.addRow(self._form_label("Row coverage required:"), self.row_cov)
-        layout.addWidget(dedup_group)
-
-        # ── OCR group ──
-        ocr_group = QGroupBox("OCR")
-        ocr_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        ocr_form = QFormLayout(ocr_group)
-        ocr_form.setSpacing(SPACE_MD)
-
-        self.ocr_enabled = QCheckBox("Enable OCR")
-        self.ocr_enabled.setChecked(False)
-        self.ocr_enabled.setToolTip(
-            "Compare page text to help catch duplicate pages that\n"
-            "look visually similar but have different content.\n"
-            "Requires PaddleOCR (slightly slower startup).\n"
-            "Recommended when visual-only matching misses duplicates."
-        )
         self.ocr_conf = self._spin_int(0, 100, 40)
         self.ocr_conf.setToolTip(
             "Minimum confidence (0\u2013100) a recognized word must have\n"
@@ -1874,16 +1910,67 @@ class ConfigTab(QWidget):
             "Safe range: 0.20\u20130.50. Set to 1.0 for full-width."
         )
 
-        ocr_form.addRow("", self.ocr_enabled)
-        ocr_form.addRow(self._form_label("OCR confidence:"), self.ocr_conf)
-        ocr_form.addRow(self._form_label("OCR scan width:"), self.ocr_horiz)
-        layout.addWidget(ocr_group)
+        dedup_form.addRow(self._form_label("Similarity check region:"), self.dup_top)
+        dedup_form.addRow(self._form_label("Visual match threshold:"), self.pixel_sim)
+        dedup_form.addRow(self._form_label("Row match threshold:"), self.row_sim)
+        dedup_form.addRow(self._form_label("Row coverage required:"), self.row_cov)
+        dedup_form.addRow(self._form_label("OCR confidence:"), self.ocr_conf)
+        dedup_form.addRow(self._form_label("OCR scan width:"), self.ocr_horiz)
+        adv_outer.addWidget(dedup_group)
 
-        # ── Advanced group ──
-        self.advanced = QGroupBox("Advanced")
-        self.advanced.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        adv_form = QFormLayout(self.advanced)
-        adv_form.setSpacing(SPACE_MD)
+        # ── Auto-crop ──
+        crop_group = QGroupBox("Auto-crop")
+        crop_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        crop_form = QFormLayout(crop_group)
+        crop_form.setSpacing(SPACE_MD)
+
+        self.crop_offset = self._spin_int(-200, 200, 0)
+        self.crop_offset.setSingleStep(2)
+        self.crop_offset.setSuffix(" px")
+        self.crop_offset.setToolTip(
+            "Shift the auto-detected crop line up/down (pixels).\n"
+            "Positive moves the line up (trims more visualizer);\n"
+            "negative keeps more below it. A 2% safety margin is always applied."
+        )
+        crop_form.addRow(self._form_label("Crop line offset (px):"), self.crop_offset)
+        adv_outer.addWidget(crop_group)
+
+        # ── Detection fine tuning ──
+        det_group = QGroupBox("Detection fine tuning")
+        det_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        det_form = QFormLayout(det_group)
+        det_form.setSpacing(SPACE_MD)
+
+        self.min_interval = self._spin_float(0.0, 60.0, 0.5, 3.0)
+        self.min_interval.setToolTip(
+            "Minimum seconds between page captures, even if changes are detected.\n"
+            "Prevents duplicate captures during slow page turns or hand movements.\n"
+            "Safe range: 1.0\u201310.0."
+        )
+        self.frame_check = self._spin_float(0.05, 5.0, 0.05, 0.8)
+        self.frame_check.setToolTip(
+            "How often (in seconds) the video is sampled for page changes.\n"
+            "Lower = faster detection but higher CPU usage.\n"
+            "Safe range: 0.05\u20131.0. Use 0.1 for quick extraction, 0.5 to save CPU."
+        )
+        self.top_ratio = self._spin_float(0.05, 1.0, 0.01, 0.34)
+        self.top_ratio.setToolTip(
+            "How much of the frame's top portion is compared between frames.\n"
+            "Only this region is checked for page changes, ignoring the bottom\n"
+            "(typically the piano keyboard or a player UI).\n"
+            "Safe range: 0.20\u20130.50."
+        )
+
+        det_form.addRow(self._form_label("Minimum pause between pages (s):"), self.min_interval)
+        det_form.addRow(self._form_label("Frame check interval (s):"), self.frame_check)
+        det_form.addRow(self._form_label("Content detection region:"), self.top_ratio)
+        adv_outer.addWidget(det_group)
+
+        # ── Diagnostics ──
+        diag_group = QGroupBox("Diagnostics")
+        diag_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        diag_form = QFormLayout(diag_group)
+        diag_form.setSpacing(SPACE_MD)
 
         self.bar_diff = self._spin_float(0.0, 50000.0, 100.0, 500.0)
         self.bar_diff.setToolTip(
@@ -1899,8 +1986,8 @@ class ConfigTab(QWidget):
             "appears slightly off from the actual page boundary."
         )
 
-        adv_form.addRow(self._form_label("Turn-line sensitivity:"), self.bar_diff)
-        adv_form.addRow(self._form_label("Turn-line position (px):"), self.bar_pad)
+        diag_form.addRow(self._form_label("Turn-line sensitivity:"), self.bar_diff)
+        diag_form.addRow(self._form_label("Turn-line position (px):"), self.bar_pad)
 
         self.debug_cb = QCheckBox("Debug mode (open temp folder on completion)")
         self.debug_cb.setToolTip(
@@ -1908,9 +1995,8 @@ class ConfigTab(QWidget):
             "so you can inspect intermediate files (cropped frames, debug images).\n"
             "Enable this when diagnosing extraction issues."
         )
-        adv_form.addRow(self.debug_cb)
-
-        adv_outer.addWidget(self.advanced)
+        diag_form.addRow(self.debug_cb)
+        adv_outer.addWidget(diag_group)
 
         if self._param_labels:
             label_w = max(lbl.sizeHint().width() for lbl in self._param_labels) + 12
@@ -1936,9 +2022,6 @@ class ConfigTab(QWidget):
                 widget.valueChanged.connect(self._on_change)
         self.ocr_enabled.toggled.connect(self._on_change)
         self.debug_cb.toggled.connect(self._on_debug_toggled)
-        self.basic_sensitivity.valueChanged.connect(self._on_basic_sensitivity_changed)
-        self.basic_speed.currentIndexChanged.connect(self._on_basic_speed_changed)
-        self.basic_ocr.toggled.connect(self._on_basic_ocr_toggled)
 
         scroll.setWidget(inner)
         outer = QVBoxLayout(self)
@@ -1971,96 +2054,6 @@ class ConfigTab(QWidget):
         self._advanced_toggle.setStyleSheet(self._toggle_style(False, mode == "advanced"))
         self.basic_widget.setVisible(mode == "basic")
         self.advanced_widget.setVisible(mode == "advanced")
-        if mode == "basic":
-            self._sync_basic_from_advanced()
-
-    def _sync_basic_from_advanced(self):
-        self._updating = True
-        try:
-            self.basic_sensitivity.setValue(self.sensitivity.value())
-            v = self.min_interval.value()
-            idx = 0
-            if v <= 2.0:
-                idx = 2
-            elif v <= 4.0:
-                idx = 1
-            self.basic_speed.setCurrentIndex(idx)
-            self.basic_ocr.setChecked(self.ocr_enabled.isChecked())
-        finally:
-            self._updating = False
-
-    def _on_basic_sensitivity_changed(self, val: float):
-        if not self._updating:
-            self.sensitivity.setValue(val)
-            self.apply_to_api()
-
-    def _on_basic_speed_changed(self, _idx: int):
-        if not self._updating:
-            self.min_interval.setValue(self.basic_speed.currentData())
-            self.apply_to_api()
-
-    def _on_basic_ocr_toggled(self, checked: bool):
-        if not self._updating:
-            self.ocr_enabled.setChecked(checked)
-            self.apply_to_api()
-
-    def _on_preset_changed(self, idx: int):
-        data = self._preset_combo.itemData(idx)
-        if data is None:
-            return
-        self._updating = True
-        try:
-            if data == "standard":
-                self.sensitivity.setValue(0.96)
-                self.min_interval.setValue(3.0)
-                self.frame_check.setValue(0.8)
-                self.top_ratio.setValue(0.34)
-                self.blank_std.setValue(3.0)
-                self.a_delay.setValue(0.3)
-                self.b_delay.setValue(3.0)
-                self.overlay_width.setValue(0.5)
-                self.dup_top.setValue(0.27)
-                self.pixel_sim.setValue(0.95)
-                self.row_sim.setValue(0.98)
-                self.row_cov.setValue(0.94)
-                self.bar_diff.setValue(500.0)
-                self.bar_pad.setValue(-15)
-            elif data == "concert":
-                self.sensitivity.setValue(0.94)
-                self.min_interval.setValue(5.0)
-                self.frame_check.setValue(1.0)
-                self.top_ratio.setValue(0.40)
-                self.blank_std.setValue(5.0)
-                self.a_delay.setValue(0.5)
-                self.b_delay.setValue(4.0)
-                self.overlay_width.setValue(0.55)
-                self.dup_top.setValue(0.30)
-                self.pixel_sim.setValue(0.93)
-                self.row_sim.setValue(0.97)
-                self.row_cov.setValue(0.92)
-                self.bar_diff.setValue(800.0)
-                self.bar_pad.setValue(-10)
-            elif data == "phone":
-                self.sensitivity.setValue(0.90)
-                self.min_interval.setValue(2.0)
-                self.frame_check.setValue(0.5)
-                self.top_ratio.setValue(0.30)
-                self.blank_std.setValue(2.0)
-                self.a_delay.setValue(0.2)
-                self.b_delay.setValue(2.5)
-                self.overlay_width.setValue(0.45)
-                self.dup_top.setValue(0.25)
-                self.pixel_sim.setValue(0.92)
-                self.row_sim.setValue(0.96)
-                self.row_cov.setValue(0.90)
-                self.bar_diff.setValue(400.0)
-                self.bar_pad.setValue(-20)
-            self.apply_to_api()
-            self._preset_combo.blockSignals(True)
-            self._preset_combo.setCurrentIndex(0)
-            self._preset_combo.blockSignals(False)
-        finally:
-            self._updating = False
 
     def _spin_float(self, min_v: float, max_v: float, step: float, default: float) -> QDoubleSpinBox:
         s = QDoubleSpinBox()
@@ -2084,7 +2077,7 @@ class ConfigTab(QWidget):
             self.top_ratio, self.blank_std, self.a_delay, self.b_delay,
             self.overlay_width, self.dup_top, self.pixel_sim,
             self.row_sim, self.row_cov, self.ocr_conf, self.ocr_horiz,
-            self.bar_diff, self.bar_pad,
+            self.crop_offset, self.bar_diff, self.bar_pad,
         ]
 
     def apply_to_api(self):
@@ -2105,6 +2098,7 @@ class ConfigTab(QWidget):
                 "row_coverage_threshold": self.row_cov.value(),
                 "ocr_confidence_threshold": self.ocr_conf.value() if self.ocr_enabled.isChecked() else 0,
                 "ocr_horizontal_ratio": self.ocr_horiz.value(),
+                "boundary_offset_px": self.crop_offset.value(),
                 "bar_min_diff_threshold": self.bar_diff.value(),
                 "bar_padding_px": self.bar_pad.value(),
             }
@@ -2134,6 +2128,7 @@ class ConfigTab(QWidget):
             ocr_conf = cfg.get("ocr_confidence_threshold", 40)
             self.ocr_conf.setValue(ocr_conf if ocr_conf > 0 else 40)
             self.ocr_horiz.setValue(cfg.get("ocr_horizontal_ratio", 0.30))
+            self.crop_offset.setValue(int(cfg.get("boundary_offset_px", 0)))
             self.bar_diff.setValue(cfg.get("bar_min_diff_threshold", 500.0))
             self.bar_pad.setValue(cfg.get("bar_padding_px", -15))
             self.debug_cb.setChecked(self._api.is_debug_mode())
@@ -2168,6 +2163,7 @@ class ConfigTab(QWidget):
             self.ocr_enabled.setChecked(False)
             self.ocr_conf.setValue(40)
             self.ocr_horiz.setValue(0.30)
+            self.crop_offset.setValue(0)
             self.bar_diff.setValue(500.0)
             self.bar_pad.setValue(-15)
             self.debug_cb.setChecked(False)
@@ -2307,7 +2303,6 @@ class PreviewSeeker(QObject):
 
 class ExtractTab(QWidget):
     extraction_completed = pyqtSignal(int)
-    config_requested = pyqtSignal()
 
     def __init__(self, api: GuiApi, parent=None):
         super().__init__(parent)
@@ -2322,6 +2317,8 @@ class ExtractTab(QWidget):
         self._reextract_mode = False
         self._yt_video_paths: list[str] = []
         self._peak_style = False
+        self._pdf_name_edited = False
+        self._mirroring_pdf_name = False
 
         # Background preview seeker thread
         self._preview_thread = QThread(self)
@@ -2399,7 +2396,7 @@ class ExtractTab(QWidget):
         self.yt_url_edit = QLineEdit()
         self.yt_url_edit.setPlaceholderText("Paste YouTube or Bilibili video URL")
 
-        self.quality_combo = QComboBox()
+        self.quality_combo = StyledComboBox()
         self.quality_combo.addItem("Best (≤1080p)", "bestvideo[height<=1080]")
         self.quality_combo.addItem("720p", "bestvideo[height<=720]")
         self.quality_combo.addItem("480p", "bestvideo[height<=480]")
@@ -2407,7 +2404,7 @@ class ExtractTab(QWidget):
         self.quality_combo.addItem("Best available", "bestvideo")
         saved_qi = self._api.get_config().get("yt_quality_index", 0)
         self.quality_combo.setCurrentIndex(min(saved_qi, self.quality_combo.count() - 1))
-        self.quality_combo.setFixedWidth(130)
+        _fit_combo_width(self.quality_combo)
         self.quality_combo.setMinimumHeight(32)
 
         self.download_btn = QPushButton("Download")
@@ -2452,12 +2449,17 @@ class ExtractTab(QWidget):
         project_row.addWidget(self.project_browse_btn)
         layout.addLayout(project_row)
 
-        # ── Status line ──
-        self.status_label = QLabel("Choose a video to extract your score")
-        _set_widget_class(self.status_label, "muted")
-        self.status_label.setWordWrap(True)
-        self.status_label.setAccessibleName("Status")
-        layout.addWidget(self.status_label)
+        # ── Output PDF name ──
+        pdf_row = QHBoxLayout()
+        pdf_label = QLabel("PDF file:")
+        pdf_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        pdf_label.setFixedWidth(115)
+        self.pdf_name_edit = QLineEdit()
+        self.pdf_name_edit.setPlaceholderText("Auto-filled from project name")
+        self.pdf_name_edit.setMaxLength(100)
+        pdf_row.addWidget(pdf_label)
+        pdf_row.addWidget(self.pdf_name_edit, 1)
+        layout.addLayout(pdf_row)
 
         # ── Crop preview ──
         self.crop_widget = CropPreviewWidget()
@@ -2466,11 +2468,12 @@ class ExtractTab(QWidget):
         self.crop_widget.setAccessibleName("Crop preview")
         layout.addWidget(self.crop_widget)
 
-        # ── Crop ratio row ──
+        # ── Crop row ──
         crop_row = QHBoxLayout()
-        crop_label = QLabel("Crop ratio:")
+        crop_label = QLabel("Crop:")
         crop_label.setFixedWidth(115)
         crop_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.crop_ratio_label = QLabel("Ratio:")
         self.crop_spin = QDoubleSpinBox()
         self.crop_spin.setRange(0.0, 1.0)
         self.crop_spin.setSingleStep(0.01)
@@ -2480,7 +2483,7 @@ class ExtractTab(QWidget):
         self.crop_original_label = QLabel("")
         _set_widget_class(self.crop_original_label, "muted")
 
-        self.crop_mode_combo = QComboBox()
+        self.crop_mode_combo = StyledComboBox()
         self.crop_mode_combo.addItem("Auto (detect pages)", "auto")
         self.crop_mode_combo.addItem("Fixed ratio", "manual")
         self.crop_mode_combo.addItem("Full frame", "off")
@@ -2490,32 +2493,14 @@ class ExtractTab(QWidget):
             "Fixed ratio — crop every page to the ratio below.\n"
             "Full frame — keep the whole frame, no crop."
         )
-        self.crop_mode_combo.setMinimumWidth(150)
-
-        self.crop_offset_spin = QSpinBox()
-        self.crop_offset_spin.setRange(-200, 200)
-        self.crop_offset_spin.setSingleStep(2)
-        self.crop_offset_spin.setSuffix(" px")
-        self.crop_offset_spin.setFixedWidth(90)
-        self.crop_offset_spin.setToolTip(
-            "Shift the auto-detected crop line up/down (pixels).\n"
-            "Positive moves the line up (trims more visualizer);\n"
-            "negative keeps more below it. A 2% safety margin is always applied."
-        )
+        _fit_combo_width(self.crop_mode_combo)
 
         crop_row.addWidget(crop_label)
-        crop_row.addWidget(self.crop_spin)
         crop_row.addWidget(self.crop_mode_combo)
-        crop_row.addWidget(self.crop_offset_spin)
+        crop_row.addWidget(self.crop_ratio_label)
+        crop_row.addWidget(self.crop_spin)
         crop_row.addWidget(self.crop_original_label)
         crop_row.addStretch()
-        self.config_btn = QPushButton("Settings")
-        _set_widget_class(self.config_btn, "secondary")
-        self.config_btn.setMinimumWidth(100)
-        self.config_btn.setToolTip("Open extraction settings")
-        self.config_btn.clicked.connect(self.config_requested.emit)
-
-        crop_row.addWidget(self.config_btn)
         layout.addLayout(crop_row)
 
         # ── Duplicate detection ──
@@ -2523,14 +2508,14 @@ class ExtractTab(QWidget):
         dedup_label = QLabel("Duplicates:")
         dedup_label.setFixedWidth(115)
         dedup_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.dedup_combo = QComboBox()
+        self.dedup_combo = StyledComboBox()
         self.dedup_combo.addItem("Manual (flag them yourself)", "manual")
         self.dedup_combo.addItem("Automatic (mark detected)", "auto")
         self.dedup_combo.setToolTip(
             "Manual — every captured page stays unflagged; use Review Pages to mark duplicates.\n"
             "Automatic — system-detected duplicates are flagged and skipped in the PDF."
         )
-        self.dedup_combo.setMinimumWidth(150)
+        _fit_combo_width(self.dedup_combo)
         dedup_row.addWidget(dedup_label)
         dedup_row.addWidget(self.dedup_combo)
         dedup_row.addStretch()
@@ -2542,19 +2527,13 @@ class ExtractTab(QWidget):
         self.seek_bar.setAccessibleName("Video seek bar with start and end handles")
         layout.addWidget(self.seek_bar)
 
-        # ── Output PDF name ──
-        pdf_row = QHBoxLayout()
-        pdf_label = QLabel("Output PDF:")
-        pdf_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        pdf_label.setFixedWidth(115)
-        self.pdf_name_edit = QLineEdit()
-        self.pdf_name_edit.setPlaceholderText("Auto-filled from project name")
-        self.pdf_name_edit.setMaxLength(100)
-        pdf_row.addWidget(pdf_label)
-        pdf_row.addWidget(self.pdf_name_edit, 1)
-        layout.addLayout(pdf_row)
+        # ── Status, progress & log ──
+        self.status_label = QLabel("Choose a video to extract your score")
+        _set_widget_class(self.status_label, "muted")
+        self.status_label.setWordWrap(True)
+        self.status_label.setAccessibleName("Status")
+        layout.addWidget(self.status_label)
 
-        # ── Progress & Log ──
         progress_row = QHBoxLayout()
         progress_row.setSpacing(SPACE_SM)
         self.progress_bar = QProgressBar()
@@ -2572,24 +2551,21 @@ class ExtractTab(QWidget):
         progress_row.addWidget(self._elapsed_label)
         layout.addLayout(progress_row)
 
-        log_header = QHBoxLayout()
-        log_header.setSpacing(SPACE_SM)
-        log_header.setContentsMargins(0, 0, 0, 0)
-        log_label = QLabel("Log")
-        _set_widget_class(log_label, "muted")
-        log_label.setMinimumWidth(40)
-        log_header.addWidget(log_label)
-        log_header.addStretch()
-        clear_log_btn = QPushButton("Clear")
-        _set_widget_class(clear_log_btn, "secondary")
-        clear_log_btn.setMinimumWidth(60)
-        log_header.addWidget(clear_log_btn)
-        layout.addLayout(log_header)
+        log_row = QHBoxLayout()
+        log_row.setContentsMargins(0, 0, 0, 0)
+        self.log_toggle_btn = QPushButton("Show log")
+        _set_widget_class(self.log_toggle_btn, "secondary")
+        self.log_toggle_btn.setCheckable(True)
+        self.log_toggle_btn.setToolTip("Show or hide extraction details")
+        _fit_button_width(self.log_toggle_btn)
+        log_row.addWidget(self.log_toggle_btn)
+        log_row.addStretch()
+        layout.addLayout(log_row)
 
         self.log_edit = QTextEdit()
-        clear_log_btn.clicked.connect(self.log_edit.clear)
         self.log_edit.setReadOnly(True)
         self.log_edit.setMaximumHeight(140)
+        self.log_edit.setVisible(False)
         self.log_edit.document().setMaximumBlockCount(2000)
         layout.addWidget(self.log_edit)
 
@@ -2636,6 +2612,9 @@ class ExtractTab(QWidget):
         outer.addLayout(action_row)
 
         # ── Connections ──
+        self.project_edit.textChanged.connect(self._on_project_name_changed)
+        self.pdf_name_edit.textChanged.connect(self._on_pdf_name_changed)
+        self.log_toggle_btn.toggled.connect(self._on_log_toggled)
         self.project_edit.returnPressed.connect(self._on_project_entered)
         self._completer.activated.connect(self._on_project_selected)
         self.project_browse_btn.clicked.connect(self._browse_project)
@@ -2653,7 +2632,6 @@ class ExtractTab(QWidget):
         self.crop_spin.valueChanged.connect(self._on_crop_spin_changed)
         self.crop_widget.crop_ratio_changed.connect(self.crop_spin.setValue)
         self.crop_mode_combo.currentIndexChanged.connect(self._on_crop_mode_changed)
-        self.crop_offset_spin.valueChanged.connect(self._on_crop_offset_changed)
 
         self._refresh_completer()
         self._load_crop_controls()
@@ -2708,6 +2686,28 @@ class ExtractTab(QWidget):
         return self.project_edit.text().strip()
 
     # ── Project field ──
+
+    def _set_pdf_name(self, text: str):
+        self._mirroring_pdf_name = True
+        try:
+            self.pdf_name_edit.setText(text)
+        finally:
+            self._mirroring_pdf_name = False
+
+    def _on_project_name_changed(self, text: str):
+        if self._mirroring_pdf_name:
+            return
+        if not self._pdf_name_edited:
+            self._set_pdf_name(text.strip())
+
+    def _on_pdf_name_changed(self, text: str):
+        if self._mirroring_pdf_name:
+            return
+        if not text.strip():
+            self._pdf_name_edited = False
+            self._set_pdf_name(self.project_edit.text().strip())
+        else:
+            self._pdf_name_edited = True
 
     def _refresh_completer(self):
         try:
@@ -2783,9 +2783,13 @@ class ExtractTab(QWidget):
             self._project_dir = score_path
             p = Path(score_path)
             self.project_edit.setText(p.name)
-            self.pdf_name_edit.setText(p.name)
+            self._set_pdf_name(p.name)
+            self._pdf_name_edited = False
             # Show the score with the crop it was saved with.
             self._load_crop_controls()
+            main_win = self.window()
+            if hasattr(main_win, "config_tab"):
+                main_win.config_tab.refresh_from_api()
             if self._loaded_original_ratio is not None:
                 self.crop_original_label.setText(f"(was {int(self._loaded_original_ratio * 100)}%)")
 
@@ -2819,8 +2823,8 @@ class ExtractTab(QWidget):
         self._project_dir = ""
         self.crop_original_label.setText("")
         self._load_crop_controls()
-        if not self.pdf_name_edit.text():
-            self.pdf_name_edit.setText(self.project_edit.text())
+        self._pdf_name_edited = False
+        self._set_pdf_name(self.project_edit.text().strip())
         self._set_video_controls_enabled(True)
         self.status_label.setText("Choose a video to extract your score")
         self._update_state()
@@ -3028,13 +3032,12 @@ class ExtractTab(QWidget):
         self._api.update_config({"boundary_mode": mode})
         self._sync_crop_controls()
 
-    def _on_crop_offset_changed(self, val: int):
-        self._api.update_config({"boundary_offset_px": val})
-
     def _sync_crop_controls(self):
         mode = self.crop_mode_combo.currentData()
-        self.crop_spin.setEnabled(mode == "manual")
-        self.crop_offset_spin.setEnabled(mode == "auto")
+        manual = mode == "manual"
+        self.crop_ratio_label.setVisible(manual)
+        self.crop_spin.setVisible(manual)
+        self.crop_spin.setEnabled(manual)
 
     def _load_crop_controls(self):
         cfg = self._api.get_config()
@@ -3044,9 +3047,6 @@ class ExtractTab(QWidget):
         self.crop_mode_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.crop_mode_combo.blockSignals(False)
         self.crop_spin.setValue(cfg.get("default_crop_ratio", 0.35))
-        self.crop_offset_spin.blockSignals(True)
-        self.crop_offset_spin.setValue(int(cfg.get("boundary_offset_px", 0)))
-        self.crop_offset_spin.blockSignals(False)
         self._sync_crop_controls()
 
     def _on_reextract(self):
@@ -3077,6 +3077,14 @@ class ExtractTab(QWidget):
         if peak != self._peak_style:
             _set_widget_class(self.status_label, "count" if peak else "muted")
             self._peak_style = peak
+
+    def _on_log_toggled(self, checked: bool):
+        self.log_edit.setVisible(checked)
+        self.log_toggle_btn.setText("Hide log" if checked else "Show log")
+        _fit_button_width(self.log_toggle_btn)
+
+    def _show_log(self, show: bool = True):
+        self.log_toggle_btn.setChecked(show)
 
     def _update_state(self):
         has_project = bool(self.project_edit.text().strip())
@@ -3192,7 +3200,6 @@ class ExtractTab(QWidget):
         self._api.update_config({
             "default_crop_ratio": self.crop_spin.value(),
             "boundary_mode": self.crop_mode_combo.currentData(),
-            "boundary_offset_px": self.crop_offset_spin.value(),
         })
 
         start_time = self.seek_bar.get_start()
@@ -3249,7 +3256,6 @@ class ExtractTab(QWidget):
         self._api.update_config({
             "default_crop_ratio": self.crop_spin.value(),
             "boundary_mode": self.crop_mode_combo.currentData(),
-            "boundary_offset_px": self.crop_offset_spin.value(),
         })
 
         pdf_name = self.pdf_name_edit.text().strip()
@@ -3435,6 +3441,7 @@ class ExtractTab(QWidget):
     def on_error(self, message: str):
         dbg(f"on_error: {message}")
         self._log(f"[Error] {message}")
+        self._show_log(True)
         if not self._busy:
             QMessageBox.critical(self, "Error", message)
         self._reset_ui()
@@ -3631,7 +3638,6 @@ class MainWindow(QMainWindow):
         self.signals.cancelled_with_pages.connect(self._on_cancelled_with_pages)
         self.signals.download_done.connect(self._on_yt_downloaded)
 
-        self.extract_tab.config_requested.connect(lambda: self.tabs.setCurrentIndex(1))
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
     def _on_progress(self, phase: str, percent: float, detail: str):

@@ -8,6 +8,7 @@ Run with: python -m pytest tests/test_gui_visual.py -v
 Screenshots are saved to tests/visual_output/ for AI analysis.
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -15,8 +16,9 @@ from pathlib import Path
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 import pytest
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtWidgets import QApplication, QComboBox, QGroupBox, QLabel, QWidget
 from PyQt6.QtCore import Qt
+import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -326,6 +328,140 @@ class TestConfigTabLayout:
         assert not tab.basic_widget.isVisible(), "Basic widget should be hidden"
         assert tab.advanced_widget.isVisible(), "Advanced widget should be visible"
 
+    def test_advanced_groups_follow_frequency_order(self, window):
+        tab = window.config_tab
+        tab._set_mode("advanced")
+        process_events()
+
+        titles = [group.title() for group in tab.advanced_widget.findChildren(QGroupBox)]
+        assert titles == [
+            "Capture timing",
+            "Duplicate matching",
+            "Auto-crop",
+            "Detection fine tuning",
+            "Diagnostics",
+        ]
+
+    def test_crop_offset_lives_in_advanced_and_persists(self, window):
+        tab = window.config_tab
+        tab._set_mode("advanced")
+
+        assert tab.advanced_widget.isAncestorOf(tab.crop_offset)
+
+        tab.crop_offset.setValue(12)
+        assert window.api.get_config()["boundary_offset_px"] == 12
+
+        window.api.update_config({"boundary_offset_px": -8})
+        tab.refresh_from_api()
+        assert tab.crop_offset.value() == -8
+
+    def test_basic_mode_has_only_common_settings(self, window):
+        """Basic holds sensitivity, blank threshold and OCR; no format profiles."""
+        tab = window.config_tab
+        tab._set_mode("basic")
+        process_events()
+
+        assert tab.basic_widget.isAncestorOf(tab.sensitivity)
+        assert tab.basic_widget.isAncestorOf(tab.blank_std)
+        assert tab.basic_widget.isAncestorOf(tab.ocr_enabled)
+
+        labels = {label.text() for label in tab.basic_widget.findChildren(QLabel)}
+        assert "Page change sensitivity:" in labels
+        assert "Blank page threshold:" in labels
+
+        assert tab.basic_widget.findChildren(QComboBox) == []
+        assert tab.advanced_widget.findChildren(QComboBox) == []
+
+
+class TestExtractLayout:
+    """Validate the refined Extract tab order and PDF mirror rules."""
+
+    def test_pdf_name_sits_between_project_and_preview(self, window):
+        tab = window.extract_tab
+        window.show()
+        process_events()
+
+        assert tab.project_edit.geometry().y() < tab.pdf_name_edit.geometry().y()
+        assert tab.pdf_name_edit.geometry().y() < tab.crop_widget.geometry().y()
+        assert not hasattr(tab, "config_btn")
+        assert not hasattr(tab, "crop_offset_spin")
+
+    def test_status_sits_below_seek_bar_and_above_progress(self, window):
+        tab = window.extract_tab
+        window.show()
+        process_events()
+
+        assert tab.seek_bar.geometry().y() < tab.status_label.geometry().y()
+        assert tab.status_label.geometry().y() < tab.progress_bar.geometry().y()
+
+    def test_every_combo_fits_its_longest_item(self, window):
+        combos = window.findChildren(QComboBox)
+        assert combos
+
+        for combo in combos:
+            metrics = combo.fontMetrics()
+            widest = max(
+                metrics.horizontalAdvance(combo.itemText(i))
+                for i in range(combo.count())
+            )
+            assert combo.minimumWidth() >= widest + 40, (
+                f"Combo {combo.currentText()!r} is too narrow for its options")
+
+    def test_loading_saved_score_keeps_the_settings_offset(self, window, tmp_path):
+        score_dir = tmp_path / "OffsetScore"
+        photos = score_dir / "photos"
+        photos.mkdir(parents=True)
+        cv2.imwrite(
+            str(photos / "page_001_merged.png"),
+            np.full((100, 100, 3), 200, dtype=np.uint8),
+        )
+        (score_dir / "metadata.json").write_text(json.dumps({
+            "score_name": "OffsetScore",
+            "crop_ratio": 0.4,
+            "boundary_mode": "auto",
+            "boundary_offset_px": 37,
+        }), encoding="utf-8")
+
+        window.api.update_config({"boundary_offset_px": 0})
+        window.config_tab.refresh_from_api()
+        window.extract_tab._load_existing_score(str(score_dir))
+
+        assert window.config_tab.crop_offset.value() == 37
+        window.config_tab.apply_to_api()
+        assert window.api.get_config()["boundary_offset_px"] == 37
+
+    def test_log_starts_hidden_and_toggles(self, window):
+        tab = window.extract_tab
+        assert not tab.log_edit.isVisible()
+        assert tab.log_toggle_btn.text() == "Show log"
+
+        tab.log_toggle_btn.click()
+        assert tab.log_edit.isVisible()
+        assert tab.log_toggle_btn.text() == "Hide log"
+
+        tab.log_toggle_btn.click()
+        assert not tab.log_edit.isVisible()
+
+    def test_error_opens_the_log(self, window):
+        tab = window.extract_tab
+        tab._busy = True
+        tab.on_error("boom")
+
+        assert tab.log_edit.isVisible()
+        assert "[Error] boom" in tab.log_edit.toPlainText()
+
+    def test_pdf_name_follows_project_until_edited(self, window):
+        tab = window.extract_tab
+        tab.project_edit.setText("Sonata")
+        assert tab.pdf_name_edit.text() == "Sonata"
+
+        tab.pdf_name_edit.setText("Printed")
+        tab.project_edit.setText("Etude")
+        assert tab.pdf_name_edit.text() == "Printed"
+
+        tab.pdf_name_edit.setText("")
+        assert tab.pdf_name_edit.text() == "Etude"
+
 
 class TestFullWorkflow:
     """Drive through complete extraction workflow and capture each state."""
@@ -424,7 +560,7 @@ class TestMinimumWindowSize:
 
         assert tab._scroll.verticalScrollBar().maximum() > 0, (
             "Content should scroll at the minimum window height")
-        assert tab.crop_widget.geometry().bottom() < tab.crop_spin.geometry().top(), (
+        assert tab.crop_widget.geometry().bottom() < tab.crop_mode_combo.geometry().top(), (
             "Crop preview must not overlap the crop controls")
         assert tab.generate_btn.isVisible(), "Action bar should stay visible"
         assert tab.generate_btn.isEnabled(), "Generate PDF should be enabled"
