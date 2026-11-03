@@ -31,6 +31,7 @@ from gui_bridge import ExtractionSignals
 from src.api.gui_api import GuiApi, ScoreInfo
 from src.domain.models import PageStatus
 from src.infrastructure.file_service import FileService
+from src.infrastructure.download_service import video_selector
 
 
 # ── Debug logging ──────────────────────────────────────────────────────
@@ -2397,10 +2398,10 @@ class ExtractTab(QWidget):
         self.yt_url_edit.setPlaceholderText("Paste YouTube or Bilibili video URL")
 
         self.quality_combo = StyledComboBox()
-        self.quality_combo.addItem("Best (≤1080p)", "bestvideo[height<=1080]")
-        self.quality_combo.addItem("720p", "bestvideo[height<=720]")
-        self.quality_combo.addItem("480p", "bestvideo[height<=480]")
-        self.quality_combo.addItem("360p", "bestvideo[height<=360]")
+        self.quality_combo.addItem("Best (≤1080p)", video_selector(1080))
+        self.quality_combo.addItem("720p", video_selector(720))
+        self.quality_combo.addItem("480p", video_selector(480))
+        self.quality_combo.addItem("360p", video_selector(360))
         self.quality_combo.addItem("Best available", "bestvideo")
         saved_qi = self._api.get_config().get("yt_quality_index", 0)
         self.quality_combo.setCurrentIndex(min(saved_qi, self.quality_combo.count() - 1))

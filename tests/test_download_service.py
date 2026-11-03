@@ -7,10 +7,22 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from src.infrastructure.download_service import DownloadService, DownloadResult
+from src.infrastructure.download_service import DownloadService, DownloadResult, video_selector
 
 
 pytestmark = pytest.mark.unit
+
+
+class TestVideoSelector:
+    """Downloads prefer H.264 — same pages, ~7x faster to extract than AV1/VP9."""
+
+    def test_prefers_h264_with_a_fallback(self):
+        assert video_selector(1080) == (
+            "bestvideo[height<=1080][vcodec^=avc1]/bestvideo[height<=1080]"
+        )
+
+    def test_uncapped_selector(self):
+        assert video_selector() == "bestvideo[vcodec^=avc1]/bestvideo"
 
 
 @pytest.fixture
