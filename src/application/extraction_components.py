@@ -242,7 +242,9 @@ class _PendingCommit:
     page_num: int
     is_first: bool
     ssim_score: Optional[float]
-    merged: np.ndarray
+    analysis: "_Analysis"
+    floor: float
+    bar_mode: str
 
 
 @dataclass
@@ -306,6 +308,8 @@ class PageCommitter:
         self._original_cap = None
         self._original_fps = None
         self._original_dim_probed = False
+        self._last_pair_key: Optional[tuple] = None
+        self._last_pair: tuple = (None, None)
         self.calibrator = calibrator
         self.boundary_detector = boundary_detector
         self.dedup_mode = dedup_mode
@@ -357,17 +361,6 @@ class PageCommitter:
         else:
             probe.release()
 
-    def _read_full_frame_from_original(self, frame_idx: int, timestamp: float):
-        self._ensure_original_dims()
-        if self._original_cap is None:
-            return None
-        orig_idx = int(round(timestamp * self._original_fps))
-        self._original_cap.set(cv2.CAP_PROP_POS_FRAMES, orig_idx)
-        ret, frame = self._original_cap.read()
-        if ret:
-            return frame
-        return None
-
     def release(self):
         if self._original_cap:
             self._original_cap.release()
@@ -409,13 +402,14 @@ class PageCommitter:
         # Calibrator path: hold until a genuine two-spike profile lands.
         # The dedup pool includes already-committed pages AND held pages, so a
         # duplicate of an earlier held page is never treated as a gold sample.
-        dedup_images = [f.image for f in unique_pages] + [p.merged for p in self._pending]
+        dedup_images = [f.image for f in unique_pages] + [p.analysis.merged for p in self._pending]
         analysis = self._analyze(
             frame_a, frame_b, dedup_images, attempt_num, is_first, debug,
             output_dir, bar_mode="normal", ssim_score=ssim_score,
         )
         self._pending.append(_PendingCommit(
-            frame_a, frame_b, attempt_num, is_first, ssim_score, analysis.merged,
+            frame_a, frame_b, attempt_num, is_first, ssim_score, analysis,
+            self._current_floor(), "normal",
         ))
 
         if self._is_gold_sample(analysis):
@@ -444,8 +438,28 @@ class PageCommitter:
         full_a = full_b = None
         self._ensure_original_dims()
         if self._original_cap is not None:
-            full_a = self._read_full_frame_from_original(frame_a.index, frame_a.timestamp)
-            full_b = self._read_full_frame_from_original(frame_b.index, frame_b.timestamp)
+            ia = int(round(frame_a.timestamp * self._original_fps))
+            ib = int(round(frame_b.timestamp * self._original_fps))
+            if self._last_pair_key == (ia, ib):
+                return self._last_pair
+            # One seek for the pair. A and B are a second apart, and a second
+            # seek restarts from the previous keyframe — slow on long-GOP codecs.
+            lo, hi = (ia, ib) if ia <= ib else (ib, ia)
+            self._original_cap.set(cv2.CAP_PROP_POS_FRAMES, lo)
+            ok, first = self._original_cap.read()
+            second = None
+            if ok and hi != lo:
+                for _ in range(hi - lo - 1):
+                    self._original_cap.grab()
+                ok2, second = self._original_cap.read()
+                if not ok2:
+                    second = None
+            if ia <= ib:
+                full_a, full_b = (first if ok else None), second
+            else:
+                full_a, full_b = second, (first if ok else None)
+            self._last_pair_key = (ia, ib)
+            self._last_pair = (full_a, full_b)
         elif self.ocr_service.is_enabled() or debug:
             full_a, _ = self.video.read_full_frame_at(frame_a.index)
             full_b, _ = self.video.read_full_frame_at(frame_b.index)
@@ -716,7 +730,15 @@ class PageCommitter:
         entries: List[PageManifestEntry] = []
         pending, self._pending = self._pending, []
         for p in pending:
-            analysis = self._analyze(
+            # Flushing the page that triggered this commit replays it with the
+            # same floor, mode and dedup pool, so its analysis is already the
+            # answer — re-running it only seeks the source video again.
+            replay = (
+                len(pending) == 1
+                and p.bar_mode == bar_mode
+                and p.floor == self._current_floor()
+            )
+            analysis = p.analysis if replay else self._analyze(
                 p.frame_a, p.frame_b, [f.image for f in unique_pages],
                 p.page_num, p.is_first, debug, output_dir, bar_mode=bar_mode,
                 ssim_score=p.ssim_score,
