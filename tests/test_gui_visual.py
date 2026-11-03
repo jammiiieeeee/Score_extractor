@@ -17,7 +17,8 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 import pytest
 from PyQt6.QtWidgets import QApplication, QComboBox, QGroupBox, QLabel, QWidget
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QEvent, QPointF
+from PyQt6.QtGui import QMouseEvent, QPixmap
 import cv2
 import numpy as np
 
@@ -582,6 +583,40 @@ class TestCustomWidgets:
         assert tab.crop_widget.isVisible(), "Crop widget should be visible"
         assert tab.crop_widget.width() > 0, "Crop widget should have width"
         assert tab.crop_widget.height() > 0, "Crop widget should have height"
+
+    def test_crop_preview_drags_only_in_fixed_ratio(self, window):
+        """Auto and Full frame must not let the user drag the crop line."""
+        tab = window.extract_tab
+        w = tab.crop_widget
+        w.set_frame(QPixmap(320, 180))
+        w.grab()  # runs paintEvent so the image rect is known
+
+        emitted = []
+        w.crop_ratio_changed.connect(emitted.append)
+        ox, oy, pw, ph = w._image_rect
+        line_y = oy + int(ph * w.get_ratio())
+
+        def drag():
+            w.mousePressEvent(QMouseEvent(
+                QEvent.Type.MouseButtonPress, QPointF(ox + pw / 2, line_y),
+                Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier))
+            w.mouseMoveEvent(QMouseEvent(
+                QEvent.Type.MouseMove, QPointF(ox + pw / 2, line_y + 20),
+                Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier))
+
+        for mode in ("auto", "off"):
+            tab.crop_mode_combo.setCurrentIndex(tab.crop_mode_combo.findData(mode))
+            process_events()
+            drag()
+            assert emitted == [], f"{mode} mode must not emit a crop change"
+            assert w._drag_active is False
+
+        tab.crop_mode_combo.setCurrentIndex(tab.crop_mode_combo.findData("manual"))
+        process_events()
+        drag()
+        assert emitted, "Fixed ratio must still let the line be dragged"
 
     def test_seek_bar_widget(self, window, tmp_path):
         """DualHandleSeekBar should render without errors."""
