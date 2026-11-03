@@ -4,7 +4,11 @@
 
 ## Platform
 
-windows
+web
+
+Windows desktop app built on Qt (PyQt6). Recorded as `web` because the schema has no
+desktop value and the styling model is CSS-like (QSS, px units); no browser or mobile
+tooling applies.
 
 ## Users
 
