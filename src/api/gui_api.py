@@ -19,7 +19,7 @@ from src.infrastructure.video_service import VideoService
 from src.infrastructure.ocr_service import OcrService
 from src.infrastructure.pdf_service import PdfService
 from src.infrastructure.file_service import FileService
-from src.infrastructure.download_service import DownloadService
+from src.infrastructure.download_service import DownloadService, video_selector
 from src.infrastructure.diagnostics_service import generate_html_report
 from src.application.use_cases import ExtractScoreUseCase, ExtractRequest
 from src.application.saved_score import (
@@ -490,8 +490,8 @@ class GuiApi:
     #  YouTube Download
     # ═════════════════════════════════════════════════════════════════════
 
-    def download_youtube(self, url: str, fmt: str = "bestvideo[height<=1080]",
-                         scan_fmt: str = "bestvideo[height<=640]") -> None:
+    def download_youtube(self, url: str, fmt: str = video_selector(1080),
+                         scan_fmt: str = video_selector(640)) -> None:
         if self.is_busy():
             raise RuntimeError("Extraction or PDF generation already in progress")
 
@@ -506,8 +506,8 @@ class GuiApi:
         )
         self._download_thread.start()
 
-    def _run_youtube_download(self, url: str, fmt: str = "bestvideo[height<=1080]",
-                              scan_fmt: str = "bestvideo[height<=640]"):
+    def _run_youtube_download(self, url: str, fmt: str = video_selector(1080),
+                              scan_fmt: str = video_selector(640)):
         try:
             def on_progress(pct, detail):
                 self._state.current_timestamp = pct

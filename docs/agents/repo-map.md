@@ -122,6 +122,9 @@ run_pipeline.py ──────► GuiApi (scripted)
 
 Max 10 lines, newest first. Older lines get dropped (git has the history).
 
+- 2026-11-03 — crop preview is read-only outside Fixed ratio: no band, line, grips or drag in Auto/Full frame, so it can no longer write `default_crop_ratio` by accident — `app_gui.py`, `tests/test_gui_visual.py`
+- 2026-11-03 — YouTube downloads prefer H.264 via one `video_selector()` helper; GUI, CLI and API all use it (AV1 1080p60 extraction: 139.5s → 20.0s on the same video, pages identical) — `src/infrastructure/download_service.py`, `src/api/gui_api.py`, `main.py`, `app_gui.py`, `AGENTS.md`, `tests/test_download_service.py`
+- 2026-11-03 — extraction seeks the source video half as often: a calibrated page is no longer re-analyzed on flush, and the A/B full-res pair is read from one seek (166s → 125s on a 230s 1080p60 AV1 video, identical page output) — `src/application/extraction_components.py`, `tests/test_page_committer.py`
 - 2026-10-28 — added the real page-36 bar-profile fixture and its merge-cutoff regression test; verified the end-to-end merge and PDF — `tests/fixtures/bar_profile_page_036.txt`, `tests/test_bar_profile_service.py`
 - 2026-10-26 — auto crop lifts 2% of frame height by default so the visualizer stays out; the ratio is saved with the score — `src/domain/page_crop.py`, `config.py`, `gui_api.py`, `saved_score.py`, `tools/verify_1080p.py`, tests
 - 2026-10-23 — Extract tab scrolls its content with a pinned action bar; visual suite refreshed and adopted — `app_gui.py`, `tests/`, `.gitignore`

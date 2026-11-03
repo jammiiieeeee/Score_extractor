@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Callable, Optional, Tuple
 
 
+def video_selector(max_height: Optional[int] = None) -> str:
+    """Prefer H.264: same pages, ~7x faster to extract than AV1/VP9."""
+    limit = f"[height<={max_height}]" if max_height else ""
+    return f"bestvideo{limit}[vcodec^=avc1]/bestvideo{limit}"
+
+
 class DownloadResult:
     """Result of a YouTube download operation."""
     def __init__(self, video_path: str, video_title: str, original_path: Optional[str] = None,
@@ -131,7 +137,7 @@ class DownloadService:
     def download(
         self,
         url: str,
-        fmt: str = "bestvideo[height<=1080]",
+        fmt: str = video_selector(1080),
         scan_fmt: str = "",
         on_progress: Optional[Callable[[float, str], None]] = None,
         on_log: Optional[Callable[[str], None]] = None,

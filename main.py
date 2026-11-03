@@ -10,7 +10,7 @@ from src.domain.value_objects.config import ScoreConfig
 from src.infrastructure.video_service import VideoService
 from src.infrastructure.pdf_service import PdfService
 from src.infrastructure.file_service import FileService
-from src.infrastructure.download_service import DownloadService
+from src.infrastructure.download_service import DownloadService, video_selector
 from src.application.use_cases import ExtractScoreUseCase, GeneratePdfUseCase, ExtractRequest
 from src.application.saved_score import read_saved_score
 from src.domain.models import Page
@@ -115,12 +115,12 @@ def main():
             
             # Map quality to format selector
             quality_map = {
-                "1080p": "bestvideo[height<=1080]",
-                "720p": "bestvideo[height<=720]",
-                "480p": "bestvideo[height<=480]",
-                "360p": "bestvideo[height<=360]",
+                "1080p": video_selector(1080),
+                "720p": video_selector(720),
+                "480p": video_selector(480),
+                "360p": video_selector(360),
             }
-            fmt = quality_map.get(args.quality, "bestvideo[height<=1080]")
+            fmt = quality_map.get(args.quality, video_selector(1080))
             
             result = download_service.download(
                 video_path,

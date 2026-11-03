@@ -31,6 +31,7 @@ from gui_bridge import ExtractionSignals
 from src.api.gui_api import GuiApi, ScoreInfo
 from src.domain.models import PageStatus
 from src.infrastructure.file_service import FileService
+from src.infrastructure.download_service import video_selector
 
 
 # ── Debug logging ──────────────────────────────────────────────────────
@@ -627,6 +628,7 @@ class CropPreviewWidget(QWidget):
         self.setMinimumSize(320, 120)
         self.setMouseTracking(True)
         self._cursor_over_line = False
+        self._editable = True
 
     def set_frame(self, pixmap: QPixmap):
         self._pixmap = pixmap
@@ -634,6 +636,15 @@ class CropPreviewWidget(QWidget):
 
     def set_ratio(self, ratio: float):
         self._ratio = max(0.05, min(0.95, ratio))
+        self.update()
+
+    def set_editable(self, editable: bool):
+        """Fixed ratio is the only mode where the user picks the crop line."""
+        self._editable = editable
+        if not editable:
+            self._drag_active = False
+            self._cursor_over_line = False
+            self.setCursor(Qt.CursorShape.ArrowCursor)
         self.update()
 
     def get_ratio(self) -> float:
@@ -661,33 +672,34 @@ class CropPreviewWidget(QWidget):
             self._image_rect = (ox, oy, pw, ph)
             painter.drawPixmap(ox, oy, scaled)
 
-            # Overlay: transparent red band from top to crop line
-            line_y = oy + int(ph * self._ratio)
-            overlay = QColor(212, 168, 67, 40)
-            painter.fillRect(ox, oy, pw, line_y - oy, overlay)
+            if self._editable:
+                # Overlay: transparent red band from top to crop line
+                line_y = oy + int(ph * self._ratio)
+                overlay = QColor(212, 168, 67, 40)
+                painter.fillRect(ox, oy, pw, line_y - oy, overlay)
 
-            # Crop line
-            pen = QPen(QColor(212, 168, 67), 2)
-            painter.setPen(pen)
-            painter.drawLine(ox, line_y, ox + pw, line_y)
+                # Crop line
+                pen = QPen(QColor(212, 168, 67), 2)
+                painter.setPen(pen)
+                painter.drawLine(ox, line_y, ox + pw, line_y)
 
-            # Grip ridges at center (indicates draggable)
-            pen_grip = QPen(QColor(212, 168, 67), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
-            painter.setPen(pen_grip)
-            cx = ox + pw // 2
-            half = 8
-            for dy in (-4, 0, 4):
-                painter.drawLine(cx - half, line_y + dy, cx + half, line_y + dy)
+                # Grip ridges at center (indicates draggable)
+                pen_grip = QPen(QColor(212, 168, 67), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+                painter.setPen(pen_grip)
+                cx = ox + pw // 2
+                half = 8
+                for dy in (-4, 0, 4):
+                    painter.drawLine(cx - half, line_y + dy, cx + half, line_y + dy)
 
-            # Label
-            painter.setPen(QColor(212, 168, 67))
-            font = QFont("Segoe UI")
-            font.setPixelSize(14)
-            font.setWeight(QFont.Weight.DemiBold)
-            font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.4)
-            painter.setFont(font)
-            label = f"Crop: {int(self._ratio * 100)}%"
-            painter.drawText(ox, line_y - 16, label)
+                # Label
+                painter.setPen(QColor(212, 168, 67))
+                font = QFont("Segoe UI")
+                font.setPixelSize(14)
+                font.setWeight(QFont.Weight.DemiBold)
+                font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.4)
+                painter.setFont(font)
+                label = f"Crop: {int(self._ratio * 100)}%"
+                painter.drawText(ox, line_y - 16, label)
         else:
             painter.setPen(QColor(136, 136, 136))
             font = QFont("Segoe UI")
@@ -698,13 +710,15 @@ class CropPreviewWidget(QWidget):
                              "Open a video to preview the crop overlay")
 
     def mousePressEvent(self, event):
-        if self._image_rect and self._pixmap:
+        if self._editable and self._image_rect and self._pixmap:
             ox, oy, pw, ph = self._image_rect
             line_y = oy + int(ph * self._ratio)
             if abs(event.position().y() - line_y) < 12:
                 self._drag_active = True
 
     def mouseMoveEvent(self, event):
+        if not self._editable:
+            return
         if self._drag_active and self._image_rect:
             ox, oy, pw, ph = self._image_rect
             rel_y = event.position().y() - oy
@@ -2397,10 +2411,10 @@ class ExtractTab(QWidget):
         self.yt_url_edit.setPlaceholderText("Paste YouTube or Bilibili video URL")
 
         self.quality_combo = StyledComboBox()
-        self.quality_combo.addItem("Best (≤1080p)", "bestvideo[height<=1080]")
-        self.quality_combo.addItem("720p", "bestvideo[height<=720]")
-        self.quality_combo.addItem("480p", "bestvideo[height<=480]")
-        self.quality_combo.addItem("360p", "bestvideo[height<=360]")
+        self.quality_combo.addItem("Best (≤1080p)", video_selector(1080))
+        self.quality_combo.addItem("720p", video_selector(720))
+        self.quality_combo.addItem("480p", video_selector(480))
+        self.quality_combo.addItem("360p", video_selector(360))
         self.quality_combo.addItem("Best available", "bestvideo")
         saved_qi = self._api.get_config().get("yt_quality_index", 0)
         self.quality_combo.setCurrentIndex(min(saved_qi, self.quality_combo.count() - 1))
@@ -2491,7 +2505,8 @@ class ExtractTab(QWidget):
             "How each page is cropped:\n"
             "Auto — detect the sheet-music / visualizer boundary per page.\n"
             "Fixed ratio — crop every page to the ratio below.\n"
-            "Full frame — keep the whole frame, no crop."
+            "Full frame — keep the whole frame, no crop.\n"
+            "Drag the crop line in the preview only in Fixed ratio."
         )
         _fit_combo_width(self.crop_mode_combo)
 
@@ -3038,6 +3053,7 @@ class ExtractTab(QWidget):
         self.crop_ratio_label.setVisible(manual)
         self.crop_spin.setVisible(manual)
         self.crop_spin.setEnabled(manual)
+        self.crop_widget.set_editable(manual)
 
     def _load_crop_controls(self):
         cfg = self._api.get_config()

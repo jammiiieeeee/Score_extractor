@@ -602,6 +602,28 @@ class TestPageCommitterCalibration:
         assert len(pages) == 2
         assert any("calibrated" in m for m in logs)
 
+    def test_calibrated_page_is_analyzed_once(self, tmp_path):
+        """A calibrated commit is flushed with the same floor and dedup pool,
+        so the page is analyzed once instead of twice (each analysis seeks the
+        source video)."""
+        cfg = ScoreConfig(bar_min_diff_threshold=100.0)
+        cal = BarProfileCalibrator(bootstrap=100.0, min_samples=1)
+        committer, _, _, _ = self._make_committer(calibrator=cal, config=cfg, work_dir=tmp_path)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+        a1, b1 = make_bar_frames(bg=200, bar_value=30, bar_a=500, bar_b=200)
+        committer.commit(Frame(a1, 1.0, 30), Frame(b1, 2.0, 60), pages, out_dir, 1,
+                         False, lambda m: None, None, is_first=True)
+        assert cal.is_calibrated
+
+        a2, b2 = make_bar_frames(bg=200, bar_value=30, bar_a=500, bar_b=200)
+        with patch.object(committer, "_analyze", wraps=committer._analyze) as spy:
+            entries = committer.commit(Frame(a2, 4.0, 120), Frame(b2, 5.0, 150),
+                                       pages, out_dir, 2, False,
+                                       lambda m: None, None)
+        assert spy.call_count == 1
+        assert [e.page for e in entries] == [2]
+
     def test_callback_order_matches_trigger_order_on_flush(self, tmp_path):
         cfg = ScoreConfig(bar_min_diff_threshold=100.0)
         cal = BarProfileCalibrator(bootstrap=100.0, min_samples=1)
