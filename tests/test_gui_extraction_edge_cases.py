@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -302,3 +302,49 @@ class TestDedupModeControl:
         tab.dedup_combo.setCurrentIndex(tab.dedup_combo.findData("auto"))
         tab._start_extraction()
         assert tab._api.start_extraction.call_args.kwargs["dedup_mode"] == "auto"
+
+
+class _FakeSettings:
+    def __init__(self):
+        self.data = {}
+
+    def value(self, key, default=None):
+        return self.data.get(key, default)
+
+    def setValue(self, key, value):
+        self.data[key] = value
+
+
+@pytest.mark.unit
+class TestVideoSource:
+    def test_source_choice_is_remembered(self, tab, monkeypatch):
+        fake = _FakeSettings()
+        monkeypatch.setattr(tab, "_settings", fake)
+        tab.yt_radio.setChecked(True)
+        tab._on_source_toggled()
+        assert fake.value("video_source") == "url"
+        tab.local_radio.setChecked(True)
+        tab._on_source_toggled()
+        assert fake.value("video_source") == "local"
+
+    def test_playlist_url_downloads_without_a_prompt(self, tab, monkeypatch):
+        url = "https://www.youtube.com/watch?v=abc123&list=PL456"
+        tab.yt_url_edit.setText(url)
+        calls = []
+        monkeypatch.setattr(
+            tab._api, "download_youtube",
+            lambda url_arg, fmt_arg: calls.append((url_arg, fmt_arg)))
+        prompts = []
+        monkeypatch.setattr(
+            QMessageBox, "question",
+            lambda *a, **k: prompts.append(a))
+        monkeypatch.setattr(
+            QMessageBox, "warning",
+            lambda *a, **k: prompts.append(a))
+
+        tab._on_yt_download()
+
+        assert calls and calls[0][0] == url
+        assert prompts == []
+        assert tab._busy is True
+        tab._busy = False

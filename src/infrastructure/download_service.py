@@ -177,7 +177,7 @@ class DownloadService:
                 total = d.get('total_bytes') or d.get('total_bytes_estimate') or 1
                 pct = d.get('downloaded_bytes', 0) / total * 100
                 if on_progress:
-                    on_progress(pct, f"Downloading... {pct:.0f}%")
+                    on_progress(pct, f"{pct:.0f}% downloaded")
             elif d['status'] == 'finished' and not finished_logged:
                 finished_logged = True
                 if on_log:

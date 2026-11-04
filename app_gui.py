@@ -7,7 +7,7 @@ import shutil
 import glob as _glob
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse
 
 import cv2
 import numpy as np
@@ -1424,7 +1424,6 @@ class TrashDialog(QDialog):
         self._excluded = excluded
         self._on_restore = on_restore
 
-        self.setWindowTitle(f"Trash \u2014 {len(excluded)} excluded")
         self.resize(720, 480)
         root = QVBoxLayout(self)
         root.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
@@ -1437,11 +1436,18 @@ class TrashDialog(QDialog):
         self._list.itemDoubleClicked.connect(lambda _item: self._restore())
         root.addWidget(self._list, 1)
 
+        self._empty = QLabel("No pages in the Trash.")
+        _set_widget_class(self._empty, "muted")
+        self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        root.addWidget(self._empty, 1)
+
         footer = QHBoxLayout()
         footer.addStretch()
-        restore_btn = QPushButton("Restore")
-        restore_btn.clicked.connect(self._restore)
-        footer.addWidget(restore_btn)
+        self._restore_btn = QPushButton("Restore")
+        self._restore_btn.clicked.connect(self._restore)
+        footer.addWidget(self._restore_btn)
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)
         footer.addWidget(close_btn)
@@ -1449,8 +1455,18 @@ class TrashDialog(QDialog):
 
         self._fill()
 
+    def _update_title(self):
+        count = len(self._excluded)
+        noun = "page" if count == 1 else "pages"
+        self.setWindowTitle(f"Trash \u2014 {count} {noun}")
+
     def _fill(self):
+        self._update_title()
         self._list.clear()
+        has_pages = bool(self._excluded)
+        self._list.setVisible(has_pages)
+        self._empty.setVisible(not has_pages)
+        self._restore_btn.setEnabled(has_pages)
         for index in sorted(self._excluded):
             png = self._api.get_page_thumbnail(index) or self._api.get_page_cropped(index)
             pixmap = QPixmap()
@@ -1473,7 +1489,6 @@ class TrashDialog(QDialog):
         index = item.data(Qt.ItemDataRole.UserRole)
         self._on_restore(index)
         self._excluded.discard(index)
-        self.setWindowTitle(f"Trash \u2014 {len(self._excluded)} excluded")
         self._fill()
 
 
@@ -1524,7 +1539,7 @@ class ReviewPagesDialog(QDialog):
         self._trash_label = QLabel("")
         _set_widget_class(self._trash_label, "muted")
         header.addWidget(self._trash_label)
-        self._trash_btn = QPushButton("Trash")
+        self._trash_btn = QPushButton("Open Trash")
         _set_widget_class(self._trash_btn, "secondary")
         self._trash_btn.clicked.connect(self._on_trash)
         header.addWidget(self._trash_btn)
@@ -1538,11 +1553,13 @@ class ReviewPagesDialog(QDialog):
         root.addLayout(header)
 
         hint = QLabel(
-            "These pages print as shown. Click a page or press D to mark it "
-            "as a duplicate; shift+click marks a range. Right-click a page or "
-            "press E to move it to the Trash. Ctrl + wheel to zoom, or 100% "
-            "for actual size.")
+            "Pages print in this order. Click a page or press D to mark it as "
+            "a duplicate; click it again to include it. Duplicates stay out of "
+            "the PDF. Shift+click marks every page between the two clicks. "
+            "Right-click a page or press E to move it to the Trash, where you "
+            "can restore it. Ctrl+wheel zooms, and 100% shows actual size.")
         _set_widget_class(hint, "muted")
+        hint.setWordWrap(True)
         root.addWidget(hint)
 
         self._view = PdfReviewView()
@@ -2377,7 +2394,10 @@ class ExtractTab(QWidget):
         toggle_row.setSpacing(16)
         self.yt_radio = QRadioButton("Video URL")
         self.local_radio = QRadioButton("Local file")
-        self.yt_radio.setChecked(True)
+        if self._settings.value("video_source", "url") == "url":
+            self.yt_radio.setChecked(True)
+        else:
+            self.local_radio.setChecked(True)
         self._source_group = QButtonGroup(self)
         self._source_group.addButton(self.local_radio)
         self._source_group.addButton(self.yt_radio)
@@ -2654,6 +2674,11 @@ class ExtractTab(QWidget):
 
         self.setAcceptDrops(True)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        for combo in (self.quality_combo, self.crop_mode_combo, self.dedup_combo):
+            _fit_combo_width(combo)
+
     # ── Drag-and-drop ──
 
     def dragEnterEvent(self, event):
@@ -2848,6 +2873,7 @@ class ExtractTab(QWidget):
 
     def _on_source_toggled(self):
         local = self.local_radio.isChecked()
+        self._settings.setValue("video_source", "local" if local else "url")
         self._local_label.setVisible(local)
         self.video_path_edit.setVisible(local)
         self.browse_btn.setVisible(local)
@@ -2881,27 +2907,22 @@ class ExtractTab(QWidget):
         if not url:
             return
         if not url.startswith("http"):
-            QMessageBox.warning(self, "Invalid URL", "Please enter a valid video URL starting with http")
+            QMessageBox.warning(
+                self, "Invalid URL",
+                "Enter a video URL that starts with http:// or https://.")
             return
         try:
             parsed = urlparse(url)
         except ValueError:
-            QMessageBox.warning(self, "Invalid URL", "Please enter a valid video URL.")
+            QMessageBox.warning(
+                self, "Invalid URL",
+                "Enter a valid video URL that starts with http:// or https://.")
             return
         if not parsed.scheme or not parsed.netloc:
-            QMessageBox.warning(self, "Invalid URL", "Please enter a valid video URL.")
+            QMessageBox.warning(
+                self, "Invalid URL",
+                "Enter a valid video URL that starts with http:// or https://.")
             return
-        params = parse_qs(parsed.query)
-        if 'list' in params:
-            reply = QMessageBox.question(
-                self, "Playlist Detected",
-                "Only the first video will be downloaded. Do you want to proceed?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-
         self._busy = True
         self.download_btn.setEnabled(False)
         self.download_btn.setText("Downloading…")
@@ -2909,7 +2930,7 @@ class ExtractTab(QWidget):
         self.quality_combo.setEnabled(False)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
-        self.status_label.setText("Downloading…")
+        self.status_label.setText("Preparing download…")
         self._update_state()
         try:
             fmt = self.quality_combo.currentData()
@@ -2950,6 +2971,7 @@ class ExtractTab(QWidget):
         self.yt_url_edit.setEnabled(True)
         self.quality_combo.setEnabled(True)
         self._update_state()
+        self._set_status(f"Video downloaded \u2014 {title}", peak=True)
 
     def _reset_download_ui(self):
         self._busy = False
@@ -3461,7 +3483,13 @@ class ExtractTab(QWidget):
         if not self._busy:
             QMessageBox.critical(self, "Error", message)
         self._reset_ui()
-        self._set_status(f"Failed — {message}")
+        lowered = message.lower()
+        if lowered.startswith("download cancelled"):
+            self._set_status("Download cancelled")
+        elif lowered.startswith("video download failed"):
+            self._set_status(message.splitlines()[0])
+        else:
+            self._set_status(f"Failed — {message}")
 
     def on_page_detected(self, idx: int, png_bytes: bytes):
         dbg(f"on_page_detected: idx={idx}")
@@ -3477,7 +3505,9 @@ class ExtractTab(QWidget):
         secs = int(elapsed % 60)
         self._elapsed_label.setText(f"{mins}:{secs:02d}")
         phase_text = phase.replace("_", " ").title()
-        if detail:
+        if phase == "downloading":
+            self._set_status(f"Downloading video \u2014 {detail}")
+        elif detail:
             self._set_status(f"{phase_text}: {detail}")
         else:
             self._set_status(phase_text)
