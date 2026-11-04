@@ -1,7 +1,9 @@
+import os
 import time
 import cv2
 import numpy as np
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field as dc_field
 from typing import Callable, List, Optional, TextIO
 
@@ -227,25 +229,43 @@ class GenerateOmrUseCase:
         omr_dir = out_dir / "diagnostics" / "omr"
         omr_dir.mkdir(parents=True, exist_ok=True)
 
-        xml_paths: List[str] = []
+        xml_paths: List[str] = [None] * len(included)  # type: ignore
         n = len(included)
-        for i, page in enumerate(included, 1):
+
+        # Smart worker count: balance CPU cores vs available RAM (~3 GB per worker).
+        try:
+            import psutil
+            avail_gb = psutil.virtual_memory().available / (1024 ** 3)
+        except Exception:
+            avail_gb = 4.0
+        cpu = os.cpu_count() or 2
+        max_workers = max(1, min(cpu, int(avail_gb // 3) if avail_gb >= 3 else 1, 4))
+
+        def process_one(i: int, page: Page) -> str:
             if is_cancelled():
                 raise RuntimeError("OMR cancelled")
-            if on_progress:
-                on_progress((i - 1) / n * 100.0, f"OMR page {i}/{n}")
-
             cropped = crop_page(page, self.config)
             img_path = omr_dir / f"page_{i:03d}.png"
             cv2.imwrite(str(img_path), cropped)
-
             xml_path = self.omr_service.recognize_page(
                 str(img_path), str(omr_dir), without_deskew=without_deskew)
-            xml_paths.append(xml_path)
             self._log(f"OMR page {i}/{n} done: {xml_path}")
+            return xml_path
 
-            if on_progress:
-                on_progress(i / n * 100.0, f"OMR page {i}/{n} done")
+        completed = 0
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            future_to_i = {
+                pool.submit(process_one, i, page): i
+                for i, page in enumerate(included, 1)
+            }
+            for fut in as_completed(future_to_i):
+                if is_cancelled():
+                    raise RuntimeError("OMR cancelled")
+                i = future_to_i[fut]
+                xml_paths[i - 1] = fut.result()
+                completed += 1
+                if on_progress:
+                    on_progress(completed / n * 100.0, f"OMR page {completed}/{n} done")
 
         if is_cancelled():
             raise RuntimeError("OMR cancelled")
