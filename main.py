@@ -11,7 +11,7 @@ from src.infrastructure.video_service import VideoService
 from src.infrastructure.pdf_service import PdfService
 from src.infrastructure.file_service import FileService
 from src.infrastructure.download_service import DownloadService, video_selector
-from src.application.use_cases import ExtractScoreUseCase, GeneratePdfUseCase, ExtractRequest
+from src.application.use_cases import ExtractScoreUseCase, GeneratePdfUseCase, GenerateOmrUseCase, ExtractRequest
 from src.application.saved_score import read_saved_score
 from src.domain.models import Page
 
@@ -57,6 +57,7 @@ def main():
     parser.add_argument("--end-offset", type=float, default=0.0, help="Stop processing N seconds before video end (0 = off)")
     parser.add_argument("--crop-ratio", type=float, help="Override crop ratio for PDF output")
     parser.add_argument("--from-dir", help="Regenerate PDF from an existing score directory (skips video extraction)")
+    parser.add_argument("--omr", action="store_true", help="Generate MusicXML + MIDI instead of PDF")
     parser.add_argument("--yt-url", help="Video URL (YouTube/Bilibili) to download before extraction")
     parser.add_argument("--quality", choices=["1080p", "720p", "480p", "360p"], default="1080p", help="Video quality for YouTube download (default: 1080p)")
 
@@ -84,13 +85,29 @@ def main():
 
         print(f"Loaded {len(saved.pages)} pages from {args.from_dir}")
 
-        output_path = args.output or str(score_dir / f"{score_dir.name}.pdf")
-        pdf_service = PdfService()
-        pdf_service.create_pdf(
-            saved.pages,
-            Path(output_path), config, title_hint=Path(output_path).stem,
-        )
-        print(f"\nPDF saved: {output_path}")
+        if args.omr:
+            from src.infrastructure.omr_service import OmrService
+            omr_service = OmrService()
+            if not omr_service.is_available():
+                print("[ERROR] OMR dependencies not installed. pip install -r requirements-omr.txt")
+                sys.exit(1)
+            output_path = args.output or str(score_dir / f"{score_dir.name}.musicxml")
+            omr_title = Path(output_path).stem
+            omr_use_case = GenerateOmrUseCase(omr_service, config)
+            result = omr_use_case.execute(
+                saved.pages, score_dir, omr_title, without_deskew=True,
+                on_progress=lambda pct, msg: print(f"\r  [{pct:5.1f}%] {msg}", end="", flush=True),
+            )
+            print(f"\nMusicXML saved: {result.musicxml_path}")
+            print(f"MIDI saved: {result.midi_path}")
+        else:
+            output_path = args.output or str(score_dir / f"{score_dir.name}.pdf")
+            pdf_service = PdfService()
+            pdf_service.create_pdf(
+                saved.pages,
+                Path(output_path), config, title_hint=Path(output_path).stem,
+            )
+            print(f"\nPDF saved: {output_path}")
 
     else:
         if args.crop_ratio is not None:
@@ -175,15 +192,30 @@ def main():
             print(f"\nExtracted: {len(pages)} pages")
 
             if pages:
-                print(f"PDF: {output_pdf}")
-                pdf_pages = result.page_records or [Page(image=f.image) for f in pages]
-                pdf_service.create_pdf(
-                    pdf_pages,
-                    Path(output_pdf),
-                    config,
-                    title_hint=score_name,
-                )
-                print(f"PDF saved: {output_pdf}")
+                if args.omr:
+                    from src.infrastructure.omr_service import OmrService
+                    omr_service = OmrService()
+                    if not omr_service.is_available():
+                        print("[ERROR] OMR dependencies not installed. pip install -r requirements-omr.txt")
+                        sys.exit(1)
+                    pdf_pages = result.page_records or [Page(image=f.image) for f in pages]
+                    omr_use_case = GenerateOmrUseCase(omr_service, config)
+                    omr_result = omr_use_case.execute(
+                        pdf_pages, output_dir, score_name, without_deskew=True,
+                        on_progress=lambda pct, msg: print(f"\r  [{pct:5.1f}%] {msg}", end="", flush=True),
+                    )
+                    print(f"\nMusicXML saved: {omr_result.musicxml_path}")
+                    print(f"MIDI saved: {omr_result.midi_path}")
+                else:
+                    print(f"PDF: {output_pdf}")
+                    pdf_pages = result.page_records or [Page(image=f.image) for f in pages]
+                    pdf_service.create_pdf(
+                        pdf_pages,
+                        Path(output_pdf),
+                        config,
+                        title_hint=score_name,
+                    )
+                    print(f"PDF saved: {output_pdf}")
 
             if args.debug:
                 print(f"Debug: {output_dir / 'debug'}")

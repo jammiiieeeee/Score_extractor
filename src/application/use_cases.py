@@ -1,4 +1,5 @@
 import time
+import cv2
 import numpy as np
 from pathlib import Path
 from dataclasses import dataclass, field as dc_field
@@ -6,7 +7,8 @@ from typing import Callable, List, Optional, TextIO
 
 from src.domain.value_objects.config import ScoreConfig
 from src.domain.models import Frame, Page, PageCandidate, PageManifestEntry
-from src.domain.interfaces import IVideoService, IOcrService, IPdfService, IFileService
+from src.domain.interfaces import IVideoService, IOcrService, IPdfService, IFileService, IOmrService
+from src.domain.page_crop import crop_page
 from src.domain.deduplication import Deduplicator
 from src.domain.bar_profile_calibrator import BarProfileCalibrator
 from src.domain.boundary_detector import BoundaryDetector
@@ -198,3 +200,63 @@ class GeneratePdfUseCase:
         self._log(f"PDF: {len(pages)} pages...")
         self.pdf_service.create_pdf(pages, output, self.config, title_hint=final_title)
         self._log(f"PDF saved: {output_path}")
+
+
+@dataclass
+class GenerateOmrResult:
+    musicxml_path: str
+    midi_path: str
+
+
+class GenerateOmrUseCase:
+    def __init__(self, omr_service: IOmrService, config: ScoreConfig,
+                 on_log: Callable[[str], None] = print):
+        self.omr_service = omr_service
+        self.config = config
+        self._log = on_log
+
+    def execute(self, pages: List[Page], output_dir, title: str,
+                without_deskew: bool = True,
+                on_progress: Optional[Callable[[float, str], None]] = None,
+                is_cancelled: Callable[[], bool] = lambda: False) -> GenerateOmrResult:
+        included = [p for p in pages if getattr(p, "is_printed", lambda: True)()]
+        if not included:
+            raise RuntimeError("No pages included - mark at least one page as Keep")
+
+        out_dir = Path(output_dir)
+        omr_dir = out_dir / "diagnostics" / "omr"
+        omr_dir.mkdir(parents=True, exist_ok=True)
+
+        xml_paths: List[str] = []
+        n = len(included)
+        for i, page in enumerate(included, 1):
+            if is_cancelled():
+                raise RuntimeError("OMR cancelled")
+            if on_progress:
+                on_progress((i - 1) / n * 100.0, f"OMR page {i}/{n}")
+
+            cropped = crop_page(page, self.config)
+            img_path = omr_dir / f"page_{i:03d}.png"
+            cv2.imwrite(str(img_path), cropped)
+
+            xml_path = self.omr_service.recognize_page(
+                str(img_path), str(omr_dir), without_deskew=without_deskew)
+            xml_paths.append(xml_path)
+            self._log(f"OMR page {i}/{n} done: {xml_path}")
+
+            if on_progress:
+                on_progress(i / n * 100.0, f"OMR page {i}/{n} done")
+
+        if is_cancelled():
+            raise RuntimeError("OMR cancelled")
+
+        title = title or "score"
+        combined_xml = out_dir / f"{title}.musicxml"
+        self.omr_service.merge_musicxml(xml_paths, str(combined_xml))
+
+        combined_mid = out_dir / f"{title}.mid"
+        self.omr_service.musicxml_to_midi(str(combined_xml), str(combined_mid))
+
+        self._log(f"MusicXML saved: {combined_xml}")
+        self._log(f"MIDI saved: {combined_mid}")
+        return GenerateOmrResult(str(combined_xml), str(combined_mid))

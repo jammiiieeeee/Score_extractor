@@ -19,9 +19,10 @@ from src.infrastructure.video_service import VideoService
 from src.infrastructure.ocr_service import OcrService
 from src.infrastructure.pdf_service import PdfService
 from src.infrastructure.file_service import FileService
+from src.infrastructure.omr_service import OmrService
 from src.infrastructure.download_service import DownloadService, video_selector
 from src.infrastructure.diagnostics_service import generate_html_report
-from src.application.use_cases import ExtractScoreUseCase, ExtractRequest
+from src.application.use_cases import ExtractScoreUseCase, ExtractRequest, GenerateOmrUseCase
 from src.application.saved_score import (
     read_metadata, read_saved_score, save_page_status, write_metadata,
 )
@@ -74,6 +75,7 @@ class GuiApi:
         self._video_service: Optional[VideoService] = None
         self._ocr_service: Optional[OcrService] = None
         self._pdf_service = PdfService()
+        self._omr_service = OmrService()
         self._pages = PageStore()
         self._download_service = DownloadService(self._file_service.base_dir)
 
@@ -85,6 +87,7 @@ class GuiApi:
 
         self._extraction_thread: Optional[threading.Thread] = None
         self._pdf_thread: Optional[threading.Thread] = None
+        self._omr_thread: Optional[threading.Thread] = None
         self._download_thread: Optional[threading.Thread] = None
         self._cancel_flag = False
         self._debug_mode = False
@@ -678,6 +681,110 @@ class GuiApi:
         )
         self._pdf_thread.start()
 
+    def generate_omr(self, output_path: str, title: Optional[str] = None,
+                     without_deskew: bool = True) -> None:
+        if self.is_busy():
+            raise RuntimeError("Extraction or PDF generation already in progress")
+
+        if not self._pages:
+            raise RuntimeError("No pages to generate MusicXML")
+        if self.get_included_page_count() == 0:
+            raise RuntimeError(
+                "No pages included - mark at least one page as Keep before "
+                "generating MusicXML")
+
+        if not self._omr_service.is_available():
+            raise RuntimeError(
+                "OMR dependencies are not installed. "
+                "Install them with: pip install -r requirements-omr.txt")
+
+        self._state = ExtractionState("generating_omr", len(self._pages), 0.0, 0.0)
+        self._extraction_start_time = time.time()
+
+        self._omr_thread = threading.Thread(
+            target=self._run_generate_omr,
+            args=(output_path, title, without_deskew),
+            daemon=True,
+        )
+        self._omr_thread.start()
+
+    def _run_generate_omr(self, output_path: str, title: Optional[str] = None,
+                          without_deskew: bool = True):
+        try:
+            pages = self._pages.all_pages()
+            included_count = self.get_included_page_count()
+            final_title = title if title else Path(output_path).stem
+            output = Path(output_path)
+            output.parent.mkdir(parents=True, exist_ok=True)
+
+            self._emit_log(f"OMR: {included_count} pages...")
+            self._emit_progress("generating_omr", 0.0, "Generating MusicXML...")
+
+            use_case = GenerateOmrUseCase(self._omr_service, self._config,
+                                         on_log=self._emit_log)
+            result = use_case.execute(
+                pages, output.parent, final_title,
+                without_deskew=without_deskew,
+                on_progress=lambda pct, d: self._emit_progress("generating_omr", pct, d),
+                is_cancelled=lambda: self._cancel_flag,
+            )
+
+            self._emit_progress("generating_omr", 100.0, "MusicXML generated successfully")
+            self._emit_completed(included_count)
+
+            score_dir = output.parent
+
+            # Copy video to score's video folder so it's portable
+            import shutil
+            video_dir = score_dir / "video"
+            video_dir.mkdir(parents=True, exist_ok=True)
+            if self._video_path and os.path.exists(self._video_path):
+                src = Path(self._video_path)
+                dst = video_dir / src.name
+                if not dst.exists():
+                    shutil.copy2(str(src), str(dst))
+                self._video_path = str(dst)
+                if self._original_video_path and os.path.exists(self._original_video_path):
+                    orig_src = Path(self._original_video_path)
+                    orig_dst = video_dir / orig_src.name
+                    if not orig_dst.exists():
+                        shutil.copy2(str(orig_src), str(orig_dst))
+                    self._original_video_path = str(orig_dst)
+
+            meta = {
+                "score_name": final_title,
+                "crop_ratio": self._config.default_crop_ratio,
+                "page_count": len(self._pages),
+                "extraction_date": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "musicxml_path": result.musicxml_path,
+                "midi_path": result.midi_path,
+            }
+            if self._video_path:
+                meta["video_path"] = self._video_path
+            meta["boundary_mode"] = self._config.boundary_mode
+            meta["boundary_offset_px"] = self._config.boundary_offset_px
+            meta["boundary_offset_ratio"] = self._config.boundary_offset_ratio
+            meta["pages"] = [p.to_record() for p in self._pages.all_pages()]
+            self.save_metadata(str(score_dir), meta)
+            self._loaded_score_path = str(score_dir)
+            self._loaded_score_metadata = meta
+
+            self._emit_log(f"MusicXML: {result.musicxml_path}")
+            self._emit_log(f"MIDI: {result.midi_path}")
+
+        except Exception as e:
+            msg = str(e)
+            hint = ""
+            if "Permission" in msg:
+                hint = "\nThe output file may be open in another program. Close it and try again."
+            elif "No pages" in msg:
+                hint = "\nExtract pages first before generating MusicXML."
+            self._emit_error(f"MusicXML generation failed: {msg}{hint}")
+
+        finally:
+            self._state.phase = "idle"
+            self._omr_thread = None
+
     def _run_generate_pdf(self, output_path: str, title: Optional[str] = None):
         try:
             pages = self._pages.all_pages()
@@ -852,5 +959,7 @@ class GuiApi:
         if self._extraction_thread is not None and self._extraction_thread.is_alive():
             return True
         if self._pdf_thread is not None and self._pdf_thread.is_alive():
+            return True
+        if self._omr_thread is not None and self._omr_thread.is_alive():
             return True
         return False

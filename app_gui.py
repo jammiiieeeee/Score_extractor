@@ -2325,6 +2325,7 @@ class ExtractTab(QWidget):
         self._video_duration = 0.0
         self._busy = False
         self._completed_pdf_path: Optional[str] = None
+        self._completed_omr_path: Optional[str] = None
         self._loaded_original_ratio: Optional[float] = None
         self._project_dir: str = ""
         self._has_existing_score = False
@@ -2601,6 +2602,11 @@ class ExtractTab(QWidget):
         self.generate_btn.setVisible(False)
         self.generate_btn.clicked.connect(self._generate_pdf)
         _fit_button_width(self.generate_btn)
+        self.generate_omr_btn = QPushButton("Generate MusicXML")
+        self.generate_omr_btn.setEnabled(False)
+        self.generate_omr_btn.setVisible(False)
+        self.generate_omr_btn.clicked.connect(self._generate_omr)
+        _fit_button_width(self.generate_omr_btn)
         # Older callers and tests use the pre-rename name.
         self.regenerate_btn = self.generate_btn
         self.review_btn = QPushButton("Review Pages")
@@ -2620,6 +2626,7 @@ class ExtractTab(QWidget):
         action_row.addWidget(self.reextract_btn)
         action_row.addWidget(self.extract_btn)
         action_row.addWidget(self.generate_btn)
+        action_row.addWidget(self.generate_omr_btn)
         action_row.addWidget(self.review_btn)
         action_row.addWidget(self.open_pdf_btn)
         action_row.addWidget(self.cancel_btn)
@@ -3114,6 +3121,7 @@ class ExtractTab(QWidget):
         self.cancel_btn.setVisible(self._busy)
         self.extract_btn.setVisible(False)
         self.generate_btn.setVisible(False)
+        self.generate_omr_btn.setVisible(False)
         self.review_btn.setVisible(False)
         self.open_pdf_btn.setVisible(False)
         self.reextract_btn.setVisible(False)
@@ -3132,6 +3140,11 @@ class ExtractTab(QWidget):
             self.generate_btn.setVisible(True)
             self.generate_btn.setEnabled(can_act and included > 0)
             self.generate_btn.setToolTip(
+                "" if included > 0 else
+                "No pages included - restore a page from Trash or mark one Keep.")
+            self.generate_omr_btn.setVisible(True)
+            self.generate_omr_btn.setEnabled(can_act and included > 0)
+            self.generate_omr_btn.setToolTip(
                 "" if included > 0 else
                 "No pages included - restore a page from Trash or mark one Keep.")
             self.reextract_btn.setVisible(True)
@@ -3281,6 +3294,8 @@ class ExtractTab(QWidget):
         self.extract_btn.setVisible(False)
         self.generate_btn.setVisible(False)
         self.generate_btn.setEnabled(False)
+        self.generate_omr_btn.setVisible(False)
+        self.generate_omr_btn.setEnabled(False)
         self.review_btn.setVisible(False)
         self.review_btn.setEnabled(False)
         self.reextract_btn.setVisible(False)
@@ -3299,6 +3314,64 @@ class ExtractTab(QWidget):
         except RuntimeError as e:
             if hasattr(main_win, '_generating_pdf'):
                 main_win._generating_pdf = False
+            QMessageBox.warning(self, "Error", str(e))
+            self._reset_ui()
+
+    def _generate_omr(self):
+        dbg("_generate_omr")
+        if self._busy:
+            return
+        output_path = self.get_output_path()
+        if not output_path:
+            QMessageBox.warning(self, "Error", "Please enter a score name.")
+            return
+        if self._api.get_included_page_count() == 0:
+            QMessageBox.warning(
+                self, "No Pages Included",
+                "No pages are included in the MusicXML.\n\n"
+                "Open Review Pages, restore a page from Trash, or mark a page "
+                "as Keep, then generate the MusicXML.")
+            self._update_state()
+            return
+
+        main_win = self.window()
+        if hasattr(main_win, 'config_tab'):
+            main_win.config_tab.apply_to_api()
+
+        self._api.update_config({
+            "default_crop_ratio": self.crop_spin.value(),
+            "boundary_mode": self.crop_mode_combo.currentData(),
+        })
+
+        pdf_name = self.pdf_name_edit.text().strip()
+        title = pdf_name if pdf_name else None
+
+        self._busy = True
+        self.extract_btn.setVisible(False)
+        self.generate_btn.setVisible(False)
+        self.generate_btn.setEnabled(False)
+        self.generate_omr_btn.setVisible(False)
+        self.generate_omr_btn.setEnabled(False)
+        self.review_btn.setVisible(False)
+        self.review_btn.setEnabled(False)
+        self.reextract_btn.setVisible(False)
+        self.reextract_btn.setEnabled(False)
+        self.open_pdf_btn.setVisible(False)
+        self.cancel_btn.setEnabled(False)
+        self.progress_bar.setValue(0)
+        self.log_edit.clear()
+        self._completed_omr_path = os.path.splitext(output_path)[0] + ".musicxml"
+
+        self._set_status("Generating MusicXML…")
+
+        if hasattr(main_win, '_generating_omr'):
+            main_win._generating_omr = True
+
+        try:
+            self._api.generate_omr(output_path, title=title)
+        except RuntimeError as e:
+            if hasattr(main_win, '_generating_omr'):
+                main_win._generating_omr = False
             QMessageBox.warning(self, "Error", str(e))
             self._reset_ui()
 
@@ -3440,6 +3513,19 @@ class ExtractTab(QWidget):
         self._log(f"PDF saved: {output_path}")
         self._refresh_completer()
 
+    def on_omr_completed(self, page_count: int):
+        output_path = self._completed_omr_path or self.get_output_path()
+        dbg(f"on_omr_completed: page_count={page_count}, path={output_path}")
+        self._has_existing_score = True
+        self._reextract_mode = False
+        self._busy = False
+        self.cancel_btn.setEnabled(False)
+        self._update_state()
+        self.page_badge.setText(f"Pages: {page_count}")
+        self._set_status(f"MusicXML/MIDI saved: {output_path}", peak=True)
+        self._log(f"MusicXML/MIDI saved: {output_path}")
+        self._refresh_completer()
+
     def on_cancelled(self):
         dbg("on_cancelled")
         self._log("Cancelled — no pages were captured")
@@ -3489,6 +3575,8 @@ class ExtractTab(QWidget):
         main_win = self.window()
         if hasattr(main_win, '_generating_pdf'):
             main_win._generating_pdf = False
+        if hasattr(main_win, '_generating_omr'):
+            main_win._generating_omr = False
         self._watchdog.stop()
         self.cancel_btn.setEnabled(False)
         self.open_pdf_btn.setVisible(False)
@@ -3530,6 +3618,7 @@ class MainWindow(QMainWindow):
         self.signals = ExtractionSignals()
         self.signals.wire(self.api)
         self._generating_pdf = False
+        self._generating_omr = False
 
         # Central widget
         central = QWidget()
@@ -3673,6 +3762,9 @@ class MainWindow(QMainWindow):
         if self._generating_pdf:
             self._generating_pdf = False
             self.extract_tab.on_pdf_completed(page_count)
+        elif self._generating_omr:
+            self._generating_omr = False
+            self.extract_tab.on_omr_completed(page_count)
         else:
             started_pdf = self.extract_tab.on_completed(page_count)
             score_dir = self.extract_tab.get_project_dir()

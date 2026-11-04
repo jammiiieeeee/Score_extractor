@@ -143,3 +143,29 @@ class IPdfService(ABC):
         so an image and its crop can never drift apart.
         """
         pass
+
+
+class IOmrService(ABC):
+    @abstractmethod
+    def is_available(self) -> bool:
+        """Whether the OMR engine and its dependencies are installed."""
+        pass
+
+    @abstractmethod
+    def recognize_page(self, image_path: str, output_dir: str,
+                       without_deskew: bool = True) -> str:
+        """Run OMR on one page image and write a per-page .musicxml.
+
+        Returns the path to the written .musicxml file.
+        """
+        pass
+
+    @abstractmethod
+    def merge_musicxml(self, xml_paths: List[str], output_path: str) -> str:
+        """Merge several per-page MusicXML files into one. Returns output path."""
+        pass
+
+    @abstractmethod
+    def musicxml_to_midi(self, xml_path: str, midi_path: str) -> str:
+        """Convert a MusicXML file to MIDI. Returns the midi path."""
+        pass

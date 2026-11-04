@@ -60,6 +60,7 @@ interfaces (OpenCV, PaddleOCR, ReportLab, yt-dlp). Nothing points inward.
 | `src/infrastructure/video_service.py` | `VideoService` — frame reads, SSIM change detection, A/B capture | `infrastructure_video.md` |
 | `src/infrastructure/ocr_service.py` | `OcrService` — PaddleOCR init + regex filtering | `infrastructure_ocr_pdf.md` |
 | `src/infrastructure/pdf_service.py` | `PdfService` — ReportLab page layout | `infrastructure_ocr_pdf.md` |
+| `src/infrastructure/omr_service.py` | `OmrService` — oemer recognition + music21 merge/MIDI (optional deps) | — |
 | `src/infrastructure/download_service.py` | `DownloadService`, `DownloadResult` — yt-dlp wrapper | — |
 | `src/infrastructure/file_service.py` | `FileService` — output dirs, page image save/load/delete, saved-score listing | `system_lifecycle.md` |
 | `src/infrastructure/diagnostics_service.py` | `generate_html_report` — debug charts from `page_manifest.json` + `extraction.log` | `system_lifecycle.md` |
@@ -101,7 +102,7 @@ run_pipeline.py ──────► GuiApi (scripted)
 | :--- | :--- |
 | Fixtures | `tests/conftest.py`, `tests/fixtures/` (sample video, real page-36 bar profile) |
 | Domain | `test_bar_profile_*`, `test_boundary_detector`, `test_deduplication`, `test_models`, `test_page_crop`, `test_page_store`, `test_page_lifecycle`, `test_config`, `test_double_crop_bug` |
-| Application | `test_use_cases`, `test_saved_score_records`, `test_cli*`, `test_integration_e2e`, `test_page_committer`, `test_frame_stepper`, `test_bar_profile_plotter` |
+| Application | `test_use_cases`, `test_omr_use_case`, `test_saved_score_records`, `test_cli*`, `test_integration_e2e`, `test_page_committer`, `test_frame_stepper`, `test_bar_profile_plotter` |
 | Infrastructure | `test_video_service`, `test_ocr_service`, `test_pdf_service`, `test_file_service`, `test_download_service`, `test_diagnostics_service` |
 | API / GUI | `test_gui_api*`, `test_gui_workflow`, `test_gui_sanitize`, `test_gui_extraction_edge_cases`, `test_gui_callbacks_resilience`, `test_review_pages`, `test_preview_seeker`, `test_gui_visual` |
 
@@ -121,6 +122,8 @@ run_pipeline.py ──────► GuiApi (scripted)
 ## Recently changed
 
 Max 10 lines, newest first. Older lines get dropped (git has the history).
+
+- 2026-11-04 — added OMR path: `IOmrService`/`OmrService` (oemer + music21), `GenerateOmrUseCase`, `GuiApi.generate_omr`, GUI button, CLI `--omr` — `src/domain/interfaces.py`, `src/infrastructure/omr_service.py`, `src/application/use_cases.py`, `src/api/gui_api.py`, `app_gui.py`, `main.py`
 
 - 2026-11-03 — crop preview is read-only outside Fixed ratio: no band, line, grips or drag in Auto/Full frame, so it can no longer write `default_crop_ratio` by accident — `app_gui.py`, `tests/test_gui_visual.py`
 - 2026-11-03 — YouTube downloads prefer H.264 via one `video_selector()` helper; GUI, CLI and API all use it (AV1 1080p60 extraction: 139.5s → 20.0s on the same video, pages identical) — `src/infrastructure/download_service.py`, `src/api/gui_api.py`, `main.py`, `app_gui.py`, `AGENTS.md`, `tests/test_download_service.py`

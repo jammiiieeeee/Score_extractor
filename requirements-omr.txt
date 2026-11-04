@@ -1,0 +1,4 @@
+# Optional dependencies for OMR (MusicXML + MIDI) generation.
+# Install with: pip install -r requirements-omr.txt
+homr==0.7.0
+music21==10.5.2
