@@ -395,6 +395,15 @@ class TestExtractLayout:
         assert tab.seek_bar.geometry().y() < tab.status_label.geometry().y()
         assert tab.status_label.geometry().y() < tab.progress_bar.geometry().y()
 
+    def test_progress_bar_is_visible_at_default_size(self, window):
+        window.resize(1100, 780)
+        process_events()
+        tab = window.extract_tab
+
+        assert tab.progress_bar.isVisible(), "Progress bar should be visible"
+        assert tab.progress_bar.geometry().bottom() <= tab.height(), (
+            "Progress bar is pinned below the visible tab area")
+
     def test_every_combo_fits_its_longest_item(self, window):
         combos = window.findChildren(QComboBox)
         assert combos

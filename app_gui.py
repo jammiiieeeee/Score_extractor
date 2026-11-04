@@ -2497,7 +2497,7 @@ class ExtractTab(QWidget):
 
         # ── Crop preview ──
         self.crop_widget = CropPreviewWidget()
-        self.crop_widget.setMinimumHeight(240)
+        self.crop_widget.setMinimumHeight(220)
         self.crop_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self.crop_widget.setAccessibleName("Crop preview")
         layout.addWidget(self.crop_widget)
@@ -2567,7 +2567,6 @@ class ExtractTab(QWidget):
         _set_widget_class(self.status_label, "muted")
         self.status_label.setWordWrap(True)
         self.status_label.setAccessibleName("Status")
-        layout.addWidget(self.status_label)
 
         progress_row = QHBoxLayout()
         progress_row.setSpacing(SPACE_SM)
@@ -2584,29 +2583,23 @@ class ExtractTab(QWidget):
         self._elapsed_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self._elapsed_label.setVisible(False)
         progress_row.addWidget(self._elapsed_label)
-        layout.addLayout(progress_row)
 
-        log_row = QHBoxLayout()
-        log_row.setContentsMargins(0, 0, 0, 0)
         self.log_toggle_btn = QPushButton("Show log")
         _set_widget_class(self.log_toggle_btn, "secondary")
         self.log_toggle_btn.setCheckable(True)
         self.log_toggle_btn.setToolTip("Show or hide extraction details")
         _fit_button_width(self.log_toggle_btn)
-        log_row.addWidget(self.log_toggle_btn)
-        log_row.addStretch()
-        layout.addLayout(log_row)
 
         self.log_edit = QTextEdit()
         self.log_edit.setReadOnly(True)
         self.log_edit.setMaximumHeight(140)
         self.log_edit.setVisible(False)
         self.log_edit.document().setMaximumBlockCount(2000)
-        layout.addWidget(self.log_edit)
 
         # ── Action bar ──
         action_row = QHBoxLayout()
         action_row.setSpacing(SPACE_SM)
+        action_row.addWidget(self.log_toggle_btn)
         action_row.addStretch()
         self.reextract_btn = QPushButton("Re-extract")
         _set_widget_class(self.reextract_btn, "secondary")
@@ -2644,6 +2637,16 @@ class ExtractTab(QWidget):
         action_row.addWidget(self.open_pdf_btn)
         action_row.addWidget(self.cancel_btn)
         action_row.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_MD)
+
+        # Status and progress stay pinned below the scroll area so they are
+        # always visible, even when the window is small or not maximized.
+        footer_info = QVBoxLayout()
+        footer_info.setContentsMargins(SPACE_MD, SPACE_XS, SPACE_MD, 0)
+        footer_info.setSpacing(SPACE_XS)
+        footer_info.addWidget(self.status_label)
+        footer_info.addLayout(progress_row)
+        footer_info.addWidget(self.log_edit)
+        outer.addLayout(footer_info)
         outer.addLayout(action_row)
 
         # ── Connections ──
