@@ -37,27 +37,40 @@ class OmrService(IOmrService):
             )
     def recognize_page(self, image_path: str, output_dir: str,
                        without_deskew: bool = True,
-                       use_tf: bool = False) -> str:
+                       use_tf: bool = False,
+                       on_log=None) -> str:
         self._require()
         Path(output_dir).mkdir(parents=True, exist_ok=True)
-        # homr writes <stem>.musicxml next to the input image.
-        # Place a copy of the image in output_dir so output lands there.
         src = Path(image_path)
         dst = Path(output_dir) / src.name
         if str(src.resolve()) != str(dst.resolve()):
             import shutil
             shutil.copy2(str(src), str(dst))
-        # Run homr on the copied image.
-        subprocess.run(
+        # Stream homr output to on_log (or console) for visibility.
+        proc = subprocess.Popen(
             ["homr", str(dst)],
             cwd=str(output_dir),
-            check=True,
-            capture_output=True,
-            timeout=600,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
+        try:
+            if proc.stdout is not None:
+                for line in proc.stdout:
+                    line = line.rstrip()
+                    if on_log is not None:
+                        on_log(line)
+                    else:
+                        print(line, flush=True)
+            proc.wait(timeout=600)
+        except Exception:
+            proc.kill()
+            raise
+        if proc.returncode != 0:
+            raise RuntimeError(f"homr failed (exit {proc.returncode})")
         out_xml = Path(output_dir) / (dst.stem + ".musicxml")
         if not out_xml.exists():
-            # homr may name it differently; find any new musicxml
             candidates = sorted(Path(output_dir).glob("*.musicxml"))
             if candidates:
                 out_xml = candidates[-1]

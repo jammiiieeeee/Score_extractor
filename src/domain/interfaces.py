@@ -153,7 +153,8 @@ class IOmrService(ABC):
 
     @abstractmethod
     def recognize_page(self, image_path: str, output_dir: str,
-                       without_deskew: bool = True) -> str:
+                       without_deskew: bool = True,
+                       on_log=None) -> str:
         """Run OMR on one page image and write a per-page .musicxml.
 
         Returns the path to the written .musicxml file.

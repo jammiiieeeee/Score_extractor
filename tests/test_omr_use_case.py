@@ -16,7 +16,7 @@ class FakeOmrService:
     def is_available(self):
         return self.available
 
-    def recognize_page(self, image_path, output_dir, without_deskew=True):
+    def recognize_page(self, image_path, output_dir, without_deskew=True, on_log=None):
         self.recognized.append(image_path)
         return str(output_dir) + f"/page_{len(self.recognized)}.musicxml"
 

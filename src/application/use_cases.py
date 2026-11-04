@@ -248,7 +248,8 @@ class GenerateOmrUseCase:
             img_path = omr_dir / f"page_{i:03d}.png"
             cv2.imwrite(str(img_path), cropped)
             xml_path = self.omr_service.recognize_page(
-                str(img_path), str(omr_dir), without_deskew=without_deskew)
+                str(img_path), str(omr_dir), without_deskew=without_deskew,
+                on_log=self._log)
             self._log(f"OMR page {i}/{n} done: {xml_path}")
             return xml_path
 
