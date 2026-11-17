@@ -25,6 +25,18 @@ def _split_frame(height=400, width=200, split=250, top=230, bottom=30, seed=0):
     return np.clip(frame.astype(int) + noise, 0, 255).astype(np.uint8)
 
 
+def _band_frame(height=400, width=200, header_h=150, boundary=300,
+                header=170, paper=250, bottom=30, seed=0):
+    """Header band, then bright paper, then a dark visualizer below."""
+    rng = np.random.default_rng(seed)
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    frame[:header_h] = header
+    frame[header_h:boundary] = paper
+    frame[boundary:] = bottom
+    noise = rng.integers(-3, 4, size=(height, width, 3))
+    return np.clip(frame.astype(int) + noise, 0, 255).astype(np.uint8)
+
+
 @pytest.mark.unit
 class TestRedetect:
 
@@ -111,6 +123,48 @@ class TestTrack:
 
 
 @pytest.mark.unit
+class TestTopRow:
+    """The score panel can start below a header or lyric banner."""
+
+    def test_finds_the_header_edge(self):
+        d = BoundaryDetector(min_contrast=20.0)
+        row = d.redetect(_band_frame(header_h=150, boundary=300))
+        assert row is not None
+        assert abs(row - 300) <= 12
+        assert d.top_row is not None
+        assert abs(d.top_row - 150) <= 18
+
+    def test_plain_page_has_no_top(self):
+        """Sheet music starting at row 0 gives no top, so the crop starts there."""
+        d = BoundaryDetector(min_contrast=20.0)
+        d.redetect(_split_frame(split=300))
+        assert d.top_row is None
+
+    def test_staff_lines_are_not_a_header(self):
+        """A bright page with staff lines must not look like a header edge."""
+        frame = _split_frame(split=300)
+        for y in range(40, 260, 10):
+            frame[y:y + 2] = 40
+        d = BoundaryDetector(min_contrast=20.0)
+        d.redetect(frame)
+        assert d.top_row is None
+
+    def test_a_slightly_darker_header_is_ignored(self):
+        """A step too small to trust leaves the crop at row 0."""
+        d = BoundaryDetector(min_contrast=20.0)
+        d.redetect(_band_frame(header_h=150, boundary=300,
+                               header=230, paper=250))
+        assert d.top_row is None
+
+    def test_reset_clears_the_top(self):
+        d = BoundaryDetector(min_contrast=20.0)
+        d.redetect(_band_frame())
+        assert d.top_row is not None
+        d.reset()
+        assert d.top_row is None
+
+
+@pytest.mark.unit
 class TestSanityGuard:
 
     def test_bright_bottom_region_rejected(self):
@@ -124,6 +178,18 @@ class TestSanityGuard:
         d = BoundaryDetector(min_contrast=5.0, min_dark_mean=120.0)
         frame = _split_frame(split=250, top=230, bottom=20)
         assert d.redetect(frame) is not None
+
+    def test_lit_piano_keys_still_accepted(self):
+        """White keys and hands lift the bottom mean; that is not a blank page.
+
+        A real scan measured ~123 below the split with ~205 contrast and was
+        wrongly rejected by the old 120 default, so its pages fell back to the
+        fixed crop instead of the detected boundary.
+        """
+        d = BoundaryDetector(min_contrast=20.0)
+        row = d.redetect(_split_frame(split=250, top=230, bottom=130))
+        assert row is not None
+        assert abs(row - 250) <= 12
 
 
 @pytest.mark.unit

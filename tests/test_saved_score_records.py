@@ -90,12 +90,21 @@ class TestTheSavedRecord:
             Page(_image(10), boundary_row=100, attempt_number=3),
         ])
 
-        assert meta["pages"][0] == {"attempt": 3, "boundary_row": 100, "status": "keep"}
+        assert meta["pages"][0] == {
+            "attempt": 3, "boundary_row": 100, "top_row": None, "status": "keep"}
+
+    def test_the_entry_carries_the_top_row(self, api, tmp_path):
+        meta = self._generate(api, tmp_path, [
+            Page(_image(10), boundary_row=300, top_row=120),
+        ])
+
+        assert meta["pages"][0]["top_row"] == 120
 
     def test_the_entries_are_written_without_a_row(self, api, tmp_path):
         meta = self._generate(api, tmp_path, [Page(_image(10))])
 
-        assert meta["pages"] == [{"attempt": 0, "boundary_row": None, "status": "keep"}]
+        assert meta["pages"] == [{
+            "attempt": 0, "boundary_row": None, "top_row": None, "status": "keep"}]
 
     def test_the_status_is_written(self, api, tmp_path):
         page = Page(_image(10), boundary_row=100)
@@ -105,6 +114,14 @@ class TestTheSavedRecord:
         meta = self._generate(api, tmp_path, [kept, page])
 
         assert meta["pages"][1]["status"] == "excluded"
+
+    def test_the_metadata_is_written_without_a_pdf(self, api, tmp_path):
+        api.set_pages([Page(_image(10), boundary_row=100, top_row=40)])
+
+        meta = api._write_score_metadata(tmp_path, "Score")
+
+        assert meta["page_count"] == 1
+        assert _read_metadata(tmp_path)["pages"][0]["top_row"] == 40
 
 
 class TestReopeningASavedScore:
@@ -201,6 +218,7 @@ class TestTheSamePdfAfterReopening:
             "boundary_mode": "manual",
             "boundary_offset_px": 7,
             "boundary_offset_ratio": 0.05,
+            "boundary_top_offset_px": 31,
         })
 
         api.load_saved_score(str(tmp_path))
@@ -210,6 +228,7 @@ class TestTheSamePdfAfterReopening:
         assert config.boundary_mode == "manual"
         assert config.boundary_offset_px == 7
         assert config.boundary_offset_ratio == 0.05
+        assert config.boundary_top_offset_px == 31
 
 
 class TestStatusChangesAreSaved:
@@ -258,6 +277,19 @@ class TestStatusChangesAreSaved:
         api.set_page_status(1, PageStatus.EXCLUDED)
 
         assert all(path.exists() for path in paths)
+
+    def test_a_status_change_updates_the_page_count(self, api, tmp_path):
+        _write_pages(tmp_path)
+        api.save_metadata(str(tmp_path), {"page_count": 1, "pages": [
+            {"attempt": 1, "boundary_row": 11, "status": "keep"},
+            {"attempt": 2, "boundary_row": 22, "status": "keep"},
+            {"attempt": 3, "boundary_row": 33, "status": "keep"},
+        ]})
+        api.load_saved_score(str(tmp_path))
+
+        api.set_page_status(1, PageStatus.DUPLICATE)
+
+        assert _read_metadata(tmp_path)["page_count"] == 3
 
     def test_an_old_score_loads_as_keep(self, api, tmp_path):
         _write_pages(tmp_path)

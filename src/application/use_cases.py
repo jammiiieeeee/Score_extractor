@@ -1,4 +1,5 @@
 import time
+import cv2
 import numpy as np
 from pathlib import Path
 from dataclasses import dataclass, field as dc_field
@@ -71,9 +72,21 @@ class ExtractScoreUseCase:
 
         calibrator = BarProfileCalibrator(bootstrap=self.config.bar_min_diff_threshold)
         deduplicator = Deduplicator(self.config, effective_ocr)
-        boundary_detector = None
-        if self.config.boundary_mode == "auto":
-            boundary_detector = BoundaryDetector(
+        # Pixel offsets are saved in page (full-res) pixels.  The scanner reads
+        # the scan video, so it needs the page height to scale them the same
+        # way the preview does.
+        page_height = orig_h
+        if r.original_video_path:
+            try:
+                probe = cv2.VideoCapture(r.original_video_path)
+                if probe.isOpened():
+                    page_height = int(probe.get(cv2.CAP_PROP_FRAME_HEIGHT)) or page_height
+                probe.release()
+            except Exception:
+                pass
+
+        def make_boundary_detector() -> BoundaryDetector:
+            return BoundaryDetector(
                 band_ratio=self.config.boundary_band_ratio,
                 min_contrast=self.config.boundary_min_contrast,
                 search_margin=self.config.boundary_search_margin,
@@ -81,7 +94,15 @@ class ExtractScoreUseCase:
                 hysteresis_px=self.config.boundary_hysteresis_px,
                 median_window=self.config.boundary_median_window,
                 min_dark_mean=self.config.boundary_min_dark_mean,
+                min_top_step=self.config.boundary_top_min_step,
+                top_band_ratio=self.config.boundary_top_band_ratio,
             )
+
+        boundary_detector = None
+        roi_detector = None
+        if self.config.boundary_mode == "auto":
+            boundary_detector = make_boundary_detector()
+            roi_detector = make_boundary_detector()
         ocr_available = effective_ocr.is_enabled()        # Write extraction log to diagnostics/ subfolder (always on)
         log_file: Optional[TextIO] = None
         try:
@@ -110,6 +131,7 @@ class ExtractScoreUseCase:
         stepper = FrameStepper(
             self.video_service, self.config,
             on_log=log, on_progress=r.on_progress, is_cancelled=r.is_cancelled,
+            band_detector=roi_detector, page_height=page_height,
         )
 
         unique_pages: List[Frame] = []

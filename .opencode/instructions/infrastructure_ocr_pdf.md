@@ -45,15 +45,17 @@
 
 ### Crop rule (`src/domain/page_crop.py`)
 
+- `crop_start_row(page, config)` → the row where the crop starts (inclusive)
 - `crop_end_row(page, config)` → the row where the page's crop ends (exclusive)
 - `crop_page(page, config)` → the cropped image (a view of the page image)
 - `boundary_mode = "off"` → keep the whole frame
-- `boundary_mode = "manual"` → keep `default_crop_ratio` of the frame
-- `boundary_mode = "auto"` → keep up to the page's measured `boundary_row`,
-  lifted by `boundary_offset_px`; fall back to `default_crop_ratio` when the
-  page has no measured row
-- The crop is top-anchored: the sheet music is kept, the visualizer below it
-  is dropped
+- `boundary_mode = "manual"` → keep `default_crop_ratio` of the frame from row 0
+- `boundary_mode = "auto"` → keep from the page's measured `top_row` (nudged
+  by `boundary_top_offset_px`) to its measured `boundary_row`, lifted by
+  `boundary_offset_px`; fall back to row 0 / `default_crop_ratio` when a row
+  was not measured
+- The crop is a band: a header/lyric banner above the sheet music and the
+  visualizer below it are both dropped
 - Any consumer can call the rule directly — the PDF does, a page preview can
 
 ### ReportLab Layout

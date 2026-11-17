@@ -41,13 +41,16 @@ class ScoreConfig:
     boundary_mode: str = "auto"                  # "auto" = per-page detection, "manual" = fixed crop, "off" = no crop
     boundary_offset_px: int = 0                  # Lift the crop line this many px above the detected boundary
     boundary_offset_ratio: float = 0.02          # Extra lift as a fraction of frame height (safety margin over the visualizer)
+    boundary_top_offset_px: int = 0              # Nudge the detected score top down (positive = trim more header)
+    boundary_top_band_ratio: float = 0.04        # Band used to find the header/score top edge (fraction of frame)
+    boundary_top_min_step: float = 35.0          # Min brightness step from header to paper to trust a top edge
     boundary_band_ratio: float = 0.05            # Height of comparison band (fraction of frame)
     boundary_min_contrast: float = 12.0          # Min brightness drop (above-below) to accept a boundary row
     boundary_search_margin: float = 0.05         # Fraction of frame excluded at very top/bottom of redetect search
     boundary_track_window: float = 0.03          # ± fraction of frame height searched when tracking
     boundary_hysteresis_px: int = 6              # New candidate must differ by > this from median before moving
     boundary_median_window: int = 5              # Number of recent candidates for the tracking median
-    boundary_min_dark_mean: float = 120.0        # Bottom region mean must be below this to trust the split
+    boundary_min_dark_mean: float = 140.0        # Bottom region mean must be below this to trust the split
 
     # Bar Detection
     bar_analysis_ratio: float = 0.32             # Top portion of frame scanned for bar-profile spikes

@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
 from gui_bridge import ExtractionSignals
 from src.api.gui_api import GuiApi, ScoreInfo
 from src.domain.models import PageStatus
+from src.domain.boundary_detector import BoundaryDetector
 from src.infrastructure.file_service import FileService
 from src.infrastructure.download_service import video_selector
 
@@ -618,17 +619,30 @@ class StyledComboBox(QComboBox):
 
 class CropPreviewWidget(QWidget):
     crop_ratio_changed = pyqtSignal(float)
+    top_offset_px_changed = pyqtSignal(int)
+
+    TOP_OFFSET_LIMIT_PX = 2000
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pixmap: Optional[QPixmap] = None
         self._ratio = 0.35
         self._drag_active = False
+        self._drag_target: Optional[str] = None
         self._image_rect = None
         self.setMinimumSize(320, 120)
         self.setMouseTracking(True)
         self._cursor_over_line = False
         self._editable = True
+
+        # Top-offset line (auto-crop band start)
+        self._top_visible = False
+        self._top_base: Optional[int] = None
+        self._top_offset_px = 0
+        self._top_offset_label_px = 0
+        self._boundary_row: Optional[int] = None
+        self._bottom_offset_px = 0
+        self._offset_margin_ratio = 0.02
 
     def set_frame(self, pixmap: QPixmap):
         self._pixmap = pixmap
@@ -642,13 +656,80 @@ class CropPreviewWidget(QWidget):
         """Fixed ratio is the only mode where the user picks the crop line."""
         self._editable = editable
         if not editable:
+            if self._drag_target == "ratio":
+                self._drag_target = None
             self._drag_active = False
             self._cursor_over_line = False
             self.setCursor(Qt.CursorShape.ArrowCursor)
         self.update()
 
+    def set_top_state(self, top_row: Optional[int], top_offset_px: int,
+                      boundary_row: Optional[int], bottom_offset_px: int = 0,
+                      margin_ratio: float = 0.02,
+                      label_offset_px: Optional[int] = None):
+        """Where the score band starts and ends, and the offsets to show.
+
+        ``top_row`` is the detected start (None = row 0).  ``top_offset_px``
+        nudges it down, in this preview frame's pixels.
+        ``boundary_row``/``bottom_offset_px`` place the crop end reference
+        line; ``margin_ratio`` is the always-applied safety margin, so the
+        line matches the row the PDF will cut at.  ``label_offset_px`` is the
+        stored offset shown in the label (the page is larger than the scan).
+        """
+        self._top_base = None if top_row is None else int(top_row)
+        self._top_offset_px = int(top_offset_px)
+        self._top_offset_label_px = (self._top_offset_px if label_offset_px is None
+                                     else int(label_offset_px))
+        self._boundary_row = None if boundary_row is None else int(boundary_row)
+        self._bottom_offset_px = int(bottom_offset_px)
+        self._offset_margin_ratio = float(margin_ratio)
+        self.update()
+
+    def set_top_visible(self, visible: bool):
+        self._top_visible = bool(visible)
+        if not visible:
+            if self._drag_target == "top":
+                self._drag_target = None
+                self._drag_active = False
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.update()
+
+    def top_line_row(self) -> Optional[int]:
+        """Source-image row of the top line, or None when it is hidden."""
+        if not self._top_visible:
+            return None
+        return self._top_row_value()
+
     def get_ratio(self) -> float:
         return self._ratio
+
+    def _top_row_value(self) -> Optional[int]:
+        if self._pixmap is None:
+            return None
+        h = self._pixmap.height()
+        base = self._top_base or 0
+        row = base + self._top_offset_px
+        end = self._crop_end_row()
+        upper = h - 1 if end is None else max(0, end - 1)
+        return max(0, min(row, upper))
+
+    def _crop_end_row(self) -> Optional[int]:
+        if self._pixmap is None or self._boundary_row is None:
+            return None
+        h = self._pixmap.height()
+        margin = int(round(h * self._offset_margin_ratio))
+        return max(1, min(self._boundary_row - self._bottom_offset_px - margin, h))
+
+    def _top_offset_from_source_row(self, row: int) -> int:
+        if self._pixmap is None:
+            return self._top_offset_px
+        h = self._pixmap.height()
+        end = self._crop_end_row()
+        upper = h - 1 if end is None else max(0, end - 1)
+        row = max(0, min(int(row), upper))
+        offset = row - (self._top_base or 0)
+        return max(-self.TOP_OFFSET_LIMIT_PX,
+                   min(self.TOP_OFFSET_LIMIT_PX, offset))
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -700,6 +781,58 @@ class CropPreviewWidget(QWidget):
                 painter.setFont(font)
                 label = f"Crop: {int(self._ratio * 100)}%"
                 painter.drawText(ox, line_y - 16, label)
+
+            if self._top_visible:
+                img_h = self._pixmap.height()
+                row = self._top_row_value()
+                if row is not None:
+                    # Reference: the auto-detected score top.
+                    if self._top_base:
+                        ref_y = oy + int(ph * self._top_base / img_h)
+                        painter.setPen(QPen(QColor(136, 136, 136), 1,
+                                            Qt.PenStyle.DashLine))
+                        painter.drawLine(ox, ref_y, ox + pw, ref_y)
+
+                    # Reference: where the crop ends.
+                    end_row = self._crop_end_row()
+                    if end_row is not None:
+                        end_y = oy + int(ph * end_row / img_h)
+                        painter.setPen(QPen(QColor(136, 136, 136), 1,
+                                            Qt.PenStyle.DashLine))
+                        painter.drawLine(ox, end_y, ox + pw, end_y)
+
+                    # Control line: the crop start (top + offset).
+                    line_y = oy + int(ph * row / img_h)
+                    painter.setPen(QPen(QColor(212, 168, 67), 2))
+                    painter.drawLine(ox, line_y, ox + pw, line_y)
+
+                    # Grip ridges at center (indicates draggable)
+                    pen_grip = QPen(QColor(212, 168, 67), 2,
+                                    Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+                    painter.setPen(pen_grip)
+                    cx = ox + pw // 2
+                    half = 8
+                    for dy in (-4, 0, 4):
+                        painter.drawLine(cx - half, line_y + dy, cx + half, line_y + dy)
+
+                    # Label
+                    painter.setPen(QColor(212, 168, 67))
+                    font = QFont("Segoe UI")
+                    font.setPixelSize(14)
+                    font.setWeight(QFont.Weight.DemiBold)
+                    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.4)
+                    painter.setFont(font)
+                    label = (f"Top offset: {self._top_offset_label_px:+d} px"
+                             if self._top_offset_label_px else "Top offset: 0 px")
+                    painter.drawText(ox, max(oy + 14, line_y - 16), label)
+
+                if self._boundary_row is None:
+                    painter.setPen(QColor(136, 136, 136))
+                    font = QFont("Segoe UI")
+                    font.setPixelSize(12)
+                    painter.setFont(font)
+                    painter.drawText(ox + 8, oy + ph - 10,
+                                     "No auto boundary detected on this frame")
         else:
             painter.setPen(QColor(136, 136, 136))
             font = QFont("Segoe UI")
@@ -710,34 +843,65 @@ class CropPreviewWidget(QWidget):
                              "Open a video to preview the crop overlay")
 
     def mousePressEvent(self, event):
-        if self._editable and self._image_rect and self._pixmap:
-            ox, oy, pw, ph = self._image_rect
+        if not (self._image_rect and self._pixmap):
+            return
+        ox, oy, pw, ph = self._image_rect
+
+        top_row = self.top_line_row()
+        if top_row is not None:
+            line_y = oy + int(ph * top_row / self._pixmap.height())
+            if abs(event.position().y() - line_y) < 12:
+                self._drag_target = "top"
+                self._drag_active = True
+                return
+
+        if self._editable:
             line_y = oy + int(ph * self._ratio)
             if abs(event.position().y() - line_y) < 12:
+                self._drag_target = "ratio"
                 self._drag_active = True
 
     def mouseMoveEvent(self, event):
-        if not self._editable:
+        if not self._image_rect or not self._pixmap:
             return
-        if self._drag_active and self._image_rect:
-            ox, oy, pw, ph = self._image_rect
+        ox, oy, pw, ph = self._image_rect
+
+        if self._drag_target == "top":
+            src_row = int(round((event.position().y() - oy) / max(ph, 1)
+                                * self._pixmap.height()))
+            offset = self._top_offset_from_source_row(src_row)
+            if offset != self._top_offset_px:
+                self._top_offset_px = offset
+                self.top_offset_px_changed.emit(offset)
+                self.update()
+            return
+
+        if self._drag_target == "ratio" and self._editable:
             rel_y = event.position().y() - oy
             ratio = max(0.05, min(0.95, rel_y / ph))
             if ratio != self._ratio:
                 self._ratio = ratio
                 self.crop_ratio_changed.emit(self._ratio)
                 self.update()
-        elif self._image_rect:
-            ox, oy, pw, ph = self._image_rect
-            line_y = oy + int(ph * self._ratio)
+            return
+
+        near = False
+        top_row = self.top_line_row()
+        if top_row is not None:
+            line_y = oy + int(ph * top_row / self._pixmap.height())
             near = abs(event.position().y() - line_y) < 12
-            if near != self._cursor_over_line:
-                self._cursor_over_line = near
-                self.setCursor(Qt.CursorShape.SizeVerCursor if near
-                               else Qt.CursorShape.ArrowCursor)
+        if self._editable:
+            line_y = oy + int(ph * self._ratio)
+            near = near or abs(event.position().y() - line_y) < 12
+
+        if near != self._cursor_over_line:
+            self._cursor_over_line = near
+            self.setCursor(Qt.CursorShape.SizeVerCursor if near
+                           else Qt.CursorShape.ArrowCursor)
 
     def mouseReleaseEvent(self, event):
         self._drag_active = False
+        self._drag_target = None
 
 
 # ── Dual-Handle Seek Bar (start time + end duration in one widget) ────
@@ -1946,7 +2110,16 @@ class ConfigTab(QWidget):
             "Positive moves the line up (trims more visualizer);\n"
             "negative keeps more below it. A 2% safety margin is always applied."
         )
+        self.crop_top_offset = self._spin_int(-200, 2000, 0)
+        self.crop_top_offset.setSingleStep(2)
+        self.crop_top_offset.setSuffix(" px")
+        self.crop_top_offset.setToolTip(
+            "Nudge the auto-detected score top up/down (pixels).\n"
+            "Positive trims a header or lyric banner above the sheet music;\n"
+            "negative keeps more of it. Auto crop mode only."
+        )
         crop_form.addRow(self._form_label("Crop line offset (px):"), self.crop_offset)
+        crop_form.addRow(self._form_label("Crop top offset (px):"), self.crop_top_offset)
         adv_outer.addWidget(crop_group)
 
         # ── Detection fine tuning ──
@@ -1969,9 +2142,9 @@ class ConfigTab(QWidget):
         )
         self.top_ratio = self._spin_float(0.05, 1.0, 0.01, 0.34)
         self.top_ratio.setToolTip(
-            "How much of the frame's top portion is compared between frames.\n"
-            "Only this region is checked for page changes, ignoring the bottom\n"
-            "(typically the piano keyboard or a player UI).\n"
+            "Fallback region compared between frames when the auto crop\n"
+            "cannot find a score band. In Auto crop mode the area marked\n"
+            "in the preview (crop top to crop end) is used instead.\n"
             "Safe range: 0.20\u20130.50."
         )
 
@@ -2091,7 +2264,7 @@ class ConfigTab(QWidget):
             self.top_ratio, self.blank_std, self.a_delay, self.b_delay,
             self.overlay_width, self.dup_top, self.pixel_sim,
             self.row_sim, self.row_cov, self.ocr_conf, self.ocr_horiz,
-            self.crop_offset, self.bar_diff, self.bar_pad,
+            self.crop_offset, self.crop_top_offset, self.bar_diff, self.bar_pad,
         ]
 
     def apply_to_api(self):
@@ -2113,6 +2286,7 @@ class ConfigTab(QWidget):
                 "ocr_confidence_threshold": self.ocr_conf.value() if self.ocr_enabled.isChecked() else 0,
                 "ocr_horizontal_ratio": self.ocr_horiz.value(),
                 "boundary_offset_px": self.crop_offset.value(),
+                "boundary_top_offset_px": self.crop_top_offset.value(),
                 "bar_min_diff_threshold": self.bar_diff.value(),
                 "bar_padding_px": self.bar_pad.value(),
             }
@@ -2143,6 +2317,7 @@ class ConfigTab(QWidget):
             self.ocr_conf.setValue(ocr_conf if ocr_conf > 0 else 40)
             self.ocr_horiz.setValue(cfg.get("ocr_horizontal_ratio", 0.30))
             self.crop_offset.setValue(int(cfg.get("boundary_offset_px", 0)))
+            self.crop_top_offset.setValue(int(cfg.get("boundary_top_offset_px", 0)))
             self.bar_diff.setValue(cfg.get("bar_min_diff_threshold", 500.0))
             self.bar_pad.setValue(cfg.get("bar_padding_px", -15))
             self.debug_cb.setChecked(self._api.is_debug_mode())
@@ -2178,6 +2353,7 @@ class ConfigTab(QWidget):
             self.ocr_conf.setValue(40)
             self.ocr_horiz.setValue(0.30)
             self.crop_offset.setValue(0)
+            self.crop_top_offset.setValue(0)
             self.bar_diff.setValue(500.0)
             self.bar_pad.setValue(-15)
             self.debug_cb.setChecked(False)
@@ -2326,6 +2502,12 @@ class ExtractTab(QWidget):
         self._busy = False
         self._completed_pdf_path: Optional[str] = None
         self._loaded_original_ratio: Optional[float] = None
+        self._preview_frame_bgr: Optional[np.ndarray] = None
+        self._preview_qimage: Optional[QImage] = None
+        self._preview_boundary_row: Optional[int] = None
+        self._preview_top_row: Optional[int] = None
+        self._preview_source_height = 0
+        self._page_frame_height = 0
         self._project_dir: str = ""
         self._has_existing_score = False
         self._reextract_mode = False
@@ -2510,10 +2692,21 @@ class ExtractTab(QWidget):
         )
         _fit_combo_width(self.crop_mode_combo)
 
+        self.offset_cb = QCheckBox("Top offset")
+        self.offset_cb.setToolTip(
+            "Show a handle for the auto-crop top offset.\n"
+            "Drag the brass line down to trim a header or lyric banner\n"
+            "above the sheet music, or up to keep more of it.\n"
+            "The offset is saved and used in Auto crop mode."
+        )
+        self.offset_cb.setChecked(
+            bool(self._settings.value("show_top_offset_line", False, type=bool)))
+
         crop_row.addWidget(crop_label)
         crop_row.addWidget(self.crop_mode_combo)
         crop_row.addWidget(self.crop_ratio_label)
         crop_row.addWidget(self.crop_spin)
+        crop_row.addWidget(self.offset_cb)
         crop_row.addWidget(self.crop_original_label)
         crop_row.addStretch()
         layout.addLayout(crop_row)
@@ -2647,6 +2840,8 @@ class ExtractTab(QWidget):
         self.crop_spin.valueChanged.connect(self._on_crop_spin_changed)
         self.crop_widget.crop_ratio_changed.connect(self.crop_spin.setValue)
         self.crop_mode_combo.currentIndexChanged.connect(self._on_crop_mode_changed)
+        self.offset_cb.toggled.connect(self._on_offset_toggled)
+        self.crop_widget.top_offset_px_changed.connect(self._on_offset_dragged)
 
         self._refresh_completer()
         self._load_crop_controls()
@@ -2976,6 +3171,7 @@ class ExtractTab(QWidget):
     def _load_preview(self):
         path = self.video_path_edit.text().strip()
         self._yt_video_paths = []
+        self._preview_qimage = None
         if not path or not os.path.exists(path):
             return
         try:
@@ -2984,6 +3180,7 @@ class ExtractTab(QWidget):
             info = self._api.open_video(path)
             self._video_path = path
             self._video_duration = info.duration
+            self._page_frame_height = self._extraction_frame_height(info, path)
             self.seek_bar.set_duration(info.duration)
             self.seek_bar.set_start(2.0)
             self.seek_bar.set_end(info.duration)
@@ -3000,7 +3197,9 @@ class ExtractTab(QWidget):
                 start_ts = 0.0
             img = self._api.read_frame_at(start_ts)
             if img is not None:
+                self._preview_source_height = img.shape[0]
                 self.crop_widget.set_frame(self._img_to_pixmap(img))
+                self._refresh_preview_boundary(img)
 
             self._preview_seeker.open_requested.emit(path)
             self._log(f"Video loaded: {info.duration:.1f}s  {info.width}x{info.height}  {info.fps:.2f}fps")
@@ -3032,7 +3231,21 @@ class ExtractTab(QWidget):
             self._seek_coalesce.start()
 
     def _on_preview_frame(self, qt_img: QImage):
+        self._preview_source_height = qt_img.height()
         self.crop_widget.set_frame(QPixmap.fromImage(qt_img))
+        self._preview_qimage = qt_img
+        if (self.offset_cb.isChecked()
+                and self.crop_mode_combo.currentData() == "auto"):
+            self._refresh_preview_boundary(self._qimage_to_bgr(qt_img))
+
+    @staticmethod
+    def _qimage_to_bgr(qt_img: QImage) -> np.ndarray:
+        img = qt_img.convertToFormat(QImage.Format.Format_RGB888)
+        w, h = img.width(), img.height()
+        stride = img.bytesPerLine()
+        buf = np.frombuffer(img.constBits().asstring(stride * h), np.uint8)
+        rgb = buf.reshape((h, stride))[:, : w * 3].reshape((h, w, 3))
+        return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
     def _on_crop_spin_changed(self, val: float):
         dbg(f"_on_crop_spin_changed: val={val}")
@@ -3045,7 +3258,105 @@ class ExtractTab(QWidget):
     def _on_crop_mode_changed(self, _index: int):
         mode = self.crop_mode_combo.currentData()
         self._api.update_config({"boundary_mode": mode})
+        self._refresh_preview_boundary(self._current_preview_frame())
         self._sync_crop_controls()
+
+    def _on_offset_toggled(self, checked: bool):
+        self._settings.setValue("show_top_offset_line", checked)
+        self._refresh_preview_boundary(self._current_preview_frame())
+
+    def _current_preview_frame(self) -> Optional[np.ndarray]:
+        """The frame on screen, preferring the newest seek result."""
+        if self._preview_qimage is not None:
+            return self._qimage_to_bgr(self._preview_qimage)
+        return self._preview_frame_bgr
+
+    def _on_offset_dragged(self, px: int):
+        full_px = int(round(int(px) * self._offset_scale()))
+        self._api.update_config({"boundary_top_offset_px": full_px})
+        self._sync_settings_top_offset(full_px)
+        self._sync_top_line()
+
+    def _refresh_preview_boundary(self, frame: Optional[np.ndarray]):
+        """Detect the score band for the preview frame when the line is shown."""
+        self._preview_frame_bgr = frame
+        wanted = (self.offset_cb.isChecked()
+                  and self.crop_mode_combo.currentData() == "auto")
+        if wanted and frame is not None:
+            self._preview_top_row, self._preview_boundary_row = \
+                self._detect_preview_band(frame)
+        else:
+            self._preview_top_row = None
+            self._preview_boundary_row = None
+        self._sync_top_line()
+
+    def _detect_preview_band(self, frame: np.ndarray):
+        """Measured (top, bottom) of the score panel on this preview frame."""
+        cfg = self._api.get_config()
+        detector = BoundaryDetector(
+            band_ratio=float(cfg.get("boundary_band_ratio", 0.05)),
+            min_contrast=float(cfg.get("boundary_min_contrast", 12.0)),
+            search_margin=float(cfg.get("boundary_search_margin", 0.05)),
+            min_dark_mean=float(cfg.get("boundary_min_dark_mean", 140.0)),
+            min_top_step=float(cfg.get("boundary_top_min_step", 35.0)),
+            top_band_ratio=float(cfg.get("boundary_top_band_ratio", 0.04)),
+        )
+        try:
+            bottom = detector.redetect(frame)
+            return detector.top_row, bottom
+        except Exception as e:
+            dbg(f"preview boundary detection failed: {e}")
+            return None, None
+
+    def _sync_top_line(self):
+        cfg = self._api.get_config()
+        scale = self._offset_scale()
+        full_top_offset = int(cfg.get("boundary_top_offset_px", 0))
+        self.crop_widget.set_top_state(
+            top_row=self._preview_top_row,
+            top_offset_px=int(round(full_top_offset / scale)),
+            boundary_row=self._preview_boundary_row,
+            bottom_offset_px=int(round(int(cfg.get("boundary_offset_px", 0)) / scale)),
+            margin_ratio=float(cfg.get("boundary_offset_ratio", 0.02)),
+            label_offset_px=full_top_offset,
+        )
+        visible = (self.offset_cb.isChecked()
+                   and self.crop_mode_combo.currentData() == "auto")
+        self.crop_widget.set_top_visible(visible)
+
+    def _extraction_frame_height(self, info, preview_path: str) -> int:
+        """Height of the frame the crop will run on (saved photos, else main video)."""
+        if self._api.get_page_count():
+            return int(self._api.get_page(0).image.shape[0])
+        original = getattr(self._api, "_original_video_path", None)
+        if original and os.path.exists(original) and original != preview_path:
+            probe = cv2.VideoCapture(original)
+            if probe.isOpened():
+                height = int(probe.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                probe.release()
+                if height > 0:
+                    return height
+        return int(info.height)
+
+    def _offset_scale(self) -> float:
+        """Preview rows -> page rows (the 640p scan is smaller than the page)."""
+        if self._page_frame_height > 0 and self._preview_source_height > 0:
+            return self._page_frame_height / self._preview_source_height
+        return 1.0
+
+    def _sync_settings_top_offset(self, px: int):
+        """Keep Settings' Auto-crop top spin in step with a dragged line."""
+        tab = getattr(self.window(), "config_tab", None)
+        if tab is None:
+            return
+        spin = tab.crop_top_offset
+        spin.blockSignals(True)
+        spin.setValue(int(px))
+        spin.blockSignals(False)
+
+    def sync_offset_preview(self):
+        """Re-read the offset after Settings changed the Auto-crop value."""
+        self._sync_top_line()
 
     def _sync_crop_controls(self):
         mode = self.crop_mode_combo.currentData()
@@ -3054,6 +3365,8 @@ class ExtractTab(QWidget):
         self.crop_spin.setVisible(manual)
         self.crop_spin.setEnabled(manual)
         self.crop_widget.set_editable(manual)
+        self.offset_cb.setEnabled(mode == "auto")
+        self._sync_top_line()
 
     def _load_crop_controls(self):
         cfg = self._api.get_config()
@@ -3694,6 +4007,8 @@ class MainWindow(QMainWindow):
     def _on_tab_changed(self, index: int):
         if index == 1:
             self.config_tab.refresh_from_api()
+        elif index == 0:
+            self.extract_tab.sync_offset_preview()
 
     def _show_getting_started(self):
         dlg = GettingStartedDialog(self)
