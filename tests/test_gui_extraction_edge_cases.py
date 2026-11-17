@@ -14,12 +14,12 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app_gui import MainWindow, ExtractTab, ReviewPagesDialog
-from src.api.gui_api import GuiApi
+from src.api.gui_api import GuiApi, ScoreInfo
 
 
 @pytest.fixture(scope="module")
@@ -54,9 +54,8 @@ class TestExistingScoreOverwrite:
         (photos / "page_001_merged.png").write_bytes(b"x")
         # Mock the api to prevent actual extraction
         tab._api.start_extraction = MagicMock()
-        # Mock QMessageBox.question to return No
-        from PyQt6.QtWidgets import QMessageBox
-        monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+        # Decline replacing the saved pages
+        monkeypatch.setattr(tab, "_ask_replace_pages", lambda *a: False)
         # Set video path to a fake one so validation passes
         tab._video_path = "fake.mp4"
         monkeypatch.setattr("os.path.exists", lambda p: True)
@@ -71,8 +70,7 @@ class TestExistingScoreOverwrite:
         photos = tmp_path / "ExistingScore" / "photos"
         photos.mkdir(parents=True)
         (photos / "page_001_merged.png").write_bytes(b"x")
-        from PyQt6.QtWidgets import QMessageBox
-        monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+        monkeypatch.setattr(tab, "_ask_replace_pages", lambda *a: True)
         # Mock the api to avoid actual extraction
         tab._api.start_extraction = MagicMock()
         # Set video path to a fake one
@@ -302,3 +300,86 @@ class TestDedupModeControl:
         tab.dedup_combo.setCurrentIndex(tab.dedup_combo.findData("auto"))
         tab._start_extraction()
         assert tab._api.start_extraction.call_args.kwargs["dedup_mode"] == "auto"
+
+
+class _FakeSettings:
+    def __init__(self):
+        self.data = {}
+
+    def value(self, key, default=None):
+        return self.data.get(key, default)
+
+    def setValue(self, key, value):
+        self.data[key] = value
+
+
+@pytest.mark.unit
+class TestVideoSource:
+    def test_source_choice_is_remembered(self, tab, monkeypatch):
+        fake = _FakeSettings()
+        monkeypatch.setattr(tab, "_settings", fake)
+        tab.yt_radio.setChecked(True)
+        tab._on_source_toggled()
+        assert fake.value("video_source") == "url"
+        tab.local_radio.setChecked(True)
+        tab._on_source_toggled()
+        assert fake.value("video_source") == "local"
+
+    def test_playlist_url_downloads_without_a_prompt(self, tab, monkeypatch):
+        url = "https://www.youtube.com/watch?v=abc123&list=PL456"
+        tab.yt_url_edit.setText(url)
+        calls = []
+        monkeypatch.setattr(
+            tab._api, "download_youtube",
+            lambda url_arg, fmt_arg: calls.append((url_arg, fmt_arg)))
+        prompts = []
+        monkeypatch.setattr(
+            QMessageBox, "question",
+            lambda *a, **k: prompts.append(a))
+        monkeypatch.setattr(
+            QMessageBox, "warning",
+            lambda *a, **k: prompts.append(a))
+
+        tab._on_yt_download()
+
+        assert calls and calls[0][0] == url
+        assert prompts == []
+        assert tab._busy is True
+        tab._busy = False
+
+
+@pytest.mark.unit
+class TestDownloadExistingScore:
+    @staticmethod
+    def _saved(tmp_path, count=4):
+        return ScoreInfo(
+            path=str(tmp_path / "Sonata"), page_count=count, score_name="Sonata")
+
+    def test_same_video_prompts_to_open_the_saved_score(
+            self, tab, tmp_path, monkeypatch):
+        saved = self._saved(tmp_path)
+        tab._api._last_download_title = "Sonata"
+        tab._has_existing_score = False
+        monkeypatch.setattr(tab._api, "list_saved_scores", lambda _p: [saved])
+        monkeypatch.setattr(tab, "_ask_open_saved_score", lambda *a: "open")
+        loaded = []
+        monkeypatch.setattr(tab, "_load_existing_score", lambda p: loaded.append(p))
+
+        tab._on_yt_download_completed("C:/yt_dl/abc123.mp4")
+
+        assert loaded == [saved.path]
+        assert tab._busy is False
+
+    def test_cancel_keeps_the_current_score_untouched(self, tab, tmp_path, monkeypatch):
+        saved = self._saved(tmp_path)
+        tab._api._last_download_title = "Sonata"
+        monkeypatch.setattr(tab._api, "list_saved_scores", lambda _p: [saved])
+        monkeypatch.setattr(tab, "_ask_open_saved_score", lambda *a: "cancel")
+        loaded = []
+        monkeypatch.setattr(tab, "_load_existing_score", lambda p: loaded.append(p))
+
+        tab._on_yt_download_completed("C:/yt_dl/abc123.mp4")
+
+        assert loaded == []
+        assert tab._busy is False
+        assert "not opened" in tab.status_label.text()

@@ -50,6 +50,9 @@ class ScoreInfo:
     path: str
     page_count: int
     score_name: str
+    thumbnail: str = ""
+    modified: float = 0.0
+    pdf_path: str = ""
 
 
 class GuiApi:
@@ -550,18 +553,19 @@ class GuiApi:
             msg = str(e)
             import re
             msg = re.sub(r'\x1b\[[0-9;]*m', '', msg)
-            hint = ""
             if "cancelled" in msg.lower():
+                self._emit_error("Download cancelled")
+            else:
                 hint = ""
-            elif "403" in msg or "Forbidden" in msg:
-                hint = ("\nYouTube blocked the request. Update yt-dlp (pip install -U yt-dlp) "
-                        "and if the problem persists, try passing browser cookies:\n"
-                        '  python -c "from yt_dlp import YoutubeDL; '
-                        "YoutubeDL({'cookiesfrombrowser': ('chrome',)}).download('URL')\"")
-            elif "yt-dlp" in msg.lower() or "youtube" in msg.lower() or "bilibili" in msg.lower():
-                hint = ("\nCheck that the video is still available and not region-restricted. "
-                        "Ensure yt-dlp is up to date: pip install -U yt-dlp")
-            self._emit_error(f"Video download failed: {msg}{hint}")
+                if "403" in msg or "Forbidden" in msg:
+                    hint = ("\nYouTube blocked the request. Update yt-dlp (pip install -U yt-dlp) "
+                            "and if the problem persists, try passing browser cookies:\n"
+                            '  python -c "from yt_dlp import YoutubeDL; '
+                            "YoutubeDL({'cookiesfrombrowser': ('chrome',)}).download('URL')\"")
+                elif "yt-dlp" in msg.lower() or "youtube" in msg.lower() or "bilibili" in msg.lower():
+                    hint = ("\nCheck that the video is still available and not region-restricted. "
+                            "Ensure yt-dlp is up to date: pip install -U yt-dlp")
+                self._emit_error(f"Video download failed: {msg}{hint}")
 
         finally:
             self._download_thread = None
@@ -809,6 +813,11 @@ class GuiApi:
         if not score_path.exists():
             return
         shutil.rmtree(score_path)
+        if (self._loaded_score_path
+                and os.path.abspath(self._loaded_score_path) == os.path.abspath(score_path)):
+            self._pages.clear()
+            self._loaded_score_path = None
+            self._loaded_score_metadata = {}
         self._emit_log(f"Deleted: {path}")
 
     # ═════════════════════════════════════════════════════════════════════

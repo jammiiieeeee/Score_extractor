@@ -158,6 +158,36 @@ class TestListSavedScores:
         assert r["page_count"] == 3
         assert str(score_dir) == r["path"]
 
+    def test_reports_the_first_page_as_thumbnail(self, fs, tmp_path):
+        out = str(tmp_path / "output")
+        score_dir = fs.prepare_output_dir(out, "myscore")
+        img = make_solid_image(800, 600)
+        first = fs.save_page_image(score_dir, 1, img)
+        fs.save_page_image(score_dir, 2, img)
+        r = fs.list_saved_scores(out)[0]
+        assert r["thumbnail"] == str(first)
+
+    def test_reports_when_the_score_was_last_written(self, fs, tmp_path):
+        out = str(tmp_path / "output")
+        score_dir = fs.prepare_output_dir(out, "myscore")
+        fs.save_page_image(score_dir, 1, make_solid_image(800, 600))
+        r = fs.list_saved_scores(out)[0]
+        assert r["modified"] > 0
+
+    def test_reports_the_pdf_when_one_exists(self, fs, tmp_path):
+        out = str(tmp_path / "output")
+        score_dir = fs.prepare_output_dir(out, "myscore")
+        fs.save_page_image(score_dir, 1, make_solid_image(800, 600))
+        pdf = score_dir / "myscore.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        assert fs.list_saved_scores(out)[0]["pdf_path"] == str(pdf)
+
+    def test_no_pdf_is_reported_as_empty(self, fs, tmp_path):
+        out = str(tmp_path / "output")
+        score_dir = fs.prepare_output_dir(out, "myscore")
+        fs.save_page_image(score_dir, 1, make_solid_image(800, 600))
+        assert fs.list_saved_scores(out)[0]["pdf_path"] == ""
+
     def test_nonexistent_output_returns_empty(self, fs, tmp_path):
         results = fs.list_saved_scores(str(tmp_path / "nonexistent"))
         assert results == []
