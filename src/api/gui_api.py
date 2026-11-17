@@ -205,14 +205,17 @@ class GuiApi:
             "default_crop_ratio", "boundary_offset_ratio",
             "bar_analysis_ratio",
             "bar_left_margin",
+            "boundary_top_band_ratio",
         }
         valid_float_any = {
             "frame_check_interval", "min_screenshot_interval",
             "a_capture_delay", "b_capture_delay",
             "blank_content_std_threshold", "bar_min_diff_threshold",
+            "boundary_top_min_step",
         }
         valid_int_0_100 = {"ocr_confidence_threshold"}
-        valid_int_any = {"bar_padding_px", "yt_quality_index", "boundary_offset_px"}
+        valid_int_any = {"bar_padding_px", "yt_quality_index", "boundary_offset_px",
+                         "boundary_top_offset_px"}
 
         valid_keys = valid_float_0_1 | valid_float_any | valid_int_0_100 | valid_int_any
 
@@ -438,6 +441,10 @@ class GuiApi:
             manifest_entries = result.manifest
 
             self._pages.set_pages(pages)
+            # Persist the page list as soon as extraction ends, so the score
+            # describes the same pages even if the PDF is not generated (or
+            # the output PDF is locked by a viewer).
+            self._write_score_metadata(score_dir, score_name)
             # Let Review Pages persist flags into this score right away, even
             # before the user generates the PDF.
             self._loaded_score_path = str(score_dir)
@@ -578,7 +585,8 @@ class GuiApi:
 
     def add_page(self, image: np.ndarray, boundary_row: Optional[int] = None,
                  file: Optional[str] = None,
-                 status: PageStatus = PageStatus.KEEP) -> int:
+                 status: PageStatus = PageStatus.KEEP,
+                 top_row: Optional[int] = None) -> int:
         """Append a page and return its index.
 
         The public way to put a page into the score.  Callers (the GUI and the
@@ -590,10 +598,11 @@ class GuiApi:
             boundary_row=boundary_row,
             file=file,
             status=status if isinstance(status, PageStatus) else PageStatus(status),
+            top_row=top_row,
         ))
 
     def get_page(self, index: int) -> PageState:
-        """Read one page's state: its index, image, boundary row, file, status.
+        """Read one page's state: its index, image, boundary and top rows, file, status.
 
         Raises IndexError when the index is out of range.
         """
@@ -605,6 +614,7 @@ class GuiApi:
             file=page.file,
             status=page.status,
             attempt_number=page.attempt_number,
+            top_row=page.top_row,
         )
 
     def set_page_status(self, index: int, status: PageStatus) -> None:
@@ -679,6 +689,25 @@ class GuiApi:
         )
         self._pdf_thread.start()
 
+    def _write_score_metadata(self, score_dir, title: Optional[str] = None) -> dict:
+        """Write the current pages and crop into the score's metadata.json."""
+        pages = self._pages.all_pages()
+        meta = {
+            "score_name": title or Path(score_dir).name,
+            "crop_ratio": self._config.default_crop_ratio,
+            "page_count": len(pages),
+            "extraction_date": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        if self._video_path:
+            meta["video_path"] = self._video_path
+        meta["boundary_mode"] = self._config.boundary_mode
+        meta["boundary_offset_px"] = self._config.boundary_offset_px
+        meta["boundary_offset_ratio"] = self._config.boundary_offset_ratio
+        meta["boundary_top_offset_px"] = self._config.boundary_top_offset_px
+        meta["pages"] = [p.to_record() for p in pages]
+        self.save_metadata(str(score_dir), meta)
+        return meta
+
     def _run_generate_pdf(self, output_path: str, title: Optional[str] = None):
         try:
             pages = self._pages.all_pages()
@@ -715,19 +744,7 @@ class GuiApi:
                         shutil.copy2(str(orig_src), str(orig_dst))
                     self._original_video_path = str(orig_dst)
 
-            meta = {
-                "score_name": final_title,
-                "crop_ratio": self._config.default_crop_ratio,
-                "page_count": len(self._pages),
-                "extraction_date": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            }
-            if self._video_path:
-                meta["video_path"] = self._video_path
-            meta["boundary_mode"] = self._config.boundary_mode
-            meta["boundary_offset_px"] = self._config.boundary_offset_px
-            meta["boundary_offset_ratio"] = self._config.boundary_offset_ratio
-            meta["pages"] = [p.to_record() for p in self._pages.all_pages()]
-            self.save_metadata(str(score_dir), meta)
+            meta = self._write_score_metadata(score_dir, final_title)
             self._loaded_score_path = str(score_dir)
             self._loaded_score_metadata = meta
 

@@ -92,6 +92,18 @@ class TestPage:
         page = Page(image=np.zeros((10, 10, 3), dtype=np.uint8), boundary_row=None)
         assert page.boundary_row is None
 
+    def test_record_keeps_the_top_row(self):
+        img = np.zeros((100, 200, 3), dtype=np.uint8)
+        page = Page(image=img, boundary_row=700, top_row=300, attempt_number=2)
+        record = page.to_record()
+        assert record["top_row"] == 300
+        assert Page.from_record(record, img).top_row == 300
+
+    def test_page_without_a_header_has_no_top_row(self):
+        page = Page(image=np.zeros((10, 10, 3), dtype=np.uint8))
+        assert page.top_row is None
+        assert page.to_record()["top_row"] is None
+
     def test_status_can_be_changed(self):
         page = Page(image=np.zeros((10, 10, 3), dtype=np.uint8))
         page.status = PageStatus.EXCLUDED

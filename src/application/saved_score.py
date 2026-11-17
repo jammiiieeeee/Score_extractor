@@ -57,6 +57,9 @@ def apply_saved_crop(config: ScoreConfig, metadata: dict) -> None:
     offset_ratio = metadata.get("boundary_offset_ratio")
     if offset_ratio is not None:
         config.boundary_offset_ratio = float(offset_ratio)
+    top_offset = metadata.get("boundary_top_offset_px")
+    if top_offset is not None:
+        config.boundary_top_offset_px = int(top_offset)
 
 
 def _attempt_from_path(path) -> Optional[int]:
@@ -147,6 +150,7 @@ def save_page_status(score_dir, pages: List[Page], index: int) -> dict:
     else:
         page = pages[index]
         _record_for_page(records, page, index)["status"] = page.status.value
+    metadata["page_count"] = len(pages)
     write_metadata(score_dir, metadata)
     return metadata
 

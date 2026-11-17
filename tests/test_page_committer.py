@@ -512,6 +512,42 @@ class TestPageCommitterPageRecords:
         assert row is not None
         assert abs(row - 250) <= 12
 
+    @staticmethod
+    def _band_frame(height=400, width=200, header_h=150, boundary=300):
+        """Header band, bright paper with the score, dark visualizer below."""
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        frame[:header_h] = 170
+        frame[header_h:boundary] = 250
+        frame[boundary:] = 30
+        return frame
+
+    def test_page_records_the_detected_top_row(self, tmp_path):
+        detector = BoundaryDetector(min_contrast=20.0)
+        committer, _ = self._make_committer(work_dir=tmp_path, boundary_detector=detector)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+        frame = self._band_frame()
+        a = Frame(frame.copy(), 1.0, 30)
+        b = Frame(frame.copy(), 2.0, 60)
+        committer.commit(a, b, pages, out_dir, 1, False, lambda msg: None, None, is_first=True)
+
+        top = committer.pages[0].top_row
+        assert top is not None
+        assert abs(top - 150) <= 18
+        assert committer.candidates[0].top_row == top
+
+    def test_page_without_a_header_records_no_top_row(self, tmp_path):
+        detector = BoundaryDetector(min_contrast=20.0)
+        committer, _ = self._make_committer(work_dir=tmp_path, boundary_detector=detector)
+        out_dir = self._ensure_dirs(tmp_path)
+        pages = []
+        frame = self._split_frame(split=250, top=230, bottom=30)
+        a = Frame(frame.copy(), 1.0, 30)
+        b = Frame(frame.copy(), 2.0, 60)
+        committer.commit(a, b, pages, out_dir, 1, False, lambda msg: None, None, is_first=True)
+
+        assert committer.pages[0].top_row is None
+
     def test_detector_without_a_boundary_keeps_row_none(self, tmp_path):
         detector = BoundaryDetector(min_contrast=50.0)
         committer, _ = self._make_committer(work_dir=tmp_path, boundary_detector=detector)

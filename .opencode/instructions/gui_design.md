@@ -40,8 +40,13 @@ Single unified interface driven by the **Project** field at the top.
 
 ### Preview Widget
 - `CropPreviewWidget` — shows video frame (new) or first loaded page (existing)
-- Draggable crop line updates the crop ratio spinbox
-- Always interactive regardless of mode
+- Fixed ratio mode: a draggable brass line sets the crop ratio spinbox
+- Auto mode: tick **Top offset** in the crop row to show the line that marks
+  where the kept band starts (detected score top + offset). Dragging it
+  trims or keeps a header/lyric banner; it sets `boundary_top_offset_px`.
+  Dashed lines mark the detected top and the crop end. The line is hidden
+  and the checkbox disabled outside Auto.
+- Auto and Full frame never move the crop-ratio line
 
 ### Seek Bar
 - `DualHandleSeekBar` — start time + end duration
@@ -52,6 +57,9 @@ Single unified interface driven by the **Project** field at the top.
 - Shows "(was X%)" label when existing score loaded
 - "Set as Default" button saves to config
 - In existing mode, changing spinbox calls `GuiApi.update_config({"default_crop_ratio": ratio})`; the crop is applied at PDF generation
+- **Top offset** checkbox (Auto mode only): shows the top-of-band handle in
+  the preview; the tick state is remembered in QSettings and the pixel offset
+  stays in `boundary_top_offset_px`
 
 ### Output PDF
 - QLineEdit for PDF filename (defaults to project name)
@@ -96,7 +104,7 @@ overlaps the controls beneath it.
 **Advanced Settings** (QGroupBox):
 - Frame check interval, Top analysis ratio, A/B capture delays, B overlay width
 - Deduplication: Duplicate top ratio, Pixel/row similarity, Row coverage
-- OCR horizontal ratio, Crop top offset, Blank content std threshold
+- OCR horizontal ratio, Crop line offset, Crop top offset, Blank content std threshold
 - Bar min diff threshold, Bar overlay offset
 
 **Debug mode checkbox**

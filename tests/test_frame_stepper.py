@@ -125,6 +125,156 @@ class TestFrameStepperStep:
         result = stepper.step()
         assert result is None
 
+    def test_page_turn_inside_the_cooldown_is_not_lost(self):
+        """A turn that happens wholly inside the capture cooldown still lands.
+
+        The trigger frame is the page already captured (B).  Page C appears
+        while the cooldown is running; the first look after it must compare
+        C with B, not with the previous sample of C.
+        """
+        fps = 30.0
+        page_a = make_solid_image(800, 600, (50, 50, 50))
+        page_b = make_solid_image(800, 600, (150, 150, 150))
+        page_c = make_solid_image(800, 600, (230, 230, 230))
+        imgs = [page_a] * 21 + [page_b] * 21 + [page_c] * 100
+        svc = StubVideoService(imgs, fps=fps)
+        cfg = ScoreConfig(
+            frame_check_interval=0.1,
+            min_screenshot_interval=2.0,
+            a_capture_delay=0.0,
+            b_capture_delay=0.0,
+            top_analysis_ratio=1.0,
+        )
+        stepper = FrameStepper(svc, cfg, on_log=lambda msg: None)
+        stepper.initialize(-1.0)
+        stepper.set_unique_pages_ref([])
+
+        triggers = self._run_triggers(stepper, len(imgs))
+
+        assert triggers, "page A -> B must trigger"
+        assert any(index >= 60 for index in triggers), (
+            f"page C was lost inside the cooldown: {triggers}")
+
+    @staticmethod
+    def _run_triggers(stepper, n_frames):
+        triggers = []
+        for _ in range(n_frames):
+            result = stepper.step()
+            if result is None:
+                break
+            frame, score = result
+            if stepper.should_trigger(score):
+                triggers.append(frame.index)
+                stepper.capture_a_b(frame)
+        return triggers
+
+    def test_static_banner_does_not_hide_the_page_turn(self):
+        """Change detection looks at the score band, not the lyric banner."""
+        fps = 30.0
+        page_a = make_solid_image(800, 600, (240, 240, 240))
+        page_b = page_a.copy()
+        page_b[150:250, :] = 0          # the score changes; the banner does not
+        imgs = [page_a] * 20 + [page_b] * 30
+
+        cfg = ScoreConfig(
+            frame_check_interval=0.1,
+            min_screenshot_interval=0.0,
+            a_capture_delay=0.0,
+            b_capture_delay=0.0,
+            top_analysis_ratio=0.15,     # top strip 0..90: only the banner
+        )
+        band = MagicMock()
+        band.top_row = 120
+        band.boundary_row = 300
+        band.redetect.return_value = 300
+
+        stepper = FrameStepper(
+            StubVideoService(imgs, fps=fps), cfg,
+            on_log=lambda msg: None, band_detector=band)
+        stepper.initialize(-1.0)
+        stepper.set_unique_pages_ref([])
+        assert self._run_triggers(stepper, len(imgs))
+
+        stepper_plain = FrameStepper(
+            StubVideoService(imgs, fps=fps), cfg, on_log=lambda msg: None)
+        stepper_plain.initialize(-1.0)
+        stepper_plain.set_unique_pages_ref([])
+        assert self._run_triggers(stepper_plain, len(imgs)) == []
+
+    def test_band_jitter_does_not_trigger(self):
+        """A one-row wobble in the detected band must not look like a turn."""
+        fps = 30.0
+        img = make_solid_image(800, 600, (240, 240, 240))
+        img[150:250, :] = 0
+        imgs = [img] * 30
+
+        class Jitter:
+            def __init__(self):
+                self.n = 0
+                self.top_row = 120
+                self.boundary_row = 300
+
+            def redetect(self, frame):
+                self.n += 1
+                self.top_row = 120 + (self.n % 2)
+                self.boundary_row = 300
+                return 300
+
+        cfg = ScoreConfig(
+            frame_check_interval=0.1,
+            min_screenshot_interval=0.0,
+            a_capture_delay=0.0,
+            b_capture_delay=0.0,
+            top_analysis_ratio=0.15,
+        )
+        stepper = FrameStepper(
+            StubVideoService(imgs, fps=fps), cfg,
+            on_log=lambda msg: None, band_detector=Jitter())
+        stepper.initialize(-1.0)
+        stepper.set_unique_pages_ref([])
+
+        assert self._run_triggers(stepper, len(imgs)) == []
+
+
+@pytest.mark.unit
+class TestFrameStepperRoiBounds:
+    """The scanner compares exactly the band the preview marks."""
+
+    def _stepper(self, config, page_height=None):
+        svc = StubVideoService([make_solid_image()], fps=30.0)
+        return FrameStepper(svc, config, on_log=lambda msg: None,
+                            page_height=page_height)
+
+    def test_auto_band_is_the_crop_band(self):
+        s = self._stepper(ScoreConfig(boundary_mode="auto",
+                                      boundary_offset_ratio=0.0))
+        s._band_top, s._band_bottom = 120, 300
+        assert s._roi_bounds(600) == (120, 300)
+
+    def test_offsets_move_the_scanned_band(self):
+        cfg = ScoreConfig(boundary_mode="auto", boundary_top_offset_px=20,
+                          boundary_offset_px=10, boundary_offset_ratio=0.0)
+        s = self._stepper(cfg)
+        s._band_top, s._band_bottom = 120, 300
+        assert s._roi_bounds(600) == (140, 290)
+
+    def test_offsets_scale_to_the_scan_frame(self):
+        cfg = ScoreConfig(boundary_mode="auto", boundary_top_offset_px=40,
+                          boundary_offset_px=20, boundary_offset_ratio=0.02)
+        s = self._stepper(cfg, page_height=1080)
+        s._band_top, s._band_bottom = 112, 256
+        assert s._roi_bounds(360) == (125, 242)
+
+    def test_manual_mode_scans_the_ratio(self):
+        s = self._stepper(ScoreConfig(boundary_mode="manual",
+                                      default_crop_ratio=0.4))
+        assert s._roi_bounds(600) == (0, 240)
+
+    def test_no_band_falls_back_to_the_top_strip(self):
+        s = self._stepper(ScoreConfig(boundary_mode="auto",
+                                      top_analysis_ratio=0.3))
+        assert s._roi_bounds(600) == (0, 180)
+
 
 @pytest.mark.unit
 class TestFrameStepperShouldTrigger:

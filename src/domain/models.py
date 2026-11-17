@@ -48,6 +48,7 @@ class Page:
     file: Optional[str] = None
     status: PageStatus = PageStatus.KEEP
     timestamp: float = 0.0
+    top_row: Optional[int] = None
 
     def to_record(self) -> dict:
         """How this page is written into a saved score.
@@ -58,6 +59,7 @@ class Page:
         return {
             "attempt": self.attempt_number,
             "boundary_row": self.boundary_row,
+            "top_row": self.top_row,
             "status": self.status.value,
         }
 
@@ -77,6 +79,7 @@ class Page:
         facts that are missing fall back to their defaults.
         """
         row = record.get("boundary_row")
+        top = record.get("top_row")
         try:
             status = PageStatus(record.get("status", PageStatus.KEEP.value))
         except ValueError:
@@ -91,6 +94,7 @@ class Page:
             attempt_number=attempt,
             file=file,
             status=status,
+            top_row=int(top) if top is not None else None,
         )
 
 
@@ -106,6 +110,7 @@ class PageCandidate:
     boundary_row: Optional[int] = None
     file: Optional[str] = None
     status: PageStatus = PageStatus.KEEP
+    top_row: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -124,6 +129,7 @@ class PageState:
     file: Optional[str] = None
     status: PageStatus = PageStatus.KEEP
     attempt_number: int = 0
+    top_row: Optional[int] = None
 
 
 @dataclass
@@ -148,6 +154,7 @@ class PageManifestEntry:
     guard_rail_passed: bool = True
     attempt_duration_ms: float = 0.0
     boundary_row: Optional[int] = None
+    top_row: Optional[int] = None
 
     def to_dict(self) -> dict:
         return asdict(self)

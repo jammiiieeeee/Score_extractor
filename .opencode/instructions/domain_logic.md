@@ -80,13 +80,16 @@ Guard rails applied to each A/B capture pair before deduplication:
 | `boundary_mode` | str | auto | `auto` = per-page detection, `manual` = fixed crop, `off` = no crop |
 | `boundary_offset_px` | int | 0 | Extra lift above the detected boundary, in pixels |
 | `boundary_offset_ratio` | float | 0.02 | Extra lift as a fraction of frame height (visualizer safety margin) |
+| `boundary_top_offset_px` | int | 0 | Nudge the detected score top down (positive = trim more header) |
+| `boundary_top_band_ratio` | float | 0.04 | Band used to find the header/score top edge |
+| `boundary_top_min_step` | float | 35.0 | Min brightness step from header to paper to trust a top edge |
 | `boundary_band_ratio` | float | 0.05 | Comparison band height |
 | `boundary_min_contrast` | float | 12.0 | Min above/below brightness drop to accept a row |
 | `boundary_search_margin` | float | 0.05 | Frame fraction excluded at the very top/bottom of redetect |
 | `boundary_track_window` | float | 0.03 | ± frame fraction searched while tracking |
 | `boundary_hysteresis_px` | int | 6 | Median must move more than this before the row moves |
 | `boundary_median_window` | int | 5 | Recent candidates used for the tracking median |
-| `boundary_min_dark_mean` | float | 120.0 | Bottom region must be darker than this to trust the split |
+| `boundary_min_dark_mean` | float | 140.0 | Bottom region must be darker than this to trust the split |
 
 ### Bar Detection
 | Field | Type | Default | Description |
@@ -137,16 +140,18 @@ class Page:
     attempt_number: int        # the extraction attempt that produced the page
     file: Optional[str]        # the PNG the page was written to
     status: PageStatus = PageStatus.KEEP
+    top_row: Optional[int] = None  # measured score top, None when the score starts at row 0
 ```
 
 Extraction produces one `Page` per committed page (duplicates get none).
 `boundary_row` is `None` when no boundary was detected — the absence is
-recorded, never a guess. Only `KEEP` is produced today; `EXCLUDED` and
-`DUPLICATE` are reserved for page selection.
+recorded, never a guess. `top_row` is `None` when the sheet music starts at
+row 0 (no header/lyric banner to trim). Only `KEEP` is produced today;
+`EXCLUDED` and `DUPLICATE` are reserved for page selection.
 
 A page also describes itself for a saved score: `page.to_record()` gives the
-record written into `metadata.json` (attempt number, boundary row, status)
-and `Page.from_record()` reads one back.
+record written into `metadata.json` (attempt number, boundary row, top row,
+status) and `Page.from_record()` reads one back.
 
 ### PageState
 
@@ -162,6 +167,7 @@ class PageState:
     boundary_row: Optional[int]
     file: Optional[str]
     status: PageStatus
+    top_row: Optional[int] = None
 ```
 
 ### PageStore
@@ -180,12 +186,14 @@ index must never address the last page by accident.
 `src/domain/page_crop.py` holds the one rule that decides how far a page is
 kept. It reads the page itself, so an image and its crop cannot drift apart.
 
+- `crop_start_row(page, config)` → the row where the crop starts (inclusive)
 - `crop_end_row(page, config)` → the row where the crop ends (exclusive)
 - `crop_page(page, config)` → the cropped image (a view of the page image)
-- `off` → whole frame; `manual` → `default_crop_ratio`;
-  `auto` → the page's measured `boundary_row` (lifted by
+- `off` → whole frame; `manual` → `default_crop_ratio` from row 0;
+  `auto` → from the page's measured `top_row` (nudged by
+  `boundary_top_offset_px`) to its measured `boundary_row` (lifted by
   `boundary_offset_px` plus `boundary_offset_ratio` × frame height),
-  falling back to `default_crop_ratio` without a row
+  falling back to row 0 / `default_crop_ratio` when they were not measured
 - The PDF uses this rule; any other consumer (a page preview) can call it
   directly
 

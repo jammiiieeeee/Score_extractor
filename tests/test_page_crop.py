@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from src.domain.models import Page
-from src.domain.page_crop import crop_end_row, crop_page
+from src.domain.page_crop import crop_end_row, crop_page, crop_start_row
 from src.domain.value_objects.config import ScoreConfig
 from src.infrastructure.pdf_service import PdfService
 
@@ -94,6 +94,39 @@ class TestCropPage:
         cropped_b = crop_page(Page(image=img_b, boundary_row=700), cfg)
         assert cropped_a.shape[0] == 300
         assert cropped_b.shape[0] == 700
+
+    def test_returns_the_band_between_top_and_boundary(self):
+        """A header above the score is dropped, the score band is kept."""
+        cfg = ScoreConfig(boundary_mode="auto", boundary_offset_ratio=0.0)
+        img = _img(1000)
+        cropped = crop_page(Page(image=img, top_row=200, boundary_row=600), cfg)
+        assert np.array_equal(cropped, img[200:600, :])
+
+
+class TestCropStartRow:
+
+    def test_manual_and_off_modes_start_at_zero(self):
+        page = Page(image=_img(1000), top_row=200)
+        assert crop_start_row(page, ScoreConfig(boundary_mode="manual")) == 0
+        assert crop_start_row(page, ScoreConfig(boundary_mode="off")) == 0
+
+    def test_auto_mode_uses_the_measured_top(self):
+        cfg = ScoreConfig(boundary_mode="auto")
+        assert crop_start_row(Page(image=_img(1000), top_row=200), cfg) == 200
+
+    def test_auto_mode_without_a_top_starts_at_zero(self):
+        cfg = ScoreConfig(boundary_mode="auto")
+        assert crop_start_row(Page(image=_img(1000)), cfg) == 0
+
+    def test_auto_mode_nudges_the_top_by_the_offset(self):
+        cfg = ScoreConfig(boundary_mode="auto", boundary_top_offset_px=40)
+        page = Page(image=_img(1000), top_row=200)
+        assert crop_start_row(page, cfg) == 240
+
+    def test_start_never_passes_the_page(self):
+        cfg = ScoreConfig(boundary_mode="auto", boundary_top_offset_px=5000)
+        page = Page(image=_img(1000), top_row=200)
+        assert crop_start_row(page, cfg) == 999
 
 
 class TestPdfUsesTheSameRule:

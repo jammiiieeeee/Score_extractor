@@ -97,9 +97,9 @@ flag survives a reload.
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
 | 23 | `get_page_count()` | `→ int` | Number of stored pages |
-| 24 | `add_page(image, boundary_row, file, status)` | `np.ndarray, int?, str?, PageStatus? → int` | Append a page, return its index |
+| 24 | `add_page(image, boundary_row, file, status, top_row)` | `np.ndarray, int?, str?, PageStatus?, int? → int` | Append a page, return its index |
 | 25 | `set_pages(pages)` | `list[Page\|Frame\|np.ndarray] → None` | Replace all pages at once |
-| 26 | `get_page(index)` | `int → PageState` | Read a page's index, image, boundary row, file, status |
+| 26 | `get_page(index)` | `int → PageState` | Read a page's index, image, boundary/top rows, file, status |
 | 27 | `set_page_status(index, status)` | `int, PageStatus → None` | Change one page's status and save it |
 | 28 | `get_page_thumbnail(index)` | `int → bytes\|None` | PNG bytes, 320px wide |
 | 29 | `get_page_full(index)` | `int → bytes\|None` | PNG bytes, full resolution |

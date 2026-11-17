@@ -40,16 +40,26 @@ Returns `ExtractResult`:
 - `manifest: List[PageManifestEntry]` — one entry per attempt
 - `page_records: List[Page]` — one page object per analyzed page transition,
   including duplicates, blank captures, guard-rail failures and end-credit
-  pages.  Each carries its image, boundary row, attempt number, file and status.
-  Only KEEP pages print.
+  pages.  Each carries its image, boundary and top rows, attempt number,
+  file and status.  Only KEEP pages print.
 - `candidates: List[PageCandidate]` — the same transitions as lightweight
-  records (attempt number, boundary row, file, status), derived from the pages
+  records (attempt number, boundary and top rows, file, status), derived from the pages
 
 ### `FrameStepper` (`src/application/extraction_components.py`)
 
 Extraction loop state machine. Responsibilities:
 - Read frames sequentially with configurable skip (`frame_check_interval`)
-- Compute SSIM on top ROI (`top_analysis_ratio`) to detect page changes
+- Compute SSIM on the score band to detect page changes. The band is
+  exactly what the preview marks and the PDF keeps: the crop start
+  (detected `top_row` + `boundary_top_offset_px`) to the crop end
+  (`boundary_row` − `boundary_offset_px` − `boundary_offset_ratio` ×
+  height), with the offsets scaled from page pixels to the scan frame.
+  The detected band is held stable with a few-row hysteresis; the top-strip
+  `top_analysis_ratio` is only the fallback (manual mode uses
+  `default_crop_ratio`). This sees turns whose lyric banner does not change.
+- After the capture cooldown, compare the first new frame with the page that
+  was on screen at the last capture, so a turn that happens entirely inside
+  the cooldown is not lost
 - Apply A/B capture delays (`a_capture_delay`, `b_capture_delay`)
 - Detect blank content (end of score) via `blank_content_std_threshold`
 - Duration limit enforcement

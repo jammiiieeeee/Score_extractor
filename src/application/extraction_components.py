@@ -45,12 +45,20 @@ class FrameStepper:
         on_log: Callable[[str], None] = print,
         on_progress: Optional[Callable[[float, str], None]] = None,
         is_cancelled: Callable[[], bool] = lambda: False,
+        band_detector: Optional["BoundaryDetector"] = None,
+        page_height: Optional[int] = None,
     ):
         self.video = video_service
         self.config = config
         self.on_log = on_log
         self.on_progress = on_progress
         self.is_cancelled = is_cancelled
+        self._band_detector = band_detector
+        self._band_top: Optional[int] = None
+        self._band_bottom: Optional[int] = None
+        # Height of the image the crop (and the preview) is applied to, so a
+        # pixel offset in the config maps to this smaller scan frame.
+        self._page_height = int(page_height or 0)
 
         fps = self.video.get_fps()
         self.cooldown_frames = int(config.min_screenshot_interval * fps)
@@ -61,17 +69,65 @@ class FrameStepper:
         self.last_trigger_idx = -self.cooldown_frames
         self.last_stable_frame: Optional[Frame] = None
         self.last_stable_roi: Optional[np.ndarray] = None
+        self._cooldown_ref_roi: Optional[np.ndarray] = None
         self.current_idx = 0
         self._n_frames = 0
         self._t_loop = time.time()
         self._unique_pages_ref: list = []
 
     def _get_roi(self, img: np.ndarray):
-        h, w = img.shape[:2]
-        y_end = int(h * self.config.top_analysis_ratio)
-        roi = img[0:y_end, :]
-        small = cv2.resize(roi, (320, int(320 * (y_end / h))))
+        """The part of the frame compared for page changes.
+
+        It is the same band the preview marks and the PDF keeps: the crop
+        start (detected top + top offset) to the crop end (boundary − bottom
+        offset − safety margin).  Without a detected band, the legacy top
+        strip applies.
+        """
+        h = img.shape[0]
+        if self._band_detector is not None:
+            try:
+                self._band_detector.redetect(img)
+                band_top = self._band_detector.top_row or 0
+                band_bottom = self._band_detector.boundary_row
+                if band_bottom is not None and band_bottom - band_top >= 16:
+                    if self._band_bottom is None:
+                        self._band_top, self._band_bottom = band_top, band_bottom
+                    else:
+                        # Only accept a real layout change, not the few rows
+                        # of jitter the detector shows from frame to frame:
+                        # a 1-row move rescales the ROI and SSIM collapses.
+                        shift = max(abs(band_top - (self._band_top or 0)),
+                                    abs(band_bottom - self._band_bottom))
+                        if shift > max(6, int(h * 0.02)):
+                            self._band_top, self._band_bottom = band_top, band_bottom
+            except Exception:
+                pass
+        top, bottom = self._roi_bounds(h)
+        roi = img[top:bottom, :]
+        if roi.size == 0:
+            roi = img[0:max(1, int(h * self.config.top_analysis_ratio)), :]
+        # A fixed output size keeps every ROI comparable: the band detector can
+        # move the top/bottom by a few rows, and SSIM needs equal dimensions.
+        small = cv2.resize(roi, (320, 120))
         return cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+
+    def _roi_bounds(self, h: int) -> tuple:
+        """The rows the scanner compares: exactly the band the crop keeps."""
+        mode = getattr(self.config, "boundary_mode", "auto")
+        if mode == "manual":
+            return 0, max(1, min(int(h * self.config.default_crop_ratio), h))
+        if self._band_bottom is not None:
+            scale = (h / self._page_height) if self._page_height > 0 else 1.0
+            top = (self._band_top or 0) + int(round(
+                int(getattr(self.config, "boundary_top_offset_px", 0)) * scale))
+            bottom = int(self._band_bottom) - int(round(
+                int(getattr(self.config, "boundary_offset_px", 0)) * scale))
+            bottom -= int(round(h * float(
+                getattr(self.config, "boundary_offset_ratio", 0.0))))
+            top = max(0, min(top, h - 1))
+            bottom = max(top + 1, min(bottom, h))
+            return top, bottom
+        return 0, max(1, min(int(h * self.config.top_analysis_ratio), h))
 
     def initialize(self, start_time: float = -1.0) -> Optional[Frame]:
         """Set up initial state. Handles start-time capture or reads first frame.
@@ -89,6 +145,7 @@ class FrameStepper:
 
                 self.last_stable_frame = Frame(b_img.copy(), b_ts, b_idx)
                 self.last_trigger_idx = start_idx
+                self._cooldown_ref_roi = self._get_roi(a_img)
                 return Frame(a_img.copy(), a_ts, start_idx), Frame(b_img.copy(), b_ts, b_idx)
             else:
                 self.on_log("  [WARN] Could not seek to start time, starting from beginning.")
@@ -142,10 +199,18 @@ class FrameStepper:
             and self.last_stable_frame is not None
         ):
             current_roi = self._get_roi(current_frame.image)
-            last_roi = self.last_stable_roi
-            if last_roi is None:
-                last_roi = self._get_roi(self.last_stable_frame.image)
-            ssim_score = ssim(last_roi, current_roi)
+            if self._cooldown_ref_roi is not None:
+                # First look after the cooldown.  Compare with the page that
+                # was on screen when the last capture started, not with the
+                # previous sample: a page turn that happened entirely inside
+                # the cooldown has no other chance to be seen.
+                ssim_score = ssim(self._cooldown_ref_roi, current_roi)
+                self._cooldown_ref_roi = None
+            else:
+                last_roi = self.last_stable_roi
+                if last_roi is None:
+                    last_roi = self._get_roi(self.last_stable_frame.image)
+                ssim_score = ssim(last_roi, current_roi)
             self.last_stable_roi = current_roi
         else:
             self.last_stable_roi = None
@@ -159,6 +224,7 @@ class FrameStepper:
     def capture_a_b(self, trigger_frame: Frame) -> tuple:
         """Apply A-capture delay and B-frame stability delay. Returns (a_frame, b_frame)."""
         a_frame = trigger_frame
+        self._cooldown_ref_roi = self._get_roi(trigger_frame.image)
 
         delay_frames = int(self.config.a_capture_delay * self.fps)
         if delay_frames > 0:
@@ -264,6 +330,7 @@ class _Analysis:
     has_clean_profile: bool
     has_left_spike: bool
     boundary_row: Optional[int] = None
+    top_row: Optional[int] = None
 
 
 class PageCommitter:
@@ -343,6 +410,7 @@ class PageCommitter:
                 boundary_row=p.boundary_row,
                 file=p.file,
                 status=p.status,
+                top_row=p.top_row,
             )
             for p in self._pages
         ]
@@ -533,10 +601,12 @@ class PageCommitter:
         #            None; PdfService applies the ratio directly).
         #   off    — no crop.
         boundary_row: Optional[int] = None
+        top_row: Optional[int] = None
         if self.boundary_mode == "auto" and self.boundary_detector is not None:
             before_h = merged.shape[0]
             self.boundary_detector.redetect(merged)
             boundary_row = self.boundary_detector.boundary_row
+            top_row = self.boundary_detector.top_row
             self._last_boundary_before_h = before_h
 
         # OCR number from a merged pair (dedup channel)
@@ -589,7 +659,7 @@ class PageCommitter:
             is_dup=is_dup, guard_rail_passed=guard_rail_passed,
             reject_reason=reject_reason, bar_peaks=bar_peaks,
             has_clean_profile=has_clean_profile, has_left_spike=has_left_spike,
-            boundary_row=boundary_row,
+            boundary_row=boundary_row, top_row=top_row,
         )
 
     def _commit_analyzed(
@@ -612,7 +682,9 @@ class PageCommitter:
         log(f"  Merge result: {len(analysis.spikes)} spike(s), merge_x={analysis.merge_x} for page {page_num}")
 
         if self.boundary_mode == "auto" and analysis.boundary_row is not None:
-            log(f"  Boundary (auto): detected row {analysis.boundary_row}/{self._last_boundary_before_h}")
+            top = analysis.top_row if analysis.top_row is not None else 0
+            log(f"  Boundary (auto): rows {top}..{analysis.boundary_row}/"
+                f"{self._last_boundary_before_h}")
         elif self.boundary_mode == "manual":
             log(f"  Boundary crop (manual): PDF ratio {self.config.default_crop_ratio:.2f}")
 
@@ -653,6 +725,7 @@ class PageCommitter:
                 file=str(saved_path) if saved_path else None,
                 status=PageStatus.KEEP,
                 timestamp=frame_a.timestamp,
+                top_row=analysis.top_row,
             )
             self._pages.append(page)
             log(f"  New page detected at {frame_a.timestamp:.2f}s (Index: {frame_a.index})")
@@ -673,6 +746,7 @@ class PageCommitter:
                 file=str(saved_path) if saved_path else None,
                 status=PageStatus.DUPLICATE,
                 timestamp=frame_a.timestamp,
+                top_row=analysis.top_row,
             ))
             if on_page_detected:
                 on_page_detected(len(self._pages) - 1, analysis.merged)
@@ -713,6 +787,7 @@ class PageCommitter:
             guard_rail_passed=guard_rail_passed,
             attempt_duration_ms=round(attempt_duration_ms, 1),
             boundary_row=analysis.boundary_row,
+            top_row=analysis.top_row,
         )
 
     def _flush_pending(

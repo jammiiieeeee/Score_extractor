@@ -627,6 +627,126 @@ class TestCustomWidgets:
         drag()
         assert emitted, "Fixed ratio must still let the line be dragged"
 
+    def test_top_line_is_hidden_until_enabled(self, window):
+        """The top line obeys set_top_visible, not the crop line flag."""
+        w = window.extract_tab.crop_widget
+        w.set_top_visible(False)
+        w.set_top_state(top_row=100, top_offset_px=20,
+                        boundary_row=400, bottom_offset_px=0, margin_ratio=0.0)
+        w.set_frame(QPixmap(320, 180))
+
+        assert w.top_line_row() is None, "Line is hidden by default"
+
+        w.set_top_visible(True)
+        assert w.top_line_row() == 120
+
+        w.set_top_visible(False)
+        assert w.top_line_row() is None
+
+    def test_top_line_without_a_detected_top_starts_at_zero(self, window):
+        """No header detected still gives a draggable line to trim by hand."""
+        w = window.extract_tab.crop_widget
+        w.set_frame(QPixmap(320, 180))
+        w.set_top_state(top_row=None, top_offset_px=0,
+                        boundary_row=None, bottom_offset_px=0, margin_ratio=0.0)
+        w.set_top_visible(True)
+
+        assert w.top_line_row() == 0
+
+    def test_top_line_drag_emits_positive_offset(self, window):
+        """Dragging the line down trims more of the header (positive offset)."""
+        w = window.extract_tab.crop_widget
+        w.top_offset_px_changed.disconnect(window.extract_tab._on_offset_dragged)
+        w.set_frame(QPixmap(320, 180))
+        w.set_top_state(top_row=40, top_offset_px=0,
+                        boundary_row=170, bottom_offset_px=0, margin_ratio=0.0)
+        w.set_top_visible(True)
+        w.grab()  # runs paintEvent so the image rect is known
+
+        ox, oy, pw, ph = w._image_rect
+        line_y = oy + int(ph * w.top_line_row() / 180)
+        emitted = []
+        w.top_offset_px_changed.connect(emitted.append)
+
+        w.mousePressEvent(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(ox + pw / 2, line_y),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier))
+        w.mouseMoveEvent(QMouseEvent(
+            QEvent.Type.MouseMove, QPointF(ox + pw / 2, line_y + 40),
+            Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier))
+        w.mouseReleaseEvent(QMouseEvent(
+            QEvent.Type.MouseButtonRelease, QPointF(ox + pw / 2, line_y + 40),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier))
+
+        assert emitted, "Dragging the line must emit an offset"
+        assert emitted[-1] > 0, "Dragging down = positive offset"
+        assert w.top_line_row() == 40 + emitted[-1]
+
+    def test_top_offset_checkbox_only_works_in_auto(self, window):
+        """The top offset applies to auto crop only, so the control follows it."""
+        tab = window.extract_tab
+        was_checked = tab.offset_cb.isChecked()
+        tab.crop_mode_combo.setCurrentIndex(tab.crop_mode_combo.findData("auto"))
+        tab.offset_cb.setChecked(True)
+        process_events()
+        assert tab.offset_cb.isEnabled()
+        assert tab.crop_widget._top_visible
+
+        tab.crop_mode_combo.setCurrentIndex(tab.crop_mode_combo.findData("off"))
+        process_events()
+        assert not tab.offset_cb.isEnabled()
+        assert not tab.crop_widget._top_visible
+
+        tab.crop_mode_combo.setCurrentIndex(tab.crop_mode_combo.findData("auto"))
+        process_events()
+        assert tab.offset_cb.isEnabled()
+        assert tab.crop_widget._top_visible
+        tab.offset_cb.setChecked(was_checked)
+
+    def test_preview_band_detected_only_when_line_is_on(self, window):
+        """Detection runs for the preview only while the checkbox is ticked."""
+        tab = window.extract_tab
+        was_checked = tab.offset_cb.isChecked()
+        tab.crop_mode_combo.setCurrentIndex(tab.crop_mode_combo.findData("auto"))
+        tab.offset_cb.setChecked(False)
+        calls = []
+        tab._detect_preview_band = lambda frame: (calls.append(1), (80, 300))[1]
+        frame = np.zeros((180, 320, 3), np.uint8)
+
+        tab._refresh_preview_boundary(frame)
+        assert calls == []
+        assert tab._preview_top_row is None
+        assert tab._preview_boundary_row is None
+
+        tab.offset_cb.setChecked(True)
+        assert calls == [1]
+        assert tab._preview_top_row == 80
+        assert tab._preview_boundary_row == 300
+        tab.offset_cb.setChecked(was_checked)
+
+    def test_top_offset_drag_saves_to_config(self, window):
+        tab = window.extract_tab
+        tab._api.update_config({"boundary_top_offset_px": 0})
+        tab._on_offset_dragged(14)
+        assert tab._api.get_config()["boundary_top_offset_px"] == 14
+
+    def test_top_offset_drag_updates_settings_spin(self, window):
+        """Starting extraction re-applies Settings, so the spin must follow."""
+        tab = window.extract_tab
+        tab._on_offset_dragged(-22)
+        assert window.config_tab.crop_top_offset.value() == -22
+
+    def test_top_offset_drag_scales_to_the_page_frame(self, window):
+        """The 640p scan drives a 1080p page, so the offset must scale."""
+        tab = window.extract_tab
+        tab._preview_source_height = 360
+        tab._page_frame_height = 1080
+        tab._on_offset_dragged(12)
+        assert tab._api.get_config()["boundary_top_offset_px"] == 36
+
     def test_seek_bar_widget(self, window, tmp_path):
         """DualHandleSeekBar should render without errors."""
         tab = window.extract_tab
