@@ -117,7 +117,7 @@ def main():
     tab._video_path = None
     tab._update_state()
     window.config_tab._set_mode("basic")
-    window.tabs.setCurrentIndex(1)
+    window.tabs.setCurrentWidget(window.config_tab)
     app.processEvents()
     capture(window, output_dir / "07_config_basic.png")
     print("Captured: 07_config_basic.png")

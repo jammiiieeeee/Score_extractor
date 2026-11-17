@@ -5,6 +5,7 @@ import threading
 import subprocess
 import shutil
 import glob as _glob
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse, parse_qs
@@ -13,8 +14,8 @@ import cv2
 import numpy as np
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, pyqtSignal, QStringListModel, QObject, QThread
 from PyQt6.QtGui import (
-    QAction, QColor, QFont, QIcon, QImage, QPixmap, QPainterPath, QPalette,
-    QRegion,
+    QAction, QColor, QFont, QIcon, QImage, QImageReader, QPixmap, QPainterPath,
+    QPalette, QRegion,
 )
 from PyQt6.QtWidgets import QCompleter
 from PyQt6.QtWidgets import (
@@ -24,7 +25,7 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox, QSpinBox, QCheckBox, QSlider, QScrollArea,
     QListWidget, QListWidgetItem, QDialog, QComboBox, QStyledItemDelegate,
     QRadioButton, QButtonGroup,
-    QFrame, QSizePolicy, QSplitter, QGridLayout, QMenu,
+    QFrame, QSizePolicy, QSplitter, QGridLayout, QMenu, QStackedLayout,
 )
 
 from gui_bridge import ExtractionSignals
@@ -375,6 +376,14 @@ QSplitter::handle {{
 }}
 QFrame#hline {{
     color: {BORDER};
+}}
+QFrame.card {{
+    background: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+}}
+QFrame.card:hover {{
+    border-color: {BRASS};
 }}
 QScrollBar:vertical {{
     background: {BG};
@@ -1902,6 +1911,335 @@ class ReviewPagesDialog(QDialog):
             super().keyPressEvent(event)
 
 
+# ── Library Tab ──────────────────────────────────────────────────────
+
+class ProjectCard(QFrame):
+    """One saved project, shown as a page preview with its details."""
+
+    open_requested = pyqtSignal(str)
+    delete_requested = pyqtSignal(object)
+
+    CARD_WIDTH = 216
+    THUMB_WIDTH = 200
+    THUMB_HEIGHT = 232
+
+    def __init__(self, info: ScoreInfo, thumbnail: Optional[QPixmap] = None,
+                 parent=None):
+        super().__init__(parent)
+        self.info = info
+        _set_widget_class(self, "card")
+        self.setFixedWidth(self.CARD_WIDTH)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAccessibleName(info.score_name)
+        self.setToolTip(info.path)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_menu)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(SPACE_SM, SPACE_SM, SPACE_SM, SPACE_MD)
+        layout.setSpacing(SPACE_XS + 2)
+
+        self._thumb = QLabel("No preview")
+        self._thumb.setFixedSize(self.THUMB_WIDTH, self.THUMB_HEIGHT)
+        self._thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._thumb.setStyleSheet(
+            f"background: #0d0d0d; border-radius: 6px; color: {MUTED};")
+        layout.addWidget(self._thumb)
+
+        title = QLabel(self._elided(info.score_name))
+        title.setToolTip(info.score_name)
+        title.setStyleSheet(f"color: {INK}; font-weight: 600;")
+        layout.addWidget(title)
+
+        pages = f"{info.page_count} page{'s' if info.page_count != 1 else ''}"
+        if info.pdf_path:
+            pages += " \u00b7 PDF"
+        layout.addWidget(self._muted(pages))
+        if info.modified:
+            layout.addWidget(self._muted(self._date(info.modified)))
+
+        if thumbnail is not None:
+            self._thumb.setPixmap(thumbnail)
+            self._thumb.setText("")
+        else:
+            self._load_thumbnail()
+
+    @staticmethod
+    def _muted(text: str) -> QLabel:
+        label = QLabel(text)
+        _set_widget_class(label, "muted")
+        return label
+
+    def _elided(self, text: str) -> str:
+        self.ensurePolished()
+        width = self.THUMB_WIDTH - SPACE_XS
+        return self.fontMetrics().elidedText(
+            text, Qt.TextElideMode.ElideRight, width)
+
+    @staticmethod
+    def _date(timestamp: float) -> str:
+        try:
+            return datetime.fromtimestamp(timestamp).strftime("%b %d, %Y")
+        except (OSError, OverflowError, ValueError):
+            return ""
+
+    @staticmethod
+    def thumbnail_pixmap(path: str) -> Optional[QPixmap]:
+        """A page preview, decoded at the card's size."""
+        if not path:
+            return None
+        reader = QImageReader(path)
+        reader.setAutoTransform(True)
+        size = reader.size()
+        if size.isValid() and not size.isEmpty():
+            reader.setScaledSize(size.scaled(
+                ProjectCard.THUMB_WIDTH, ProjectCard.THUMB_HEIGHT,
+                Qt.AspectRatioMode.KeepAspectRatio))
+        image = reader.read()
+        if image.isNull():
+            return None
+        return QPixmap.fromImage(image)
+
+    def _load_thumbnail(self):
+        pixmap = self.thumbnail_pixmap(self.info.thumbnail)
+        if pixmap is None:
+            return
+        self._thumb.setPixmap(pixmap)
+        self._thumb.setText("")
+
+    def _show_menu(self, pos):
+        menu = QMenu(self)
+        open_action = menu.addAction("Open project")
+        open_action.triggered.connect(
+            lambda: self.open_requested.emit(self.info.path))
+        if self.info.pdf_path:
+            pdf_action = menu.addAction("Open PDF")
+            pdf_action.triggered.connect(
+                lambda: self._open_path(self.info.pdf_path))
+        folder_action = menu.addAction("Show in folder")
+        folder_action.triggered.connect(
+            lambda: self._open_path(self.info.path))
+        menu.addSeparator()
+        delete_action = menu.addAction("Delete project\u2026")
+        delete_action.triggered.connect(
+            lambda: self.delete_requested.emit(self.info))
+        menu.exec(self.mapToGlobal(pos))
+
+    @staticmethod
+    def _open_path(path: str):
+        try:
+            os.startfile(path)
+        except OSError:
+            pass
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.open_requested.emit(self.info.path)
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter,
+                           Qt.Key.Key_Space):
+            self.open_requested.emit(self.info.path)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
+class LibraryTab(QWidget):
+    """A browsable catalog of the saved projects."""
+
+    open_requested = pyqtSignal(str)
+    project_deleted = pyqtSignal(str)
+
+    def __init__(self, api: GuiApi, parent_dir_getter, parent=None):
+        super().__init__(parent)
+        self._api = api
+        self._parent_dir_getter = parent_dir_getter
+        self._scores: list[ScoreInfo] = []
+        self._cards: list[ProjectCard] = []
+        self._thumbs: dict[tuple, QPixmap] = {}
+        self._columns = 0
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(SPACE_MD, SPACE_MD, SPACE_MD, SPACE_MD)
+        root.setSpacing(SPACE_MD)
+
+        header = QHBoxLayout()
+        header.setSpacing(SPACE_SM)
+        title = QLabel("Library")
+        _set_widget_class(title, "title")
+        header.addWidget(title)
+        self._count_label = QLabel("")
+        _set_widget_class(self._count_label, "muted")
+        header.addWidget(self._count_label)
+        header.addStretch()
+
+        self._filter_edit = QLineEdit()
+        self._filter_edit.setPlaceholderText("Filter projects")
+        self._filter_edit.setClearButtonEnabled(True)
+        self._filter_edit.setFixedWidth(200)
+        self._filter_edit.textChanged.connect(self._rebuild)
+        header.addWidget(self._filter_edit)
+
+        self._sort_combo = StyledComboBox()
+        self._sort_combo.addItems(["Newest first", "Name", "Most pages"])
+        _fit_combo_width(self._sort_combo)
+        self._sort_combo.currentIndexChanged.connect(self._rebuild)
+        header.addWidget(self._sort_combo)
+
+        refresh_btn = QPushButton("Refresh")
+        _set_widget_class(refresh_btn, "secondary")
+        refresh_btn.clicked.connect(self.refresh)
+        header.addWidget(refresh_btn)
+        root.addLayout(header)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._content = QWidget()
+        self._grid = QGridLayout(self._content)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setSpacing(SPACE_MD)
+        self._grid.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self._scroll.setWidget(self._content)
+
+        empty = QWidget()
+        empty_layout = QVBoxLayout(empty)
+        empty_layout.setContentsMargins(SPACE_XL, SPACE_XL, SPACE_XL, SPACE_XL)
+        empty_layout.setSpacing(SPACE_SM)
+        empty_layout.addStretch()
+        self._empty_title = QLabel("No saved projects yet")
+        self._empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_title.setStyleSheet(
+            f"color: {INK}; font-size: 16px; font-weight: 600;")
+        empty_layout.addWidget(self._empty_title)
+        self._empty_hint = QLabel(
+            "Extract a score and it will appear here.")
+        self._empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        _set_widget_class(self._empty_hint, "muted")
+        empty_layout.addWidget(self._empty_hint)
+        empty_layout.addStretch()
+
+        self._stack = QStackedLayout()
+        self._stack.addWidget(self._scroll)
+        self._stack.addWidget(empty)
+        self._empty_page = empty
+        root.addLayout(self._stack, 1)
+
+        self.refresh()
+
+    # ── Data ──
+
+    def refresh(self):
+        try:
+            scores = self._api.list_saved_scores(self._parent_dir_getter())
+        except Exception:
+            scores = []
+        self._scores = list(scores)
+        keys = {(s.thumbnail, s.modified) for s in self._scores}
+        self._thumbs = {k: v for k, v in self._thumbs.items() if k in keys}
+        self._rebuild()
+
+    def _visible_scores(self) -> list[ScoreInfo]:
+        text = self._filter_edit.text().strip().casefold()
+        scores = [s for s in self._scores
+                  if not text or text in s.score_name.casefold()]
+        mode = self._sort_combo.currentIndex()
+        if mode == 1:
+            scores.sort(key=lambda s: s.score_name.casefold())
+        elif mode == 2:
+            scores.sort(key=lambda s: (-s.page_count, s.score_name.casefold()))
+        else:
+            scores.sort(key=lambda s: (-s.modified, s.score_name.casefold()))
+        return scores
+
+    def _rebuild(self):
+        for card in self._cards:
+            card.hide()
+            card.deleteLater()
+        self._cards = []
+        scores = self._visible_scores()
+        for score in scores:
+            key = (score.thumbnail, score.modified)
+            pixmap = self._thumbs.get(key)
+            if pixmap is None and score.thumbnail:
+                pixmap = ProjectCard.thumbnail_pixmap(score.thumbnail)
+                if pixmap is not None:
+                    self._thumbs[key] = pixmap
+            card = ProjectCard(score, pixmap)
+            card.open_requested.connect(self.open_requested)
+            card.delete_requested.connect(self._confirm_delete)
+            self._cards.append(card)
+
+        self._count_label.setText(
+            f"{len(scores)} project{'s' if len(scores) != 1 else ''}")
+        if self._scores and not scores:
+            self._empty_title.setText("No projects match your filter")
+            self._empty_hint.setText("Clear the filter to see every project.")
+        else:
+            self._empty_title.setText("No saved projects yet")
+            self._empty_hint.setText(
+                "Extract a score and it will appear here.")
+        self._stack.setCurrentWidget(
+            self._scroll if self._cards else self._empty_page)
+        self._layout_cards()
+
+    # ── Layout ──
+
+    def _columns_for_width(self) -> int:
+        width = self._scroll.viewport().width()
+        step = ProjectCard.CARD_WIDTH + SPACE_MD
+        return max(1, (width + SPACE_MD) // step)
+
+    def _layout_cards(self):
+        while self._grid.count():
+            self._grid.takeAt(0)
+        columns = self._columns_for_width()
+        row = col = 0
+        for card in self._cards:
+            self._grid.addWidget(card, row, col)
+            col += 1
+            if col >= columns:
+                col = 0
+                row += 1
+        self._columns = columns
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._columns_for_width() != self._columns:
+            self._layout_cards()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.refresh()
+
+    # ── Actions ──
+
+    def _confirm_delete(self, info: ScoreInfo):
+        answer = QMessageBox.question(
+            self, "Delete project",
+            f"Delete \u201c{info.score_name}\u201d and all of its saved "
+            "pages?\n\nThis cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._api.delete_saved_score(info.path)
+        except OSError as exc:
+            QMessageBox.warning(
+                self, "Delete failed",
+                f"Could not delete \u201c{info.score_name}\u201d:\n{exc}")
+            return
+        self.project_deleted.emit(info.path)
+        self.refresh()
+
+
 # ── Config Tab ───────────────────────────────────────────────────────
 
 class ConfigTab(QWidget):
@@ -2880,6 +3218,9 @@ class ExtractTab(QWidget):
             return ""
         return str(Path(self._parent_dir) / self._sanitize(project))
 
+    def get_parent_dir(self) -> str:
+        return self._parent_dir
+
     def get_output_path(self) -> str:
         project_dir = self.get_project_dir()
         if not project_dir:
@@ -3020,8 +3361,10 @@ class ExtractTab(QWidget):
             self._log(f"Loaded {count} pages (crop {int(ratio * 100)}%)")
             self._refresh_completer()
             self._update_state()
+            return True
         except Exception as e:
-            QMessageBox.warning(self, "Error", "Could not load score:\n{e}")
+            QMessageBox.warning(self, "Error", f"Could not load score:\n{e}")
+            return False
 
     def _switch_to_new_project(self):
         dbg("_switch_to_new_project")
@@ -3853,9 +4196,11 @@ class MainWindow(QMainWindow):
         # Tabs
         self.tabs = QTabWidget()
         self.extract_tab = ExtractTab(self.api)
+        self.library_tab = LibraryTab(self.api, self.extract_tab.get_parent_dir)
         self.config_tab = ConfigTab(self.api)
 
         self.tabs.addTab(self.extract_tab, "Extract")
+        self.tabs.addTab(self.library_tab, "Library")
         self.tabs.addTab(self.config_tab, "Settings")
 
         main_layout.addWidget(self.tabs, 1)
@@ -3910,6 +4255,11 @@ class MainWindow(QMainWindow):
         open_project_action.triggered.connect(self.extract_tab._browse_project)
         file_menu.addAction(open_project_action)
 
+        library_action = QAction("Project &Library\tCtrl+L", self)
+        library_action.triggered.connect(
+            lambda: self.tabs.setCurrentWidget(self.library_tab))
+        file_menu.addAction(library_action)
+
         file_menu.addSeparator()
 
         exit_action = QAction("E&xit\tAlt+F4", self)
@@ -3926,7 +4276,8 @@ class MainWindow(QMainWindow):
         extraction_menu.addAction(cancel_action)
 
         settings_action = QAction("&Settings...\tCtrl+,", self)
-        settings_action.triggered.connect(lambda: self.tabs.setCurrentIndex(1))
+        settings_action.triggered.connect(
+            lambda: self.tabs.setCurrentWidget(self.config_tab))
         extraction_menu.addAction(settings_action)
 
         help_menu = menu.addMenu("&Help")
@@ -3947,6 +4298,7 @@ class MainWindow(QMainWindow):
         # ── Keyboard shortcuts (window-level) ──
         open_video_action.setShortcut("Ctrl+O")
         open_project_action.setShortcut("Ctrl+Shift+O")
+        library_action.setShortcut("Ctrl+L")
         start_action.setShortcut("Ctrl+E")
         cancel_action.setShortcut("Escape")
         settings_action.setShortcut("Ctrl+,")
@@ -3966,6 +4318,10 @@ class MainWindow(QMainWindow):
         self.signals.cancelled.connect(self._on_cancelled)
         self.signals.cancelled_with_pages.connect(self._on_cancelled_with_pages)
         self.signals.download_done.connect(self._on_yt_downloaded)
+
+        self.library_tab.open_requested.connect(self._open_library_project)
+        self.library_tab.project_deleted.connect(
+            self._on_library_project_deleted)
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
@@ -4005,10 +4361,22 @@ class MainWindow(QMainWindow):
         self.extract_tab._on_yt_download_completed(path)
 
     def _on_tab_changed(self, index: int):
-        if index == 1:
+        tab = self.tabs.widget(index)
+        if tab is self.config_tab:
             self.config_tab.refresh_from_api()
-        elif index == 0:
+        elif tab is self.extract_tab:
             self.extract_tab.sync_offset_preview()
+
+    def _open_library_project(self, path: str):
+        if self.extract_tab._load_existing_score(path):
+            self.tabs.setCurrentWidget(self.extract_tab)
+            self.status_bar.showMessage(f"Loaded {Path(path).name}")
+
+    def _on_library_project_deleted(self, path: str):
+        loaded = self.extract_tab.get_project_dir()
+        if loaded and os.path.abspath(loaded) == os.path.abspath(path):
+            self.extract_tab.project_edit.setText("")
+            self.extract_tab._switch_to_new_project()
 
     def _show_getting_started(self):
         dlg = GettingStartedDialog(self)
@@ -4024,6 +4392,7 @@ class MainWindow(QMainWindow):
         text = (
             "Ctrl+O          Open video file\n"
             "Ctrl+Shift+O    Open existing project\n"
+            "Ctrl+L          Project library\n"
             "Ctrl+E          Start extraction\n"
             "Ctrl+,          Open Settings\n"
             "Escape          Cancel extraction\n"

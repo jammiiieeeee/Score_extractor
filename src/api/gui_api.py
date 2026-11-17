@@ -50,6 +50,9 @@ class ScoreInfo:
     path: str
     page_count: int
     score_name: str
+    thumbnail: str = ""
+    modified: float = 0.0
+    pdf_path: str = ""
 
 
 class GuiApi:
@@ -809,6 +812,11 @@ class GuiApi:
         if not score_path.exists():
             return
         shutil.rmtree(score_path)
+        if (self._loaded_score_path
+                and os.path.abspath(self._loaded_score_path) == os.path.abspath(score_path)):
+            self._pages.clear()
+            self._loaded_score_path = None
+            self._loaded_score_metadata = {}
         self._emit_log(f"Deleted: {path}")
 
     # ═════════════════════════════════════════════════════════════════════
