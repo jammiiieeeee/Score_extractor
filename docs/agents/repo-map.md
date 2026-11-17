@@ -103,7 +103,7 @@ run_pipeline.py ──────► GuiApi (scripted)
 | Domain | `test_bar_profile_*`, `test_boundary_detector`, `test_deduplication`, `test_models`, `test_page_crop`, `test_page_store`, `test_page_lifecycle`, `test_config`, `test_double_crop_bug` |
 | Application | `test_use_cases`, `test_saved_score_records`, `test_cli*`, `test_integration_e2e`, `test_page_committer`, `test_frame_stepper`, `test_bar_profile_plotter` |
 | Infrastructure | `test_video_service`, `test_ocr_service`, `test_pdf_service`, `test_file_service`, `test_download_service`, `test_diagnostics_service` |
-| API / GUI | `test_gui_api*`, `test_gui_workflow`, `test_gui_sanitize`, `test_gui_extraction_edge_cases`, `test_gui_callbacks_resilience`, `test_review_pages`, `test_preview_seeker`, `test_gui_visual`, `test_library_tab` |
+| API / GUI | `test_gui_api*`, `test_gui_workflow`, `test_gui_sanitize`, `test_gui_extraction_edge_cases`, `test_gui_callbacks_resilience`, `test_review_pages`, `test_preview_seeker`, `test_gui_visual`, `test_library_tab`, `test_projects_folder` |
 
 ## Tools and scripts
 
@@ -122,6 +122,8 @@ run_pipeline.py ──────► GuiApi (scripted)
 
 Max 10 lines, newest first. Older lines get dropped (git has the history).
 
+- 2026-11-17 — opening a project with no video (or a missing one) clears the previous video and shows the project's first saved page, so switching projects in the Library actually updates the preview — `app_gui.py`, `tests/test_library_tab.py`
+- 2026-11-17 — the projects folder moved from the Extract tab's Browse… button to Settings → Projects; the button and File → Open Project are gone, and changing the folder resets a loaded project so pages never land in the new root — `app_gui.py`, `tests/test_projects_folder.py`
 - 2026-11-17 — new **Library** tab: a browsable card catalog of saved projects (page preview, page count, date, PDF badge) with filter, sort, open, open-PDF, show-folder and delete; `ScoreInfo` gained `thumbnail`/`modified`/`pdf_path` — `app_gui.py`, `src/api/gui_api.py`, `src/infrastructure/file_service.py`, `tests/test_library_tab.py`
 - 2026-11-17 — page-change detection now looks at the detected score band (not the lyric banner) with a stable band and a post-cooldown check, so systems hidden behind an unchanged banner and turns inside the capture cooldown are no longer lost (『Frozen Heart』: 14 -> 17 correct systems, bars 1..51); the scanned band is now exactly the preview's crop band (top offset..crop end, scaled) — `src/application/extraction_components.py`, `src/application/use_cases.py`, `tests/test_frame_stepper.py`
 - 2026-11-16 — extraction now writes `metadata.json` as soon as pages commit (not only when a PDF is generated) and a status change refreshes `page_count`, so a locked/stale PDF cannot leave the last page out of the saved record — `src/api/gui_api.py`, `src/application/saved_score.py`, `tests/test_saved_score_records.py`
@@ -130,8 +132,6 @@ Max 10 lines, newest first. Older lines get dropped (git has the history).
 - 2026-11-16 — boundary sanity guard now accepts a bottom mean up to 140 (was 120): lit piano keys/hands lift real scans to ~123, which used to reject the detected split and fall back to the fixed crop (the 『花に亡霊』 scan had no page boundary rows at all) — `src/domain/boundary_detector.py`, `src/domain/value_objects/config.py`, `tests/test_boundary_detector.py`
 - 2026-11-16 — crop preview gained a **Top offset** checkbox that shows a draggable auto-crop line (preview-frame boundary detection; the line writes `boundary_offset_px` and hides outside Auto) — `app_gui.py`, `tests/test_gui_visual.py`
 - 2026-11-03 — crop preview is read-only outside Fixed ratio: no band, line, grips or drag in Auto/Full frame, so it can no longer write `default_crop_ratio` by accident — `app_gui.py`, `tests/test_gui_visual.py`
-- 2026-11-03 — YouTube downloads prefer H.264 via one `video_selector()` helper; GUI, CLI and API all use it (AV1 1080p60 extraction: 139.5s → 20.0s on the same video, pages identical) — `src/infrastructure/download_service.py`, `src/api/gui_api.py`, `main.py`, `app_gui.py`, `AGENTS.md`, `tests/test_download_service.py`
-- 2026-11-03 — extraction seeks the source video half as often: a calibrated page is no longer re-analyzed on flush, and the A/B full-res pair is read from one seek (166s → 125s on a 230s 1080p60 AV1 video, identical page output) — `src/application/extraction_components.py`, `tests/test_page_committer.py`
 
 ## Maintenance
 

@@ -657,6 +657,10 @@ class CropPreviewWidget(QWidget):
         self._pixmap = pixmap
         self.update()
 
+    def clear_frame(self):
+        self._pixmap = None
+        self.update()
+
     def set_ratio(self, ratio: float):
         self._ratio = max(0.05, min(0.95, ratio))
         self.update()
@@ -2243,6 +2247,8 @@ class LibraryTab(QWidget):
 # ── Config Tab ───────────────────────────────────────────────────────
 
 class ConfigTab(QWidget):
+    projects_folder_changed = pyqtSignal(str)
+
     def __init__(self, api: GuiApi, parent=None):
         super().__init__(parent)
         self._api = api
@@ -2269,7 +2275,9 @@ class ConfigTab(QWidget):
 
         layout.addSpacing(SPACE_SM)
 
-        desc = QLabel("Adjust extraction behavior. These apply to the next extraction.")
+        desc = QLabel(
+            "Adjust extraction behavior and where projects are saved. "
+            "These apply to the next extraction.")
         _set_widget_class(desc, "muted")
         layout.addWidget(desc)
 
@@ -2300,6 +2308,28 @@ class ConfigTab(QWidget):
             self._toggle_style(False, self._config_mode == "advanced")
         )
         layout.addLayout(mode_row)
+
+        # ── Projects folder (always visible) ──
+        projects_group = QGroupBox("Projects")
+        projects_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        projects_form = QFormLayout(projects_group)
+        projects_form.setSpacing(SPACE_MD)
+
+        folder_row = QHBoxLayout()
+        folder_row.setSpacing(SPACE_SM)
+        self.projects_folder_edit = QLineEdit()
+        self.projects_folder_edit.setReadOnly(True)
+        self.projects_folder_edit.setPlaceholderText("Not set")
+        self.projects_folder_edit.setToolTip(
+            "Where new projects are saved, and what the Library lists.")
+        folder_row.addWidget(self.projects_folder_edit, 1)
+        self.projects_folder_btn = QPushButton("Change…")
+        _set_widget_class(self.projects_folder_btn, "secondary")
+        _fit_button_width(self.projects_folder_btn)
+        self.projects_folder_btn.clicked.connect(self._choose_projects_folder)
+        folder_row.addWidget(self.projects_folder_btn)
+        projects_form.addRow(self._form_label("Projects folder:"), folder_row)
+        layout.addWidget(projects_group)
 
         # ── Basic settings widget ──
         self.basic_widget = QWidget()
@@ -2552,6 +2582,21 @@ class ConfigTab(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scroll)
+
+    def set_projects_folder(self, path: str):
+        """Show the folder new projects are saved in."""
+        self.projects_folder_edit.setText(path or "")
+        self.projects_folder_edit.setToolTip(
+            path or "Where new projects are saved, and what the Library lists.")
+
+    def _choose_projects_folder(self):
+        start = self.projects_folder_edit.text() or str(Path.home())
+        path = QFileDialog.getExistingDirectory(
+            self, "Select Projects Folder", start)
+        if not path:
+            return
+        self.set_projects_folder(path)
+        self.projects_folder_changed.emit(path)
 
     def _form_label(self, text: str) -> QLabel:
         lbl = QLabel(text)
@@ -2974,13 +3019,9 @@ class ExtractTab(QWidget):
         self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
         self.project_edit.setCompleter(self._completer)
 
-        self.project_browse_btn = QPushButton("Browse…")
-        _set_widget_class(self.project_browse_btn, "secondary")
-
         project_row = QHBoxLayout()
         project_row.addWidget(project_label)
         project_row.addWidget(self.project_edit, 1)
-        project_row.addWidget(self.project_browse_btn)
         layout.addLayout(project_row)
 
         # ── Output PDF name ──
@@ -3163,7 +3204,6 @@ class ExtractTab(QWidget):
         self.log_toggle_btn.toggled.connect(self._on_log_toggled)
         self.project_edit.returnPressed.connect(self._on_project_entered)
         self._completer.activated.connect(self._on_project_selected)
-        self.project_browse_btn.clicked.connect(self._browse_project)
         self.browse_btn.clicked.connect(self._browse_video)
         self.video_path_edit.textChanged.connect(self._on_path_changed)
         self.extract_btn.clicked.connect(self._start_extraction)
@@ -3294,22 +3334,20 @@ class ExtractTab(QWidget):
         except Exception:
             pass
 
-    def _browse_project(self):
-        path = QFileDialog.getExistingDirectory(
-            self, "Select Project Directory", self._parent_dir)
+    def set_parent_dir(self, path: str):
+        """Move the projects folder: new projects are saved here."""
         if not path:
             return
-        p = Path(path)
-        # Check if this is an existing score dir
-        if (p / "photos").is_dir():
-            self._load_existing_score(str(p))
+        if os.path.abspath(path) == os.path.abspath(self._parent_dir):
             return
-        # Otherwise treat as parent dir for new projects
-        self._parent_dir = str(p.parent)
-        self._settings.setValue("parent_dir", self._parent_dir)
-        self.project_edit.setText(p.name)
+        self._parent_dir = path
+        self._settings.setValue("parent_dir", path)
         self._refresh_completer()
-        self._switch_to_new_project()
+        if self._has_existing_score:
+            # The loaded project lives under the old folder; its path is
+            # built from the new one, so start clean instead of writing there.
+            self._switch_to_new_project()
+        self._log(f"Projects folder: {path}")
 
     def _set_video_controls_enabled(self, enabled: bool):
         self._local_label.setEnabled(enabled)
@@ -3353,6 +3391,7 @@ class ExtractTab(QWidget):
                 self.status_label.setText(f"Loaded {count} pages — {p.name} (preview active)")
             else:
                 self._set_video_controls_enabled(False)
+                self._show_score_preview()
                 self.status_label.setText(f"Loaded {count} pages — {p.name}")
                 if video_path and not os.path.exists(video_path):
                     self._log(f"Video missing: {video_path}")
@@ -3510,6 +3549,27 @@ class ExtractTab(QWidget):
         if valid and path != self._video_path:
             self._load_preview()
         self._update_state()
+
+    def _show_score_preview(self):
+        """No video for this score: show its first saved page instead.
+
+        The previous project's video frame would otherwise stay on screen,
+        which makes switching projects look like the preview is frozen.
+        """
+        self._preview_seeker.close_requested.emit()
+        self._api.close_video()
+        self._video_path = None
+        self._preview_source_height = 0
+        self._preview_qimage = None
+        self._preview_frame_bgr = None
+        self.crop_widget.set_top_visible(False)
+        self.crop_widget.set_editable(False)
+        self.video_path_edit.clear()
+        img = self._api.get_first_page_image()
+        if img is None:
+            self.crop_widget.clear_frame()
+        else:
+            self.crop_widget.set_frame(self._img_to_pixmap(img))
 
     def _load_preview(self):
         path = self.video_path_edit.text().strip()
@@ -4203,6 +4263,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.library_tab, "Library")
         self.tabs.addTab(self.config_tab, "Settings")
 
+        self.config_tab.set_projects_folder(self.extract_tab.get_parent_dir())
+
         main_layout.addWidget(self.tabs, 1)
 
         # ── Menu bar ──
@@ -4251,10 +4313,6 @@ class MainWindow(QMainWindow):
         open_video_action.triggered.connect(self.extract_tab._browse_video)
         file_menu.addAction(open_video_action)
 
-        open_project_action = QAction("Open &Project...\tCtrl+Shift+O", self)
-        open_project_action.triggered.connect(self.extract_tab._browse_project)
-        file_menu.addAction(open_project_action)
-
         library_action = QAction("Project &Library\tCtrl+L", self)
         library_action.triggered.connect(
             lambda: self.tabs.setCurrentWidget(self.library_tab))
@@ -4297,7 +4355,6 @@ class MainWindow(QMainWindow):
 
         # ── Keyboard shortcuts (window-level) ──
         open_video_action.setShortcut("Ctrl+O")
-        open_project_action.setShortcut("Ctrl+Shift+O")
         library_action.setShortcut("Ctrl+L")
         start_action.setShortcut("Ctrl+E")
         cancel_action.setShortcut("Escape")
@@ -4322,6 +4379,8 @@ class MainWindow(QMainWindow):
         self.library_tab.open_requested.connect(self._open_library_project)
         self.library_tab.project_deleted.connect(
             self._on_library_project_deleted)
+        self.config_tab.projects_folder_changed.connect(
+            self.extract_tab.set_parent_dir)
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
@@ -4391,7 +4450,6 @@ class MainWindow(QMainWindow):
     def _show_shortcuts(self):
         text = (
             "Ctrl+O          Open video file\n"
-            "Ctrl+Shift+O    Open existing project\n"
             "Ctrl+L          Project library\n"
             "Ctrl+E          Start extraction\n"
             "Ctrl+,          Open Settings\n"

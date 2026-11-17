@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import pytest
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
@@ -176,5 +177,32 @@ class TestWindowIntegration:
             assert window.tabs.currentWidget() is window.extract_tab
             assert window.extract_tab.project_edit.text() == "my_score"
             assert window.api.get_page_count() == 1
+        finally:
+            window.close()
+
+    def test_switching_to_a_project_without_a_video_updates_the_preview(
+            self, qapp, tmp_path):
+        score_dir = tmp_path / "no_video"
+        photos = score_dir / "photos"
+        photos.mkdir(parents=True)
+        cv2.imwrite(str(photos / "page_001_merged.png"),
+                    np.full((60, 40, 3), 180, dtype=np.uint8))
+
+        window = MainWindow()
+        try:
+            window.extract_tab._parent_dir = str(tmp_path)
+            window.library_tab.refresh()
+            tab = window.extract_tab
+            # Stand in for the previously opened project's video preview.
+            tab.crop_widget.set_frame(QPixmap(300, 200))
+            tab.video_path_edit.setText(str(tmp_path / "old.mp4"))
+            tab._video_path = str(tmp_path / "old.mp4")
+
+            window.library_tab._cards[0].open_requested.emit(str(score_dir))
+
+            assert tab.video_path_edit.text() == ""
+            pixmap = tab.crop_widget._pixmap
+            assert pixmap is not None
+            assert (pixmap.width(), pixmap.height()) == (40, 60)
         finally:
             window.close()
