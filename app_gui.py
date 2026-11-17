@@ -3026,12 +3026,13 @@ class ExtractTab(QWidget):
         layout.addLayout(input_grid)
 
         # ── Project field ──
-        project_label = QLabel("Project:")
+        project_label = QLabel("Score:")
         project_label.setFixedWidth(115)
         project_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         self.project_edit = QLineEdit()
-        self.project_edit.setPlaceholderText("Score name \u2014 type to find an existing score, or enter a new name")
+        self.project_edit.setPlaceholderText(
+            "Score name \u2014 type to open a saved score, or enter a new name")
         self.project_edit.setMaxLength(100)
         self._completer_model = QStringListModel()
         self._completer = QCompleter(self._completer_model, self)
@@ -3050,7 +3051,7 @@ class ExtractTab(QWidget):
         pdf_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         pdf_label.setFixedWidth(115)
         self.pdf_name_edit = QLineEdit()
-        self.pdf_name_edit.setPlaceholderText("Auto-filled from project name")
+        self.pdf_name_edit.setPlaceholderText("Auto-filled from score name")
         self.pdf_name_edit.setMaxLength(100)
         pdf_row.addWidget(pdf_label)
         pdf_row.addWidget(self.pdf_name_edit, 1)
@@ -3388,6 +3389,9 @@ class ExtractTab(QWidget):
         self.local_radio.setEnabled(enabled)
         self.yt_radio.setEnabled(enabled)
         self.seek_bar.setEnabled(enabled)
+        if enabled:
+            self.video_path_edit.setToolTip("")
+            self.yt_url_edit.setToolTip("")
 
     def _load_existing_score(self, score_path: str):
         self._log(f"Loading {score_path}")
@@ -3410,19 +3414,30 @@ class ExtractTab(QWidget):
             if self._loaded_original_ratio is not None:
                 self.crop_original_label.setText(f"(was {int(self._loaded_original_ratio * 100)}%)")
 
+            # Never let a video from a different score leak into this one.
+            self._video_path = ""
+            self.video_path_edit.clear()
+            if self._api.get_video_info() is not None:
+                self._api.close_video()
+
             # Load associated video for preview if available
             video_path = meta.get("video_path", "")
             if video_path and os.path.exists(video_path):
+                self.local_radio.setChecked(True)
                 self._set_video_controls_enabled(True)
                 self.video_path_edit.setText(video_path)
-                self._load_preview()
-                self.status_label.setText(f"Loaded {count} pages — {p.name} (preview active)")
+                self._log(f"Video loaded from score: {video_path}")
             else:
                 self._set_video_controls_enabled(False)
                 self._show_score_preview()
                 self.status_label.setText(f"Loaded {count} pages — {p.name}")
-                if video_path and not os.path.exists(video_path):
-                    self._log(f"Video missing: {video_path}")
+                tip = ("This saved score has no available video. "
+                       "Re-extract to use a video.")
+                self.video_path_edit.setToolTip(tip)
+                self.yt_url_edit.setToolTip(tip)
+                self._log(
+                    f"Video missing: {video_path}" if video_path
+                    else "No video saved with this score")
 
             ratio = self._api.get_config()["default_crop_ratio"]
             self._log(f"Loaded {count} pages (crop {int(ratio * 100)}%)")
@@ -3430,7 +3445,9 @@ class ExtractTab(QWidget):
             self._update_state()
             return True
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Could not load score:\n{e}")
+            QMessageBox.warning(
+                self, "Could not open score",
+                f"Could not open \u201c{Path(score_path).name}\u201d.\n\n{e}")
             return False
 
     def _switch_to_new_project(self):
@@ -3519,17 +3536,112 @@ class ExtractTab(QWidget):
             QMessageBox.warning(self, "Error", str(e))
             self._reset_download_ui()
 
+    def _score_key(self, name: str) -> str:
+        return self._sanitize(name).casefold()
+
+    def _find_saved_score(self, title: str):
+        """The saved score that already holds this video's pages, if any."""
+        target = self._score_key(title)
+        try:
+            for score in self._api.list_saved_scores(self._parent_dir):
+                if score.page_count > 0 and self._score_key(score.score_name) == target:
+                    return score
+        except Exception:
+            pass
+        return None
+
+    def _is_current_score(self, title: str) -> bool:
+        return (self._has_existing_score
+                and self._score_key(self.project_edit.text().strip())
+                == self._score_key(title))
+
+    def _ask_open_saved_score(self, title: str, score) -> str:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Score already saved")
+        pages = "page" if score.page_count == 1 else "pages"
+        box.setText(f"\u201c{title}\u201d is already saved with {score.page_count} {pages}.")
+        box.setInformativeText(
+            "Open the saved score, or start a new score from this video?")
+        open_btn = box.addButton(
+            "Open saved score", QMessageBox.ButtonRole.AcceptRole)
+        new_btn = box.addButton(
+            "Start new score", QMessageBox.ButtonRole.ActionRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(open_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is open_btn:
+            return "open"
+        if clicked is new_btn:
+            return "new"
+        return "cancel"
+
+    def _ask_start_new_score(self, title: str) -> bool:
+        current = self.project_edit.text().strip()
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Start a new score")
+        box.setText(f"\u201c{title}\u201d belongs to a different score than \u201c{current}\u201d.")
+        box.setInformativeText(
+            "Saved pages stay on disk. Start a new score for this video?")
+        start_btn = box.addButton(
+            "Start new score", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(start_btn)
+        box.exec()
+        return box.clickedButton() is start_btn
+
+    def _restore_previous_preview(self):
+        path = self.video_path_edit.text().strip()
+        if path and os.path.exists(path):
+            self._load_preview()
+        elif self._api.get_video_info() is not None:
+            self._api.close_video()
+
+    def _leave_downloaded_video_closed(self, title: str):
+        self._reset_download_ui()
+        self._restore_previous_preview()
+        self._update_state()
+        self._set_status(f"Video downloaded \u2014 \u201c{title}\u201d not opened")
+
     def _on_yt_download_completed(self, path: str):
+        title = self._api._last_download_title or Path(path).stem
+        saved = self._find_saved_score(title)
+        current = self._is_current_score(title)
+        start_new = False
+
+        if saved is not None and not current:
+            choice = self._ask_open_saved_score(title, saved)
+            if choice == "cancel":
+                self._leave_downloaded_video_closed(title)
+                return
+            if choice == "open":
+                self._reset_download_ui()
+                self._update_state()
+                self._load_existing_score(saved.path)
+                return
+            start_new = True
+
+        if (not current and not start_new
+                and (self._has_existing_score or self._api.get_page_count() > 0)):
+            if not self._ask_start_new_score(title):
+                self._leave_downloaded_video_closed(title)
+                return
+            start_new = True
+
+        if not current:
+            self._switch_to_new_project()
+
         if self._api._original_video_path is not None:
             preview_path = self._api._video_info.path if self._api._video_info else path
         else:
             preview_path = path
         self._video_path = preview_path
         self.video_path_edit.setText(preview_path)
-        title = self._api._last_download_title or Path(path).stem
         prev_title = self._api._prev_download_title
         cur_name = self.project_edit.text().strip()
-        if not cur_name or cur_name == prev_title:
+        if start_new or not cur_name or cur_name == prev_title:
             self.project_edit.setText(title)
 
         self._log(f"Video saved: {preview_path}")
@@ -3811,15 +3923,19 @@ class ExtractTab(QWidget):
         if self._busy:
             return
         page_count = self._api.get_page_count()
-        reply = QMessageBox.question(
-            self, "Re-extract",
-            f"This will re-run extraction to replace all {page_count} existing pages.\n\n"
-            "The current PDF will not be affected until you regenerate it.\n"
-            "Continue?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        pages = "page" if page_count == 1 else "pages"
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Re-extract score")
+        box.setText(f"Re-extract this score and replace its {page_count} saved {pages}?")
+        box.setInformativeText(
+            "The current PDF stays as it is until you generate it again.")
+        reextract_btn = box.addButton(
+            "Re-extract pages", QMessageBox.ButtonRole.AcceptRole)
+        cancel_btn = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(cancel_btn)
+        box.exec()
+        if box.clickedButton() is not reextract_btn:
             return
         self._reextract_mode = True
         self._start_extraction()
@@ -3905,18 +4021,35 @@ class ExtractTab(QWidget):
             else:
                 self._set_status("Ready")
 
+    def _ask_replace_pages(self, project: str, count: int) -> bool:
+        pages = "page" if count == 1 else "pages"
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Score already saved")
+        box.setText(f"\u201c{project}\u201d already has {count} saved {pages}.")
+        box.setInformativeText(
+            "Extracting again replaces those page images. The PDF changes only "
+            "when you generate it again.")
+        replace_btn = box.addButton(
+            "Replace pages", QMessageBox.ButtonRole.DestructiveRole)
+        cancel_btn = box.addButton(
+            "Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(cancel_btn)
+        box.exec()
+        return box.clickedButton() is replace_btn
+
     def _start_extraction(self):
         dbg("_start_extraction")
         if self._busy:
             return
         video_path = self._video_path
         if not video_path or not os.path.exists(video_path):
-            QMessageBox.warning(self, "Error", "Please select a valid video file.")
+            QMessageBox.warning(self, "No video selected", "Choose a video file first.")
             return
 
         project = self.project_edit.text().strip()
         if not project:
-            QMessageBox.warning(self, "Error", "Please enter a score name.")
+            QMessageBox.warning(self, "No score name", "Enter a score name.")
             return
 
         project_dir = self.get_project_dir()
@@ -3934,17 +4067,8 @@ class ExtractTab(QWidget):
         photos_dir = Path(project_dir) / "photos"
         if photos_dir.is_dir() and not self._reextract_mode:
             existing = sorted(photos_dir.glob("page_*_merged.png"))
-            if existing:
-                reply = QMessageBox.question(
-                    self,
-                    "Score Already Exists",
-                    f"\"{project}\" already has {len(existing)} pages saved.\n\n"
-                    f"Extracting again will overwrite them. Continue?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No,
-                )
-                if reply != QMessageBox.StandardButton.Yes:
-                    return
+            if existing and not self._ask_replace_pages(project, len(existing)):
+                return
 
         # Clear old pages before re-extraction
         if photos_dir.is_dir():
@@ -3995,7 +4119,7 @@ class ExtractTab(QWidget):
             return
         output_path = self.get_output_path()
         if not output_path:
-            QMessageBox.warning(self, "Error", "Please enter a score name.")
+            QMessageBox.warning(self, "No score name", "Enter a score name.")
             return
         if self._api.get_included_page_count() == 0:
             QMessageBox.warning(
