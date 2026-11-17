@@ -572,6 +572,9 @@ class TestListSavedScores:
         assert len(scores) == 1
         assert scores[0].score_name == "my_score"
         assert scores[0].page_count == 2
+        assert scores[0].thumbnail.endswith("page_000_merged.png")
+        assert scores[0].modified > 0
+        assert scores[0].pdf_path == ""
 
 
 class TestLoadSavedScore:

@@ -309,7 +309,7 @@ class TestConfigTabLayout:
         """Verify basic settings mode renders correctly."""
         tab = window.config_tab
         tab._set_mode("basic")
-        window.tabs.setCurrentIndex(1)
+        window.tabs.setCurrentWidget(window.config_tab)
         process_events()
 
         screenshot = capture_widget(window, tmp_path, "config_basic_mode")
@@ -321,7 +321,7 @@ class TestConfigTabLayout:
         """Verify advanced settings mode renders correctly."""
         tab = window.config_tab
         tab._set_mode("advanced")
-        window.tabs.setCurrentIndex(1)
+        window.tabs.setCurrentWidget(window.config_tab)
         process_events()
 
         screenshot = capture_widget(window, tmp_path, "config_advanced_mode")

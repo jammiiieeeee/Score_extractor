@@ -344,6 +344,9 @@ class StubFileService(IFileService):
                     "path": str(d),
                     "page_count": len(page_files),
                     "score_name": d.name,
+                    "thumbnail": str(page_files[0]) if page_files else "",
+                    "modified": 0.0,
+                    "pdf_path": "",
                 })
         results.sort(key=lambda x: x["score_name"])
         return results

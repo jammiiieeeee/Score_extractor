@@ -93,6 +93,26 @@ class FileService(IFileService):
             return False
         return True
 
+    @staticmethod
+    def _score_modified(score_dir: Path) -> float:
+        """When a score was last written: its metadata, else its pages."""
+        metadata = score_dir / "metadata.json"
+        target = metadata if metadata.exists() else score_dir / "photos"
+        try:
+            return target.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    @staticmethod
+    def _score_pdf(score_dir: Path) -> str:
+        """The PDF written into a score directory, if there is one."""
+        preferred = score_dir / f"{score_dir.name}.pdf"
+        if preferred.exists():
+            return str(preferred)
+        for pdf in sorted(score_dir.glob("*.pdf")):
+            return str(pdf)
+        return ""
+
     def list_saved_scores(self, output_folder: str) -> List[dict]:
         results = []
         base = Path(output_folder)
@@ -105,6 +125,9 @@ class FileService(IFileService):
                     "path": str(d),
                     "page_count": len(page_files),
                     "score_name": d.name,
+                    "thumbnail": str(page_files[0]) if page_files else "",
+                    "modified": self._score_modified(d),
+                    "pdf_path": self._score_pdf(d),
                 })
         results.sort(key=lambda x: x["score_name"])
         return results

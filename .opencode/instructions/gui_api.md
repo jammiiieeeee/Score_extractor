@@ -34,6 +34,9 @@ class ScoreInfo:
     path: str
     page_count: int
     score_name: str
+    thumbnail: str = ""     # first saved page, for the Library preview
+    modified: float = 0.0   # last write (metadata.json, else photos/)
+    pdf_path: str = ""      # the PDF inside the score directory, if any
 ```
 
 ## API Methods
@@ -124,9 +127,9 @@ flag survives a reload.
 
 | # | Method | Signature | Description |
 |---|--------|-----------|-------------|
-| 36 | `list_saved_scores(output_folder)` | `str → list[ScoreInfo]` | List existing scores in directory |
+| 36 | `list_saved_scores(output_folder)` | `str → list[ScoreInfo]` | List existing scores in directory, with preview/date/PDF |
 | 37 | `load_saved_score(path)` | `str → int` | Load pages from existing score |
-| 38 | `delete_saved_score(path)` | `str → None` | Delete score directory |
+| 38 | `delete_saved_score(path)` | `str → None` | Delete score directory; clears it from memory if loaded |
 | 39 | `save_metadata(score_dir, data)` | `str, dict → None` | Write metadata.json |
 
 ### Re-extraction Helpers (6)
