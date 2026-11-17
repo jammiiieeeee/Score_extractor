@@ -255,6 +255,8 @@ Borders are 1px solid, using `border` (#333333) at rest and `border-emphasized` 
 
 ### Progress Bar
 - **Style:** Dark background (input-bg #0d0d0d), md (6px) radius, 28px height. 600 weight centered label. Warm Brass fill chunk with fill (5px) radius.
+- **Width:** Always spans the full pinned footer. The page badge (`.count`, brass) and the run clock (`.muted`, `m:ss`) sit on the status line above it, never beside it, so the bar's width does not change between states.
+- **Runs:** Determinate while a percentage exists; indeterminate (animated brass chunk) while the app is working without a number — preparing a download, or the scan copy that follows the main download. The clock ticks every second for the same reason: motion is the app's proof of life.
 
 ### Slider / Seek Bar
 - **Style:** Dual-handle seek bar for video trimming. Groove (#282828) at 4px height with xxs (2px) radius. Circular handles (16px diameter, lg (8px) radius) in Warm Brass with 2px dark outline for definition.

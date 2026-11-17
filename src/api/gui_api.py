@@ -397,7 +397,8 @@ class GuiApi:
                                        self._state.current_timestamp)
 
     def get_extraction_state(self) -> ExtractionState:
-        if self._state.phase in ("extracting", "cancelling"):
+        if self._state.phase in ("downloading", "extracting", "cancelling",
+                                 "generating_pdf"):
             elapsed = time.time() - self._extraction_start_time
             self._state.elapsed_seconds = elapsed
         return self._state

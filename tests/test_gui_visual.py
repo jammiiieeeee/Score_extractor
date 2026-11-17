@@ -404,6 +404,42 @@ class TestExtractLayout:
         assert tab.progress_bar.geometry().bottom() <= tab.height(), (
             "Progress bar is pinned below the visible tab area")
 
+    def test_progress_bar_keeps_full_width_when_badge_and_clock_show(self, window):
+        """Page badge and run clock sit on the status line, not beside the bar."""
+        window.show()
+        process_events()
+        tab = window.extract_tab
+
+        tab.page_badge.setText("")
+        tab._elapsed_label.setVisible(False)
+        process_events()
+        idle_width = tab.progress_bar.width()
+
+        tab.page_badge.setText("Pages: 12")
+        tab._elapsed_label.setText("12:34")
+        tab._elapsed_label.setVisible(True)
+        process_events()
+
+        assert tab.progress_bar.width() == idle_width
+
+    def test_finishing_download_shows_a_busy_bar(self, window):
+        """After 100% the scan copy is still coming: show motion, not a frozen bar."""
+        tab = window.extract_tab
+        tab._busy = True
+        try:
+            tab.on_progress("downloading", 100, "100% downloaded")
+            assert tab.progress_bar.maximum() == 0, "Expected an indeterminate bar"
+            assert "Download finished" in tab.status_label.text()
+
+            tab.on_progress("downloading", 42, "42% downloaded")
+            assert tab.progress_bar.maximum() == 100
+            assert tab.progress_bar.value() == 42
+            assert tab.status_label.text() == "Downloading video"
+        finally:
+            tab._busy = False
+            tab._watchdog.stop()
+            tab.progress_bar.setRange(0, 100)
+
     def test_every_combo_fits_its_longest_item(self, window):
         combos = window.findChildren(QComboBox)
         assert combos

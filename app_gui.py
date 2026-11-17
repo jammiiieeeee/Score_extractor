@@ -124,6 +124,11 @@ QPushButton:disabled {{
     background: {SURFACE2};
     color: {MUTED};
 }}
+QPushButton.secondary:disabled, QPushButton.danger:disabled {{
+    background: transparent;
+    color: {MUTED};
+    border-color: {BORDER};
+}}
 QPushButton.secondary {{
     background: transparent;
     color: {INK};
@@ -166,6 +171,11 @@ QLineEdit {{
 }}
 QLineEdit:focus {{
     border-color: {BRASS};
+}}
+QLineEdit:disabled {{
+    background: {SURFACE2};
+    border-color: {BORDER};
+    color: {MUTED};
 }}
 QDoubleSpinBox, QSpinBox {{
     background: #0d0d0d;
@@ -344,6 +354,11 @@ QComboBox {{
 }}
 QComboBox:focus {{
     border-color: {BRASS};
+}}
+QComboBox:disabled {{
+    background: {SURFACE2};
+    border-color: {BORDER};
+    color: {MUTED};
 }}
 QComboBox::drop-down {{
     border: none;
@@ -2934,6 +2949,13 @@ class ExtractTab(QWidget):
         self._watchdog.setTimerType(Qt.TimerType.CoarseTimer)
         self._watchdog.timeout.connect(self._on_watchdog_timeout)
 
+        # One tick a second while busy: a clock that keeps moving tells the user
+        # the app is working even when no progress event has arrived.
+        self._busy_clock = QTimer(self)
+        self._busy_clock.setInterval(1000)
+        self._busy_clock.timeout.connect(self._tick_busy_clock)
+        self._busy_clock.start()
+
         self._settings = QSettings("ScoreExtractor", "App")
         self._parent_dir = self._settings.value("parent_dir", str(Path(__file__).resolve().parent / "output"))
         self._welcome_seen = bool(self._settings.value("onboarding_welcome_seen", False))
@@ -3141,21 +3163,28 @@ class ExtractTab(QWidget):
         self.status_label.setWordWrap(True)
         self.status_label.setAccessibleName("Status")
 
-        progress_row = QHBoxLayout()
-        progress_row.setSpacing(SPACE_SM)
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setValue(0)
         self.page_badge = QLabel("")
         _set_widget_class(self.page_badge, "count")
         self.page_badge.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        progress_row.addWidget(self.progress_bar, 1)
-        progress_row.addWidget(self.page_badge)
+
         self._elapsed_label = QLabel("")
         _set_widget_class(self._elapsed_label, "muted")
-        self._elapsed_label.setFixedWidth(100)
+        self._elapsed_label.setMinimumWidth(48)
+        self._elapsed_label.setToolTip("Time since this run started")
         self._elapsed_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self._elapsed_label.setVisible(False)
-        progress_row.addWidget(self._elapsed_label)
+
+        # Badge and clock sit beside the status so the bar below can span the
+        # full width every time, including while they are showing.
+        status_row = QHBoxLayout()
+        status_row.setSpacing(SPACE_SM)
+        status_row.addWidget(self.status_label, 1)
+        status_row.addWidget(self.page_badge)
+        status_row.addWidget(self._elapsed_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setValue(0)
+        self.progress_bar.setAccessibleName("Progress")
 
         self.log_toggle_btn = QPushButton("Show log")
         _set_widget_class(self.log_toggle_btn, "secondary")
@@ -3216,8 +3245,8 @@ class ExtractTab(QWidget):
         footer_info = QVBoxLayout()
         footer_info.setContentsMargins(SPACE_MD, SPACE_XS, SPACE_MD, 0)
         footer_info.setSpacing(SPACE_XS)
-        footer_info.addWidget(self.status_label)
-        footer_info.addLayout(progress_row)
+        footer_info.addLayout(status_row)
+        footer_info.addWidget(self.progress_bar)
         footer_info.addWidget(self.log_edit)
         outer.addLayout(footer_info)
         outer.addLayout(action_row)
@@ -3525,7 +3554,7 @@ class ExtractTab(QWidget):
         self.download_btn.setText("Downloading…")
         self.yt_url_edit.setEnabled(False)
         self.quality_combo.setEnabled(False)
-        self.progress_bar.setValue(0)
+        self.progress_bar.setRange(0, 0)
         self.log_edit.clear()
         self.status_label.setText("Preparing download…")
         self._update_state()
@@ -3663,6 +3692,8 @@ class ExtractTab(QWidget):
         self.yt_url_edit.setEnabled(True)
         self.quality_combo.setEnabled(True)
         self._update_state()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100)
         self._set_status(f"Video downloaded \u2014 {title}", peak=True)
 
     def _reset_download_ui(self):
@@ -3671,6 +3702,7 @@ class ExtractTab(QWidget):
         self.download_btn.setText("Download")
         self.yt_url_edit.setEnabled(True)
         self.quality_combo.setEnabled(True)
+        self.progress_bar.setRange(0, 100)
         self.cancel_btn.setVisible(False)
         self.cancel_btn.setEnabled(False)
 
@@ -4021,6 +4053,8 @@ class ExtractTab(QWidget):
             else:
                 self._set_status("Ready")
 
+        self._tick_busy_clock()
+
     def _ask_replace_pages(self, project: str, count: int) -> bool:
         pages = "page" if count == 1 else "pages"
         box = QMessageBox(self)
@@ -4093,6 +4127,7 @@ class ExtractTab(QWidget):
         self.extract_btn.setText("Extracting…")
         self.extract_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
+        self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
         self.page_badge.setText("")
@@ -4152,6 +4187,7 @@ class ExtractTab(QWidget):
         self.reextract_btn.setEnabled(False)
         self.open_pdf_btn.setVisible(False)
         self.cancel_btn.setEnabled(False)
+        self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.log_edit.clear()
         self._set_status("Generating PDF…")
@@ -4340,20 +4376,36 @@ class ExtractTab(QWidget):
 
     def on_progress(self, phase: str, percent: float, detail: str):
         dbg(f"on_progress: phase={phase}, percent={percent:.0f}%, detail={detail}")
-        self.progress_bar.setValue(int(percent))
         self._watchdog.start(300000)
-        self._elapsed_label.setVisible(True)
-        elapsed = self._api.get_extraction_state().elapsed_seconds
-        mins = int(elapsed // 60)
-        secs = int(elapsed % 60)
-        self._elapsed_label.setText(f"{mins}:{secs:02d}")
-        phase_text = phase.replace("_", " ").title()
+        self._tick_busy_clock()
         if phase == "downloading":
-            self._set_status(f"Downloading video \u2014 {detail}")
-        elif detail:
+            if percent >= 100:
+                # The low-res scan copy downloads after the main file and
+                # reports no percentage, so show a busy bar, not a frozen 100%.
+                self.progress_bar.setRange(0, 0)
+                self._set_status("Download finished \u2014 preparing the preview\u2026")
+            else:
+                self.progress_bar.setRange(0, 100)
+                self.progress_bar.setValue(int(percent))
+                self._set_status("Downloading video")
+            return
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(int(percent))
+        phase_text = phase.replace("_", " ").title()
+        if detail:
             self._set_status(f"{phase_text}: {detail}")
         else:
             self._set_status(phase_text)
+
+    def _tick_busy_clock(self):
+        """Keep the elapsed clock moving so a quiet run still looks alive."""
+        self.progress_bar.setTextVisible(self._busy or self.progress_bar.value() > 0)
+        if not self._busy:
+            self._elapsed_label.setVisible(False)
+            return
+        elapsed = self._api.get_extraction_state().elapsed_seconds
+        self._elapsed_label.setVisible(True)
+        self._elapsed_label.setText(f"{int(elapsed // 60)}:{int(elapsed % 60):02d}")
 
     def _reset_ui(self):
         dbg("_reset_ui")
@@ -4366,6 +4418,7 @@ class ExtractTab(QWidget):
         self.cancel_btn.setEnabled(False)
         self.open_pdf_btn.setVisible(False)
         self.page_badge.setText("")
+        self.progress_bar.setRange(0, 100)
         self.download_btn.setEnabled(True)
         self.download_btn.setText("Download")
         self.yt_url_edit.setEnabled(True)
